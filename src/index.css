@@ -1,0 +1,42 @@
+:root {
+    /* Dark theme (default) */
+    --bg-primary: #000000;
+    --bg-secondary: #1a1a1a;
+    --bg-tertiary: #333333;
+    --border-color: #333333;
+    --text-primary: #ffffff;
+    --text-secondary: #666666;
+    --accent-primary: #ffcc00;
+    --accent-secondary: #ff6600;
+    --accent-danger: #ff0000;
+}
+
+[data-theme="light"] {
+    --bg-primary: #f5f5f5;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #e0e0e0;
+    --border-color: #cccccc;
+    --text-primary: #000000;
+    --text-secondary: #666666;
+    --accent-primary: #ffaa00;
+    --accent-secondary: #ff6600;
+    --accent-danger: #cc0000;
+}
+
+body {
+    margin: 0;
+    font-family: 'Courier New', 'Courier', 'Monaco', monospace;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    transition: background 0.3s ease, color 0.3s ease;
+}
+
+code {
+    font-family: 'Courier New', 'Courier', Monaco, Consolas, monospace;
+}
+
+* {
+    box-sizing: border-box;
+}

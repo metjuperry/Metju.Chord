@@ -1,0 +1,532 @@
+.App {
+    text-align: center;
+    touch-action: manipulation;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.App.loading {
+    background: var(--bg-primary);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.loading-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 30px;
+    padding: 40px;
+    background: var(--bg-secondary);
+    border: 3px solid var(--border-color);
+    box-shadow: 6px 6px 0 var(--bg-primary);
+}
+
+.loading-screen h2 {
+    margin: 0;
+    font-size: 24px;
+    color: var(--accent-primary);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    font-weight: 700;
+}
+
+.loading-screen p {
+    margin: 0;
+    font-size: 14px;
+    color: var(--text-secondary);
+    letter-spacing: 1px;
+}
+
+.loading-spinner {
+    width: 60px;
+    height: 60px;
+    border: 5px solid var(--border-color);
+    border-top: 5px solid var(--accent-primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+.App-header {
+    background: var(--bg-primary);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: calc(10px + 2vmin);
+    color: var(--text-primary);
+    padding: 30px 20px;
+    gap: 30px;
+    transition: background 0.3s ease, color 0.3s ease;
+}
+
+.header-top {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    position: relative;
+    width: 100%;
+    max-width: 1200px;
+}
+
+.App-header h1 {
+    margin: 0;
+    font-size: 2.5rem;
+    color: var(--accent-secondary);
+    font-weight: 700;
+    letter-spacing: -1px;
+    text-transform: uppercase;
+    transition: color 0.3s ease;
+}
+
+.theme-toggle {
+    position: absolute;
+    right: 0;
+    width: 50px;
+    height: 50px;
+    background: var(--bg-secondary);
+    border: 3px solid var(--border-color);
+    border-radius: 0;
+    color: var(--accent-primary);
+    font-size: 24px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 3px 3px 0 var(--bg-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.theme-toggle:hover {
+    background: var(--accent-primary);
+    color: var(--bg-primary);
+    transform: translateY(-2px);
+    box-shadow: 4px 4px 0 var(--border-color);
+}
+
+.theme-toggle:active {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0 var(--border-color);
+}
+
+.top-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 30px;
+    width: 100%;
+    max-width: 1200px;
+}
+
+.bottom-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 20px;
+    width: 100%;
+    max-width: 1200px;
+}
+
+.side-panel-column {
+    display: flex;
+    flex-direction: row;
+    gap: 20px;
+    align-items: flex-start;
+}
+
+.side-panel-column.stacked {
+    flex-direction: column;
+}
+
+.middle-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 30px;
+    width: 100%;
+    max-width: 1200px;
+}
+
+.button-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    padding: 20px;
+    background: var(--bg-primary);
+    border-radius: 0;
+    border: 3px solid var(--border-color);
+    box-shadow: 6px 6px 0 var(--bg-secondary);
+    touch-action: manipulation;
+    transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+.button-container-title {
+    margin: 0 0 15px 0;
+    font-family: 'Courier New', monospace;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent-secondary);
+    letter-spacing: 2px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid var(--border-color);
+    text-transform: uppercase;
+    width: 100%;
+    text-align: center;
+    transition: color 0.3s ease, border-color 0.3s ease;
+}
+
+.button-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+}
+
+.button-row-top {
+    margin-bottom: -12px;
+    padding: 8px 0;
+    z-index: 2;
+}
+
+.button-row-bottom {
+    padding: 8px 0;
+    z-index: 1;
+}
+
+.App-header code {
+    background-color: #ff6600;
+    color: #000000;
+    padding: 0.2rem 0.5rem;
+    border-radius: 0;
+    font-size: 0.9em;
+    font-weight: 700;
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+
+    .top-row,
+    .middle-row,
+    .bottom-row {
+        flex-wrap: wrap;
+    }
+
+    .App-header {
+        padding: 20px 15px;
+        gap: 20px;
+    }
+}
+
+@media (max-width: 768px) {
+    .App-header h1 {
+        font-size: 1.8rem;
+    }
+
+    .top-row,
+    .middle-row,
+    .bottom-row {
+        gap: 15px;
+    }
+
+    .middle-row {
+        justify-content: flex-start;
+        gap: 10px;
+    }
+
+    .button-container {
+        padding: 12px;
+        transform-origin: top right;
+        margin-left: auto;
+    }
+
+    .button-row {
+        gap: 8px;
+    }
+
+    /* Force vertical stacking on mobile */
+    .side-panel-column {
+        flex-direction: column !important;
+    }
+
+    /* Make settings more compact in portrait */
+    .settings-panel {
+        flex-direction: column;
+        padding: 15px;
+        gap: 12px;
+    }
+
+    .settings-section {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+
+    .settings-row {
+        flex-direction: column;
+        gap: 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .App-header {
+        padding: 15px 10px;
+        gap: 15px;
+    }
+
+    .App-header h1 {
+        font-size: 1.5rem;
+    }
+
+    .top-row,
+    .middle-row,
+    .bottom-row {
+        gap: 10px;
+    }
+}
+
+/* Mobile Landscape Optimization */
+@media (max-width: 896px) and (orientation: landscape) {
+    .App-header {
+        padding: 10px 15px;
+        gap: 10px;
+        min-height: 100vh;
+        flex-direction: column;
+    }
+
+    .App-header h1 {
+        font-size: 1.2rem;
+        margin-bottom: 0;
+    }
+
+    .top-row {
+        display: none;
+        /* Hide settings in landscape */
+    }
+
+    .middle-row {
+        gap: 20px;
+        flex: 1;
+        max-width: 100%;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: center;
+        justify-content: center;
+        padding: 0 20px;
+    }
+
+    .bottom-row {
+        display: none;
+        /* Hide sequencer/metronome in landscape */
+    }
+
+    /* Scale chord grid for landscape */
+    .chord-grid-container {
+        transform-origin: center;
+    }
+
+    /* Scale button container for landscape */
+    .button-container {
+        padding: 15px;
+        margin: 0;
+        transform-origin: center;
+    }
+
+    .button-container-title {
+        font-size: 16px;
+        margin-bottom: 12px;
+        padding-bottom: 12px;
+    }
+
+    .button-row {
+        gap: 10px;
+    }
+
+    .button-row-top {
+        margin-bottom: -10px;
+    }
+
+    .note-button {
+        min-width: 70px;
+        min-height: 65px;
+        font-size: 22px;
+        padding: 20px 0;
+    }
+}
+
+@media (max-width: 480px) and (orientation: landscape) {
+    .App-header h1 {
+        font-size: 1rem;
+    }
+
+    .App-header {
+        padding: 8px 12px;
+        gap: 8px;
+        flex-direction: column;
+    }
+
+    .middle-row {
+        gap: 15px;
+        padding: 0 15px;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* Scale chord grid */
+    .chord-grid-container {
+        transform-origin: center;
+    }
+
+    /* Scale button container */
+    .button-container {
+        padding: 12px;
+        transform-origin: center;
+    }
+
+    .button-container-title {
+        font-size: 14px;
+        margin-bottom: 10px;
+        padding-bottom: 10px;
+    }
+
+    .button-row {
+        gap: 8px;
+    }
+
+    .button-row-top {
+        margin-bottom: -8px;
+    }
+
+    .note-button {
+        min-width: 55px;
+        min-height: 50px;
+        font-size: 16px;
+        padding: 12px 0;
+        border-width: 2px;
+        box-shadow: 3px 3px 0 #000000;
+    }
+}
+
+/* iPhone SE and similar small devices - Portrait */
+@media (max-width: 375px) {
+    .App-header h1 {
+        font-size: 1.5rem;
+    }
+
+    .settings-panel {
+        padding: 12px;
+        gap: 10px;
+    }
+
+    .button-container {
+        padding: 6px 8px;
+        transform-origin: center;
+    }
+
+    .button-container-title {
+        font-size: 14px;
+        margin-bottom: 8px;
+        padding-bottom: 8px;
+    }
+
+    .button-row {
+        gap: 4px;
+    }
+
+    .button-row-top {
+        margin-bottom: -10px;
+    }
+
+    .note-button {
+        min-width: 55px;
+        width: 55px;
+        min-height: 52px;
+        height: 52px;
+        font-size: 16px;
+        padding: 14px 0;
+        border-width: 2px;
+        box-shadow: 3px 3px 0 #000000;
+    }
+}
+
+/* iPhone SE Landscape - Extra compact */
+@media (max-width: 667px) and (max-height: 375px) and (orientation: landscape) {
+    .App-header {
+        padding: 5px 10px;
+        gap: 5px;
+        flex-direction: column;
+    }
+
+    .App-header h1 {
+        font-size: 0.9rem;
+    }
+
+    .middle-row {
+        gap: 15px;
+        padding: 0 10px;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* Scale chord grid for small landscape */
+    .chord-grid-container {
+        transform-origin: center;
+    }
+
+    .chord-grid-title {
+        font-size: 14px;
+        margin-bottom: 10px;
+        padding-bottom: 10px;
+    }
+
+    /* Scale button container for small landscape */
+    .button-container {
+        padding: 10px 12px;
+        transform-origin: center;
+        width: inherit;
+    }
+
+    .button-container-title {
+        font-size: 14px;
+        margin-bottom: 10px;
+        padding-bottom: 10px;
+    }
+
+    .button-row {
+        gap: 8px;
+    }
+
+    .button-row-top {
+        margin-bottom: -8px;
+        padding: 4px 0;
+    }
+
+    .note-button {
+        min-width: 50px;
+        min-height: 45px;
+        font-size: 14px;
+        padding: 10px 0;
+        border-width: 2px;
+        box-shadow: 2px 2px 0 #000000;
+    }
+}

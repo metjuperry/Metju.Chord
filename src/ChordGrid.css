@@ -1,0 +1,130 @@
+.chord-grid-container {
+    padding: 20px;
+    background: var(--bg-primary);
+    border: 3px solid var(--border-color);
+    box-shadow: 6px 6px 0 var(--bg-secondary);
+    width: fit-content;
+}
+
+.chord-grid-title {
+    margin: 0 0 15px 0;
+    font-family: 'Courier New', monospace;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent-secondary);
+    letter-spacing: 2px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid var(--border-color);
+    text-transform: uppercase;
+    width: 100%;
+    text-align: center;
+    transition: color 0.3s ease, border-color 0.3s ease;
+}
+
+.chord-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.chord-grid-row {
+    display: flex;
+    gap: 12px;
+}
+
+.chord-grid-button {
+    width: 100px;
+    height: 100px;
+    font-family: 'Courier New', monospace;
+    font-size: 16px;
+    font-weight: 700;
+    color: #000000;
+    background: var(--accent-primary);
+    border: 3px solid #000000;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    box-shadow: 4px 4px 0 #000000;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.chord-grid-button:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 6px 6px 0 #000000;
+}
+
+.chord-grid-button:active {
+    transform: translate(2px, 2px);
+    box-shadow: 2px 2px 0 #000000;
+}
+
+.chord-grid-button.active {
+    background: var(--accent-secondary);
+    transform: translate(2px, 2px);
+    box-shadow: 2px 2px 0 #000000;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .chord-grid-container {
+        padding: 15px;
+    }
+
+    .chord-grid {
+        gap: 10px;
+    }
+
+    .chord-grid-row {
+        gap: 10px;
+    }
+
+    .chord-grid-button {
+        width: 80px;
+        height: 80px;
+        font-size: 14px;
+    }
+}
+
+/* iPhone SE Portrait */
+@media (max-width: 375px) {
+    .chord-grid-container {
+        padding: 12px;
+    }
+
+    .chord-grid {
+        gap: 8px;
+    }
+
+    .chord-grid-row {
+        gap: 8px;
+    }
+
+    .chord-grid-button {
+        width: 70px;
+        height: 70px;
+        font-size: 12px;
+    }
+}
+
+/* iPhone SE Landscape */
+@media (max-width: 896px) and (orientation: landscape) and (max-height: 414px) {
+    .chord-grid-container {
+        padding: 10px;
+    }
+
+    .chord-grid {
+        gap: 8px;
+    }
+
+    .chord-grid-row {
+        gap: 8px;
+    }
+
+    .chord-grid-button {
+        width: 60px;
+        height: 60px;
+        font-size: 11px;
+    }
+}

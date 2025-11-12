@@ -1,0 +1,96 @@
+.note-button {
+    padding: 25px 0;
+    font-size: 28px;
+    font-weight: 700;
+    color: #000000;
+    background: var(--accent-primary);
+    border: 3px solid #000000;
+    border-radius: 0;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    box-shadow: 4px 4px 0 #000000;
+    letter-spacing: 0;
+    width: 90px;
+    height: 85px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.note-button::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.note-button:hover::before {
+    opacity: 0;
+}
+
+.note-button:hover {
+    background: var(--accent-secondary);
+    transform: translateY(-2px);
+    box-shadow: 5px 5px 0 #000000;
+}
+
+.note-button:active {
+    transform: translate(2px, 2px);
+    box-shadow: 2px 2px 0 #000000;
+}
+
+.note-button.playing {
+    animation: button-flash 0.3s ease-out;
+    background: var(--accent-danger);
+    box-shadow: 4px 4px 0 #000000;
+    border-color: #000000;
+}
+
+.note-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+    background: var(--text-secondary);
+}
+
+@keyframes button-flash {
+    0% {
+        transform: scale(1);
+        background: var(--accent-danger);
+    }
+
+    50% {
+        transform: scale(1.08);
+        background: var(--accent-secondary);
+    }
+
+    100% {
+        transform: scale(1);
+        background: var(--accent-danger);
+    }
+}
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .note-button {
+        min-width: 80px;
+        min-height: 75px;
+        font-size: 24px;
+    }
+}
+
+@media (max-width: 480px) {
+    .note-button {
+        min-width: 70px;
+        min-height: 65px;
+        font-size: 20px;
+        padding: 20px 0;
+    }
+}

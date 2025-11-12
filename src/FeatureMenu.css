@@ -1,0 +1,235 @@
+.hamburger-button {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    width: 45px;
+    height: 45px;
+    background: var(--bg-primary);
+    border: 3px solid var(--accent-primary);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    z-index: 1000;
+    transition: border-color 0.2s;
+}
+
+.hamburger-button:hover {
+    border-color: var(--accent-secondary);
+}
+
+.hamburger-button:active {
+    border-color: var(--accent-danger);
+}
+
+.hamburger-line {
+    width: 24px;
+    height: 3px;
+    background: var(--accent-primary);
+    transition: background 0.2s;
+}
+
+.hamburger-button:hover .hamburger-line {
+    background: var(--accent-secondary);
+}
+
+.hamburger-button:active .hamburger-line {
+    background: var(--accent-danger);
+}
+
+.menu-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 1001;
+}
+
+.feature-menu {
+    position: fixed;
+    top: 0;
+    left: -300px;
+    width: 300px;
+    height: 100vh;
+    background: var(--bg-primary);
+    border-right: 3px solid var(--accent-primary);
+    z-index: 1002;
+    transition: left 0.3s ease-in-out;
+    display: flex;
+    flex-direction: column;
+}
+
+.feature-menu.open {
+    left: 0;
+}
+
+.menu-header {
+    padding: 20px;
+    border-bottom: 3px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.menu-header h2 {
+    margin: 0;
+    font-family: 'Courier New', monospace;
+    font-size: 18px;
+    color: var(--accent-primary);
+    letter-spacing: 2px;
+}
+
+.close-button {
+    background: transparent;
+    border: none;
+    color: var(--accent-primary);
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s;
+}
+
+.close-button:hover {
+    color: var(--accent-secondary);
+}
+
+.close-button:active {
+    color: var(--accent-danger);
+}
+
+.menu-content {
+    padding: 20px;
+    flex: 1;
+    overflow-y: auto;
+}
+
+.feature-toggle {
+    margin-bottom: 20px;
+    padding: 15px;
+    border: 3px solid var(--border-color);
+    background: var(--bg-primary);
+    transition: border-color 0.2s;
+}
+
+.feature-toggle:hover {
+    border-color: var(--text-secondary);
+}
+
+.feature-toggle label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    gap: 15px;
+}
+
+.feature-toggle input[type="checkbox"] {
+    appearance: none;
+    width: 24px;
+    height: 24px;
+    border: 3px solid var(--accent-primary);
+    background: var(--bg-primary);
+    cursor: pointer;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.feature-toggle input[type="checkbox"]:checked {
+    background: var(--accent-primary);
+}
+
+.feature-toggle input[type="checkbox"]:checked::after {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 0px;
+    width: 6px;
+    height: 12px;
+    border: solid var(--bg-primary);
+    border-width: 0 3px 3px 0;
+    transform: rotate(45deg);
+}
+
+.feature-toggle input[type="checkbox"]:hover {
+    border-color: var(--accent-secondary);
+}
+
+.feature-toggle input[type="checkbox"]:active {
+    border-color: var(--accent-danger);
+}
+
+.toggle-label {
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    color: var(--accent-primary);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.theme-section {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 2px solid var(--border-color);
+}
+
+.theme-section h3 {
+    margin: 0 0 15px 0;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    color: var(--text-secondary);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+
+.theme-toggle-menu {
+    width: 100%;
+    padding: 12px;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--bg-primary);
+    background: var(--accent-primary);
+    border: 3px solid var(--bg-primary);
+    border-radius: 0;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    box-shadow: 3px 3px 0 var(--bg-primary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.theme-toggle-menu:hover {
+    background: var(--accent-secondary);
+    transform: translateY(-2px);
+    box-shadow: 4px 4px 0 var(--bg-primary);
+}
+
+.theme-toggle-menu:active {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0 var(--bg-primary);
+}
+
+@media (max-width: 768px) {
+    .feature-menu {
+        width: 250px;
+        left: -250px;
+    }
+
+    .hamburger-button {
+        top: 15px;
+        left: 15px;
+        width: 40px;
+        height: 40px;
+    }
+}

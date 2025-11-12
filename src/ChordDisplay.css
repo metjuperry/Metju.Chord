@@ -1,0 +1,86 @@
+.chord-display {
+    width: 240px;
+    margin: 0;
+    padding: 20px;
+    background: var(--accent-secondary);
+    border-radius: 0;
+    box-shadow: none;
+    border: 3px solid var(--bg-primary);
+    transition: all 0.3s ease;
+}
+
+.chord-display.playing {
+    animation: chord-pulse 0.4s ease-out;
+    box-shadow: 0 0 20px var(--accent-secondary);
+}
+
+.chord-display-content {
+    text-align: center;
+}
+
+.chord-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: var(--bg-primary);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    animation: none;
+    transition: color 0.3s ease;
+}
+
+.chord-name {
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--bg-primary);
+    text-shadow: none;
+    letter-spacing: -1px;
+    animation: fade-in 0.3s ease-in;
+    line-height: 1.1;
+    text-transform: uppercase;
+    transition: color 0.3s ease;
+}
+
+.chord-notes {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--bg-primary);
+    margin-top: 10px;
+    letter-spacing: 1px;
+    text-shadow: none;
+    animation: fade-in 0.4s ease-in;
+    transition: color 0.3s ease;
+}
+
+.chord-placeholder {
+    font-size: 18px;
+    font-weight: 700;
+    color: rgba(0, 0, 0, 0.4);
+    font-style: normal;
+}
+
+@keyframes chord-pulse {
+    0% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.05);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+@keyframes fade-in {
+    0% {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

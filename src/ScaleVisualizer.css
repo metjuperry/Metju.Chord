@@ -1,0 +1,201 @@
+.scale-visualizer {
+    background: var(--bg-primary);
+    border: 3px solid var(--border-color);
+    padding: 15px;
+    box-shadow: 6px 6px 0 var(--bg-secondary);
+    max-width: 800px;
+    width: 100%;
+    transition: all 0.3s ease;
+}
+
+.scale-viz-title {
+    margin: 0 0 15px 0;
+    font-family: 'Courier New', monospace;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent-secondary);
+    letter-spacing: 2px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid var(--border-color);
+    text-transform: uppercase;
+    transition: all 0.3s ease;
+}
+
+.piano-roll {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 15px;
+    justify-content: center;
+    align-items: flex-end;
+    min-height: 120px;
+    padding: 10px;
+    background: var(--bg-secondary);
+    border: 2px solid var(--border-color);
+    transition: all 0.3s ease;
+}
+
+.piano-key {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 4px;
+    border: 2px solid var(--border-color);
+    background: var(--bg-primary);
+    cursor: default;
+    transition: all 0.2s;
+    position: relative;
+    min-width: 50px;
+}
+
+.white-key {
+    height: 100px;
+    background: var(--bg-secondary);
+}
+
+.black-key {
+    height: 70px;
+    background: var(--bg-primary);
+    border-color: var(--text-secondary);
+}
+
+.piano-key.in-scale {
+    border-color: var(--accent-primary);
+    background: rgba(255, 170, 0, 0.15);
+}
+
+.black-key.in-scale {
+    background: rgba(255, 170, 0, 0.1);
+}
+
+.piano-key.in-scale:hover {
+    background: rgba(255, 170, 0, 0.25);
+}
+
+.piano-key.playing {
+    border-color: var(--accent-secondary);
+    background: var(--accent-secondary) !important;
+    transform: scale(1.05);
+    box-shadow: 0 0 10px var(--accent-secondary);
+}
+
+.piano-key.playing .note-label,
+.piano-key.playing .degree-label {
+    color: var(--bg-primary);
+}
+
+.note-label {
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    transition: color 0.3s ease;
+}
+
+.piano-key.in-scale .note-label {
+    color: var(--accent-primary);
+}
+
+.degree-label {
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--accent-secondary);
+    margin-top: 4px;
+    transition: color 0.3s ease;
+}
+
+.scale-legend {
+    display: flex;
+    gap: 20px;
+    padding: 10px;
+    background: var(--bg-secondary);
+    border: 2px solid var(--border-color);
+    margin-bottom: 10px;
+    transition: all 0.3s ease;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.legend-indicator {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border-color);
+}
+
+.in-scale-indicator {
+    background: rgba(255, 170, 0, 0.15);
+    border-color: var(--accent-primary);
+}
+
+.playing-indicator {
+    background: var(--accent-secondary);
+    border-color: var(--accent-secondary);
+}
+
+.legend-text {
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    transition: color 0.3s ease;
+}
+
+.keyboard-hints {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 10px;
+    background: var(--bg-secondary);
+    border: 2px solid var(--border-color);
+    transition: all 0.3s ease;
+}
+
+.hint-title {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent-secondary);
+    letter-spacing: 1px;
+    transition: color 0.3s ease;
+}
+
+.hint-text {
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    color: var(--accent-primary);
+    transition: color 0.3s ease;
+}
+
+@media (max-width: 768px) {
+    .piano-roll {
+        gap: 2px;
+        min-height: 80px;
+    }
+
+    .piano-key {
+        min-width: 30px;
+        padding: 6px 2px;
+    }
+
+    .white-key {
+        height: 70px;
+    }
+
+    .black-key {
+        height: 50px;
+    }
+
+    .note-label {
+        font-size: 9px;
+    }
+
+    .degree-label {
+        font-size: 8px;
+    }
+}
