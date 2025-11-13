@@ -1,13 +1,65 @@
-# Metju.Chord - React TypeScript Application
+# Metju.Chord
 
-A pure React TypeScript application built with Webpack (no Create React App, no Vite).
+An interactive musical chord and scale visualization tool built with React, TypeScript, and Tone.js. Play chords, create sequences, visualize scales, and explore music theory in your browser.
 
-## Prerequisites
+## Features
+
+### 🎹 Interactive Chord Grid
+
+- 12-note chromatic grid with customizable key and octave
+- Visual chord display showing chord names and intervals
+- Support for major, minor, diminished, and augmented chords
+- Chord inversions (root, 1st, 2nd inversion)
+
+### 🎵 Synthesis & Playback
+
+- Multiple synthesizer types:
+  - Synth (basic oscillator)
+  - AMSynth (amplitude modulation)
+  - FMSynth (frequency modulation)
+  - MonoSynth (monophonic lead synth)
+  - MembraneSynth (percussion-like tones)
+- Two play modes: Chord and Arpeggiator
+- Arpeggiator patterns: Up, Down, Up-Down, Random
+- Adjustable arpeggiator speed and note length
+
+### 🎚️ Audio Effects
+
+- Reverb with adjustable decay time
+- Delay with feedback and delay time controls
+- Real-time effect parameter adjustment
+
+### 📊 Scale Visualization
+
+- Visual representation of musical scales on the note grid
+- Highlights scale degrees and tonic notes
+- Helps understand scale patterns and relationships
+
+### 🎼 Sequencer
+
+- Record and playback chord sequences
+- 8+ programmable slots
+- Loop playback functionality
+- Visual sequence editing
+
+### ⏱️ Metronome
+
+- Adjustable BPM (30-240)
+- Visual and audio tempo guide
+- Start/stop controls
+
+### 🎨 Customization
+
+- Dark and light theme support
+- Adjustable octave range
+- Key selection (all 12 keys with major/minor modes)
+
+## Getting Started
+
+### Prerequisites
 
 - Node.js (version 20.9.0 or higher recommended)
 - npm or yarn
-
-## Getting Started
 
 ### Installation
 
@@ -37,69 +89,98 @@ npm run build
 
 The production-ready files will be in the `dist/` folder.
 
+## Deployment
+
+This project is configured for automatic deployment to GitHub Pages using GitHub Actions.
+
+### Setup GitHub Pages
+
+1. Go to your repository settings on GitHub
+2. Navigate to **Pages** (under Code and automation)
+3. Under **Source**, select **GitHub Actions**
+
+### Automatic Deployment
+
+Every push to the `master` branch will automatically:
+
+- Install dependencies
+- Build the production bundle
+- Deploy to GitHub Pages at `https://metjuperry.github.io/Metju.Chord/`
+
+You can also manually trigger deployment from the **Actions** tab.
+
+### Local Production Build
+
+Build for production locally:
+
+```bash
+npm run build
+```
+
 ## Project Structure
 
 ```text
 Metju.Chord/
 ├── src/
-│   ├── index.tsx         # Application entry point
-│   ├── App.tsx           # Main App component
-│   ├── App.css           # App styles
-│   └── index.css         # Global styles
+│   ├── index.tsx           # Application entry point
+│   ├── App.tsx             # Main App component with audio engine
+│   ├── App.css             # App styles
+│   ├── ChordDisplay.tsx    # Chord name and interval display
+│   ├── ChordGrid.tsx       # Interactive note grid
+│   ├── NoteButton.tsx      # Individual note button component
+│   ├── SettingsPanel.tsx   # Synth and playback settings
+│   ├── EffectsPanel.tsx    # Audio effects controls
+│   ├── Sequencer.tsx       # Chord sequencer component
+│   ├── Metronome.tsx       # Metronome component
+│   ├── ScaleVisualizer.tsx # Scale visualization overlay
+│   ├── ScalePicker.tsx     # Key and scale selection
+│   ├── FeatureMenu.tsx     # Feature toggle menu
+│   ├── chordUtils.ts       # Music theory utilities
+│   └── index.css           # Global styles
 ├── public/
-│   └── index.html        # HTML template
-├── webpack.config.js     # Webpack configuration
-├── tsconfig.json         # TypeScript configuration
-└── package.json          # Dependencies and scripts
+│   └── index.html          # HTML template
+├── webpack.config.js       # Webpack configuration
+├── tsconfig.json           # TypeScript configuration
+└── package.json            # Dependencies and scripts
 ```
-
-## Available Scripts
-
-- **`npm start`** - Starts the development server with hot reloading
-- **`npm run build`** - Creates an optimized production build
 
 ## Tech Stack
 
 - **React 19** - UI library
 - **TypeScript 5** - Type safety and better developer experience
-- **Webpack 5** - Module bundler
-- **ts-loader** - TypeScript loader for Webpack
+- **Webpack 5** - Module bundler from scratch (no CRA/Vite)
+- **Tone.js 15** - Web Audio framework for synthesis and effects
+- **ts-loader** - TypeScript compilation
 
-## Features
+## Usage
 
-- ✅ Pure React and TypeScript setup
-- ✅ Webpack configuration from scratch
-- ✅ Hot Module Replacement (HMR)
-- ✅ TypeScript strict mode enabled
-- ✅ CSS support with style-loader and css-loader
-- ✅ Development server with auto-reload
+1. **Select a Key**: Choose your desired musical key and mode (major/minor)
+2. **Play Notes**: Click any note in the grid to play it
+3. **Build Chords**: Click multiple notes to create chords
+4. **Adjust Settings**:
+   - Change synthesizer type
+   - Switch between chord and arpeggiator modes
+   - Adjust arpeggiator pattern and speed
+5. **Add Effects**: Toggle reverb and delay with custom parameters
+6. **Visualize Scales**: Enable scale visualization to see note relationships
+7. **Record Sequences**: Use the sequencer to record and loop chord progressions
+8. **Keep Time**: Enable the metronome for rhythm practice
 
-## Configuration Files
+## Development
 
-### `webpack.config.js`
+This project uses a custom Webpack configuration without any framework scaffolding tools. Key aspects:
 
-Custom Webpack configuration handling:
+- **Hot Module Replacement (HMR)** for instant updates during development
+- **TypeScript strict mode** for maximum type safety
+- **CSS modules** support with style-loader and css-loader
+- **Custom webpack.config.js** handling all build processes
 
-- TypeScript compilation with ts-loader
-- CSS loading and injection
-- Development server with hot reload
-- HTML template generation
+### Development Tips
 
-### `tsconfig.json`
-
-TypeScript compiler options with:
-
-- Strict type checking
-- Modern ES2020 target
-- React JSX support
-- Module resolution for npm packages
-
-## Development Tips
-
-- Edit files in the `src/` directory
-- Changes will automatically reload in the browser
-- TypeScript will provide type checking in your editor
-- Check the console for any build errors or warnings
+- Edit files in the `src/` directory - changes reload automatically
+- TypeScript provides real-time type checking in your editor
+- Check the browser console for audio context warnings (click to start audio)
+- Use browser DevTools to inspect Tone.js audio graph
 
 ## License
 
