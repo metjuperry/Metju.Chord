@@ -247,18 +247,130 @@
     color: var(--bg-primary);
 }
 
-.paste-btn {
+.slot-action-btn.tie-btn {
+    color: transparent;
+    text-shadow: 0 0 0 var(--accent-primary);
+    font-size: 16px;
+}
+
+.slot-action-btn.tie-btn:hover {
+    color: transparent;
+    text-shadow: 0 0 0 var(--accent-primary);
+    background: var(--accent-secondary);
+    color: var(--bg-primary);
+}
+
+.slot-action-btn.tie-btn.active {
+    color: transparent;
+    text-shadow: 0 0 0 var(--accent-primary);
+    background: var(--accent-secondary);
+    color: var(--bg-primary);
+}
+
+/* Tie Line - Visual connector between tied slots */
+.tie-line {
     position: absolute;
+    right: -25%;
     top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+    transform: translateY(-50%);
+    width: 30px;
+    height: 30px;
+    z-index: 10;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 35px;
+}
+
+.tie-line::before {
+    content: '🔗';
+    color: transparent;
+    text-shadow: 0 0 0 var(--accent-secondary);
+}
+
+/* Tied slot styling */
+.sequencer-slot.tied.filled {
+    position: relative;
+}
+
+.paste-btn {
     width: 40px;
     height: 40px;
-    background: var(--border-color);
-    border: 2px solid var(--text-secondary);
+    background: var(--accent-primary);
+    border: 3px solid var(--border-color);
     border-radius: 0;
-    color: var(--accent-primary);
+    color: var(--bg-primary);
     font-size: 20px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    box-shadow: 2px 2px 0 var(--border-color);
+    animation: pulse-paste 1.5s ease-in-out infinite;
+}
+
+.paste-btn:hover {
+    background: var(--accent-secondary);
+    color: var(--bg-primary);
+    border-color: var(--accent-secondary);
+    transform: scale(1.1);
+}
+
+@keyframes pulse-paste {
+
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.8;
+        transform: scale(1.05);
+    }
+}
+
+/* Empty Slot Actions */
+.empty-slot-actions {
+    position: absolute;
+    bottom: 5px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+}
+
+.empty-slot-actions .record-btn,
+.empty-slot-actions .rest-btn {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.sequencer-slot:hover .empty-slot-actions .record-btn,
+.sequencer-slot:hover .empty-slot-actions .rest-btn {
+    opacity: 1;
+}
+
+/* Paste button is always visible when it exists */
+.empty-slot-actions .paste-btn {
+    opacity: 1;
+}
+
+/* Record Button */
+.record-btn {
+    width: 32px;
+    height: 32px;
+    background: var(--bg-secondary);
+    border: 2px solid var(--accent-danger);
+    border-radius: 50%;
+    color: var(--accent-danger);
+    font-size: 16px;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -266,10 +378,64 @@
     transition: all 0.15s ease;
 }
 
-.paste-btn:hover {
-    background: var(--accent-primary);
+.record-btn:hover {
+    background: var(--accent-danger);
     color: var(--bg-primary);
-    border-color: var(--accent-primary);
+    border-color: var(--accent-danger);
+}
+
+/* Rest Button */
+.rest-btn {
+    width: 32px;
+    height: 32px;
+    background: var(--bg-secondary);
+    border: 2px solid var(--text-secondary);
+    border-radius: 0;
+    color: var(--text-secondary);
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.rest-btn:hover {
+    background: var(--text-secondary);
+    color: var(--bg-primary);
+    border-color: var(--text-secondary);
+}
+
+/* Rest Slot Styling */
+.sequencer-slot.rest {
+    border-color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border-style: dashed;
+}
+
+.sequencer-slot.rest:hover {
+    border-color: var(--text-secondary);
+}
+
+.sequencer-slot.rest.playing {
+    border-color: var(--accent-secondary);
+    background: var(--bg-secondary);
+    animation: pulse-playing 0.5s ease-in-out infinite;
+}
+
+.rest-indicator {
+    font-size: 48px;
+    color: var(--text-secondary);
+    opacity: 0.5;
+    line-height: 1;
+}
+
+.sequencer-slot.rest .slot-actions {
+    opacity: 0;
+}
+
+.sequencer-slot.rest:hover .slot-actions {
+    opacity: 1;
 }
 
 .sequencer-row-controls {

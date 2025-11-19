@@ -16,11 +16,12 @@ interface FeatureMenuProps {
     onEffectsToggle: (show: boolean) => void;
     onScaleVizToggle: (show: boolean) => void;
     onThemeToggle: () => void;
+    onHelpToggle: () => void;
 }
 
 class FeatureMenu extends Component<FeatureMenuProps> {
     render() {
-        const { isOpen, onToggle, showMetronome, showSequencer, showArpSettings, showEffects, showScaleViz, theme, onMetronomeToggle, onSequencerToggle, onArpSettingsToggle, onEffectsToggle, onScaleVizToggle, onThemeToggle } = this.props;
+        const { isOpen, onToggle, showMetronome, showSequencer, showArpSettings, showEffects, showScaleViz, theme, onMetronomeToggle, onSequencerToggle, onArpSettingsToggle, onEffectsToggle, onScaleVizToggle, onThemeToggle, onHelpToggle } = this.props;
 
         return (
             <>
@@ -28,6 +29,10 @@ class FeatureMenu extends Component<FeatureMenuProps> {
                     <div className="hamburger-line"></div>
                     <div className="hamburger-line"></div>
                     <div className="hamburger-line"></div>
+                </button>
+
+                <button className="help-button" onClick={onHelpToggle} title="Help & Documentation" aria-label="Help & Documentation">
+                    ?
                 </button>
 
                 {isOpen && <div className="menu-overlay" onClick={onToggle}></div>}

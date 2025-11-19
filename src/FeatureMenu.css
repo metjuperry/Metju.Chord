@@ -40,6 +40,38 @@
     background: var(--accent-danger);
 }
 
+/* Help Button */
+.help-button {
+    position: fixed;
+    top: 20px;
+    left: 75px;
+    width: 45px;
+    height: 45px;
+    background: var(--bg-primary);
+    border: 3px solid var(--accent-primary);
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 0;
+    z-index: 1000;
+    transition: border-color 0.2s, color 0.2s;
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--accent-primary);
+    font-family: 'Courier New', monospace;
+}
+
+.help-button:hover {
+    border-color: var(--accent-secondary);
+    color: var(--accent-secondary);
+}
+
+.help-button:active {
+    border-color: var(--accent-danger);
+    color: var(--accent-danger);
+}
+
 .menu-overlay {
     position: fixed;
     top: 0;

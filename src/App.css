@@ -50,6 +50,78 @@
     animation: spin 1s linear infinite;
 }
 
+/* Audio Start Overlay */
+.audio-start-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--bg-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 9999;
+}
+
+.audio-start-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 30px;
+    padding: 60px;
+    background: var(--bg-secondary);
+    border: 4px solid var(--border-color);
+    box-shadow: 8px 8px 0 var(--bg-primary);
+    transition: transform 0.2s ease;
+}
+
+.audio-start-overlay:hover .audio-start-content {
+    transform: translate(-2px, -2px);
+    box-shadow: 10px 10px 0 var(--bg-primary);
+}
+
+.audio-start-content h1 {
+    margin: 0;
+    font-size: 48px;
+    color: var(--accent-primary);
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    font-weight: 700;
+}
+
+.audio-start-button {
+    padding: 20px 40px;
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    background: var(--accent-primary);
+    color: var(--bg-primary);
+    border: 3px solid var(--border-color);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 4px 4px 0 var(--border-color);
+}
+
+.audio-start-button:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 6px 6px 0 var(--border-color);
+}
+
+.audio-start-button:active {
+    transform: translate(2px, 2px);
+    box-shadow: 2px 2px 0 var(--border-color);
+}
+
+.audio-start-content p {
+    margin: 0;
+    font-size: 14px;
+    color: var(--text-secondary);
+    letter-spacing: 1px;
+}
+
 @keyframes spin {
     0% {
         transform: rotate(0deg);

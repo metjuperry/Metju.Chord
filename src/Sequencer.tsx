@@ -6,12 +6,15 @@ export interface SequencerSlot {
     notes: string[];
     octave?: number;
     playMode?: 'Chord' | 'Arp';
+    isRest?: boolean;
+    isTied?: boolean;
 }
 
 interface SequencerProps {
     slots: SequencerSlot[];
     recordingIndex: number | null;
     playingIndex: number | null;
+    bpm: number;
     onSlotClick: (index: number) => void;
     onClear: () => void;
     onStepFirst: () => void;
@@ -21,12 +24,14 @@ interface SequencerProps {
     onRemoveRow: () => void;
     onCopySlot: (targetIndex: number, copiedSlot: SequencerSlot) => void;
     onDeleteSlot: (index: number) => void;
+    onSetRest: (index: number) => void;
+    onToggleTie: (index: number) => void;
+    onBpmChange: (bpm: number) => void;
 }
 
 interface SequencerState {
     isPlaying: boolean;
     loopMode: boolean;
-    tempo: number;
     copiedSlot: SequencerSlot | null;
 }
 
@@ -38,7 +43,6 @@ class Sequencer extends Component<SequencerProps, SequencerState> {
         this.state = {
             isPlaying: false,
             loopMode: false,
-            tempo: 120,
             copiedSlot: null,
         };
     }
@@ -48,18 +52,18 @@ class Sequencer extends Component<SequencerProps, SequencerState> {
     }
 
     startPlayback = () => {
-        const { onStepNext } = this.props;
-        const { tempo } = this.state;
+        const { onStepNext, bpm } = this.props;
 
         this.setState({ isPlaying: true });
 
         // Start from first slot or current position
         if (this.props.playingIndex === null) {
-            this.props.onStepFirst();
+            // Start from beginning - play first slot immediately
+            onStepNext();
         }
 
         // Set up interval based on tempo (BPM to milliseconds)
-        const interval = (60 / tempo) * 1000;
+        const interval = (60 / bpm) * 1000;
         this.playInterval = setInterval(() => {
             const { loopMode } = this.state;
             const { playingIndex, slots } = this.props;
@@ -99,8 +103,11 @@ class Sequencer extends Component<SequencerProps, SequencerState> {
     };
 
     adjustTempo = (delta: number) => {
+        const { bpm, onBpmChange } = this.props;
+        const newTempo = Math.max(40, Math.min(240, bpm + delta));
+        onBpmChange(newTempo);
+
         this.setState(prev => {
-            const newTempo = Math.max(40, Math.min(240, prev.tempo + delta));
 
             // Restart playback with new tempo if currently playing
             if (prev.isPlaying) {
@@ -125,7 +132,7 @@ class Sequencer extends Component<SequencerProps, SequencerState> {
                 }, interval);
             }
 
-            return { tempo: newTempo };
+            return prev;
         });
     };
 
@@ -155,6 +162,16 @@ class Sequencer extends Component<SequencerProps, SequencerState> {
         this.props.onDeleteSlot(index);
     };
 
+    handleSetRest = (index: number, e: React.MouseEvent) => {
+        e.stopPropagation();
+        this.props.onSetRest(index);
+    };
+
+    handleToggleTie = (index: number, e: React.MouseEvent) => {
+        e.stopPropagation();
+        this.props.onToggleTie(index);
+    };
+
     // Group slots into rows of 8
     getSlotRows = (): SequencerSlot[][] => {
         const { slots } = this.props;
@@ -169,7 +186,8 @@ class Sequencer extends Component<SequencerProps, SequencerState> {
 
     render() {
         const { slots, recordingIndex, playingIndex, onSlotClick, onClear, onStepFirst, onStepPrev, onStepNext, onAddRow, onRemoveRow } = this.props;
-        const { isPlaying, loopMode, tempo, copiedSlot } = this.state;
+        const { isPlaying, loopMode, copiedSlot } = this.state;
+        const { bpm } = this.props;
         const slotRows = this.getSlotRows();
 
         return (
@@ -180,7 +198,7 @@ class Sequencer extends Component<SequencerProps, SequencerState> {
                         <div className="tempo-control">
                             <button className="tempo-button" onClick={() => this.adjustTempo(-10)}>-</button>
                             <div className="tempo-display">
-                                <span className="tempo-value">{tempo}</span>
+                                <span className="tempo-value">{bpm}</span>
                                 <span className="tempo-label">BPM</span>
                             </div>
                             <button className="tempo-button" onClick={() => this.adjustTempo(10)}>+</button>
@@ -194,23 +212,50 @@ class Sequencer extends Component<SequencerProps, SequencerState> {
                             <div className="sequencer-slots">
                                 {row.map((slot, colIndex) => {
                                     const index = rowIndex * 8 + colIndex;
+                                    const nextSlot = slots[index + 1];
+                                    // Can tie only if next slot exists and has same chord
+                                    const canTie = slot.chordName && !slot.isRest &&
+                                        nextSlot && nextSlot.chordName === slot.chordName && !nextSlot.isRest;
                                     return (
                                         <div
                                             key={index}
-                                            className={`sequencer-slot ${recordingIndex === index ? 'recording' : ''} ${playingIndex === index ? 'playing' : ''} ${slot.chordName ? 'filled' : ''}`}
+                                            className={`sequencer-slot ${recordingIndex === index ? 'recording' : ''} ${playingIndex === index ? 'playing' : ''} ${slot.chordName ? 'filled' : ''} ${slot.isRest ? 'rest' : ''} ${slot.isTied ? 'tied' : ''}`}
                                             onClick={() => onSlotClick(index)}
                                         >
                                             <div className="slot-number">{index + 1}</div>
                                             {recordingIndex === index && (
                                                 <div className="recording-indicator">●</div>
                                             )}
-                                            {slot.chordName && (
+                                            {slot.isRest ? (
+                                                <>
+                                                    <div className="rest-indicator">𝄽</div>
+                                                    <div className="slot-actions">
+                                                        <button
+                                                            className="slot-action-btn delete-btn"
+                                                            onClick={(e) => this.handleDeleteSlot(index, e)}
+                                                            title="Delete"
+                                                        >
+                                                            ×
+                                                        </button>
+                                                    </div>
+                                                </>
+                                            ) : slot.chordName ? (
                                                 <>
                                                     <div className="slot-content">
                                                         <div className="slot-chord">{slot.chordName}</div>
                                                         <div className="slot-notes">{slot.notes.join(' ')}</div>
                                                     </div>
+                                                    {slot.isTied && <div className="tie-line"></div>}
                                                     <div className="slot-actions">
+                                                        {canTie && (
+                                                            <button
+                                                                className={`slot-action-btn tie-btn ${slot.isTied ? 'active' : ''}`}
+                                                                onClick={(e) => this.handleToggleTie(index, e)}
+                                                                title={slot.isTied ? "Remove Tie" : "Tie to Next"}
+                                                            >
+                                                                🔗
+                                                            </button>
+                                                        )}
                                                         <button
                                                             className="slot-action-btn copy-btn"
                                                             onClick={(e) => this.handleCopySlot(index, e)}
@@ -227,15 +272,32 @@ class Sequencer extends Component<SequencerProps, SequencerState> {
                                                         </button>
                                                     </div>
                                                 </>
-                                            )}
-                                            {!slot.chordName && copiedSlot && (
-                                                <button
-                                                    className="paste-btn"
-                                                    onClick={(e) => this.handlePasteSlot(index, e)}
-                                                    title="Paste"
-                                                >
-                                                    ⧉
-                                                </button>
+                                            ) : (
+                                                <div className="empty-slot-actions">
+                                                    {copiedSlot && (
+                                                        <button
+                                                            className="paste-btn"
+                                                            onClick={(e) => this.handlePasteSlot(index, e)}
+                                                            title="Paste"
+                                                        >
+                                                            ⧉
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        className="record-btn"
+                                                        onClick={(e) => { e.stopPropagation(); onSlotClick(index); }}
+                                                        title="Start Recording"
+                                                    >
+                                                        ●
+                                                    </button>
+                                                    <button
+                                                        className="rest-btn"
+                                                        onClick={(e) => this.handleSetRest(index, e)}
+                                                        title="Add Rest"
+                                                    >
+                                                        𝄽
+                                                    </button>
+                                                </div>
                                             )}
                                         </div>
                                     );

@@ -10,6 +10,7 @@ import Metronome from './Metronome';
 import FeatureMenu from './FeatureMenu';
 import EffectsPanel from './EffectsPanel';
 import ScaleVisualizer from './ScaleVisualizer';
+import HelpPanel from './HelpPanel';
 import { buildChord, getNoteInKey } from './chordUtils';
 import * as Tone from 'tone';
 
@@ -35,14 +36,17 @@ interface AppState {
     arpSpeed: number;
     noteLength: number;
     bpm: number;
+    sequencerBpm: number;
     menuOpen: boolean;
     showMetronome: boolean;
     showSequencer: boolean;
     showArpSettings: boolean;
     showEffects: boolean;
     showScaleViz: boolean;
+    showHelp: boolean;
     theme: 'dark' | 'light';
     isLoading: boolean;
+    audioReady: boolean;
 }
 
 class App extends Component<{}, AppState> {
@@ -66,14 +70,17 @@ class App extends Component<{}, AppState> {
             arpSpeed: 0.15,
             noteLength: 0.5,
             bpm: 120,
+            sequencerBpm: 120,
             menuOpen: false,
             showMetronome: false,
             showSequencer: false,
             showArpSettings: false,
             showEffects: false,
             showScaleViz: false,
+            showHelp: false,
             theme: 'dark',
             isLoading: true,
+            audioReady: false,
         };
     }
 
@@ -81,12 +88,10 @@ class App extends Component<{}, AppState> {
         this.applyTheme(this.state.theme);
         window.addEventListener('keydown', this.handleKeyPress);
 
+        // Initialize synth without starting AudioContext
         try {
-            await this.initializeSynth(this.state.synthType);
-            // Small delay to ensure everything is ready
-            setTimeout(() => {
-                this.setState({ isLoading: false });
-            }, 500);
+            await this.initializeSynth(this.state.synthType, false);
+            this.setState({ isLoading: false });
         } catch (error) {
             console.error('Failed to initialize audio:', error);
             this.setState({ isLoading: false });
@@ -144,7 +149,7 @@ class App extends Component<{}, AppState> {
     playChord = async (notes: string[], chordName: string) => {
         const { octave, playMode, arpPattern, arpSpeed, noteLength, recordingIndex, sequencerSlots } = this.state;
 
-        await Tone.start();
+        await this.ensureAudioReady();
 
         // Update display
         this.setState({
@@ -199,7 +204,14 @@ class App extends Component<{}, AppState> {
         }
     };
 
-    initializeSynth = async (type: SynthType) => {
+    ensureAudioReady = async () => {
+        if (!this.state.audioReady) {
+            await Tone.start();
+            this.setState({ audioReady: true });
+        }
+    };
+
+    initializeSynth = async (type: SynthType, startAudio: boolean = true) => {
         // Dispose of old synth if it exists
         if (this.synth) {
             this.synth.dispose();
@@ -225,8 +237,10 @@ class App extends Component<{}, AppState> {
                 break;
         }
 
-        // Ensure Tone.js is ready
-        await Tone.start();
+        // Only start audio if requested (for user gesture requirement)
+        if (startAudio) {
+            await this.ensureAudioReady();
+        }
     };
 
     handleKeyChange = (key: MusicalKey) => {
@@ -273,6 +287,10 @@ class App extends Component<{}, AppState> {
         this.setState({ bpm });
     };
 
+    handleSequencerBpmChange = (bpm: number) => {
+        this.setState({ sequencerBpm: bpm });
+    };
+
     handleMenuToggle = () => {
         this.setState((prevState) => ({ menuOpen: !prevState.menuOpen }));
     };
@@ -295,6 +313,10 @@ class App extends Component<{}, AppState> {
 
     handleScaleVizToggle = (show: boolean) => {
         this.setState({ showScaleViz: show });
+    };
+
+    handleHelpToggle = () => {
+        this.setState(prevState => ({ showHelp: !prevState.showHelp }));
     };
 
     handleJoystickChange = (position: string) => {
@@ -350,11 +372,29 @@ class App extends Component<{}, AppState> {
         this.setState({ sequencerSlots: newSlots });
     };
 
+    handleSetRest = (index: number) => {
+        const { sequencerSlots } = this.state;
+        const newSlots = [...sequencerSlots];
+        newSlots[index] = { chordName: 'REST', notes: [], isRest: true };
+        this.setState({ sequencerSlots: newSlots });
+    };
+
+    handleToggleTie = (index: number) => {
+        const { sequencerSlots } = this.state;
+        const newSlots = [...sequencerSlots];
+        newSlots[index] = { ...newSlots[index], isTied: !newSlots[index].isTied };
+        this.setState({ sequencerSlots: newSlots });
+    };
+
     playSequencerSlot = async (index: number) => {
         const { sequencerSlots } = this.state;
         const slot = sequencerSlots[index];
 
         if (!slot.chordName || !this.synth) return;
+
+        // Check if previous slot is tied to this one (sustain instead of retrigger)
+        const prevSlot = index > 0 ? sequencerSlots[index - 1] : null;
+        const isTiedFromPrevious = prevSlot && prevSlot.isTied && prevSlot.chordName === slot.chordName;
 
         // Set playing state immediately
         this.setState({
@@ -363,7 +403,38 @@ class App extends Component<{}, AppState> {
             playingIndex: index
         });
 
-        await Tone.start();
+        // If it's a rest, don't play any sound
+        if (slot.isRest) {
+            return;
+        }
+
+        // If tied from previous slot, don't retrigger (just sustain)
+        if (isTiedFromPrevious) {
+            return;
+        }
+
+        await this.ensureAudioReady();
+
+        // Calculate note duration based on BPM and tied chain length
+        const { sequencerBpm } = this.state;
+        const beatDuration = 60 / sequencerBpm; // Duration of one beat in seconds
+
+        // Count how many slots are in the tie chain (including this one if tied)
+        let tieCount = 1;
+        if (slot.isTied) {
+            let nextIndex = index + 1;
+            while (nextIndex < sequencerSlots.length) {
+                const nextSlot = sequencerSlots[nextIndex];
+                if (nextSlot.chordName === slot.chordName && sequencerSlots[nextIndex - 1].isTied) {
+                    tieCount++;
+                    nextIndex++;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        const duration = beatDuration * tieCount;
 
         // Add octave numbers back for playback using saved octave and playMode
         const octave = slot.octave ?? 4;
@@ -375,22 +446,18 @@ class App extends Component<{}, AppState> {
             const arpDelay = 0.1;
             notesToPlay.forEach((note, i) => {
                 setTimeout(() => {
-                    this.synth?.triggerAttackRelease(note, '0.5');
+                    this.synth?.triggerAttackRelease(note, duration);
                 }, i * arpDelay * 1000);
             });
         } else {
             // Chord: play all notes at once
-            this.synth.triggerAttackRelease(notesToPlay, '0.5');
+            this.synth.triggerAttackRelease(notesToPlay, duration);
         }
     };
 
     handleStepFirst = () => {
-        const { sequencerSlots } = this.state;
-        // Find first filled slot
-        const firstFilledIndex = sequencerSlots.findIndex(slot => slot.chordName);
-        if (firstFilledIndex !== -1) {
-            this.playSequencerSlot(firstFilledIndex);
-        }
+        // Reset cursor to beginning (no slot selected)
+        this.setState({ playingIndex: null });
     };
 
     handleStepPrev = () => {
@@ -559,8 +626,12 @@ class App extends Component<{}, AppState> {
         return `${selectedKey} ${chordName}`;
     };
 
+    handleStartAudio = async () => {
+        await this.ensureAudioReady();
+    };
+
     render() {
-        const { selectedKey, octave, synthType, playMode, inversion, joystickPosition, lastPlayedChord, lastPlayedNotes, sequencerSlots, recordingIndex, playingIndex, arpPattern, arpSpeed, noteLength, bpm, menuOpen, showMetronome, showSequencer, showArpSettings, showEffects, showScaleViz, isLoading } = this.state;
+        const { selectedKey, octave, synthType, playMode, inversion, joystickPosition, lastPlayedChord, lastPlayedNotes, sequencerSlots, recordingIndex, playingIndex, arpPattern, arpSpeed, noteLength, bpm, menuOpen, showMetronome, showSequencer, showArpSettings, showEffects, showScaleViz, showHelp, isLoading, audioReady } = this.state;
 
         if (isLoading) {
             return (
@@ -569,6 +640,21 @@ class App extends Component<{}, AppState> {
                         <div className="loading-spinner"></div>
                         <h2>Loading Audio Engine...</h2>
                         <p>Initializing Tone.js</p>
+                    </div>
+                </div>
+            );
+        }
+
+        if (!audioReady) {
+            return (
+                <div className="App">
+                    <div className="audio-start-overlay" onClick={this.handleStartAudio}>
+                        <div className="audio-start-content">
+                            <h1>Metju.Chord</h1>
+                            <button className="audio-start-button">
+                                Click to Start
+                            </button>
+                        </div>
                     </div>
                 </div>
             );
@@ -591,6 +677,12 @@ class App extends Component<{}, AppState> {
                     onEffectsToggle={this.handleEffectsToggle}
                     onScaleVizToggle={this.handleScaleVizToggle}
                     onThemeToggle={this.handleThemeToggle}
+                    onHelpToggle={this.handleHelpToggle}
+                />
+
+                <HelpPanel
+                    isOpen={showHelp}
+                    onClose={this.handleHelpToggle}
                 />
 
                 <header className="App-header">
@@ -650,6 +742,7 @@ class App extends Component<{}, AppState> {
                                 slots={sequencerSlots}
                                 recordingIndex={recordingIndex}
                                 playingIndex={playingIndex}
+                                bpm={this.state.sequencerBpm}
                                 onSlotClick={this.handleSequencerSlotClick}
                                 onClear={this.handleClearSequencer}
                                 onStepFirst={this.handleStepFirst}
@@ -659,6 +752,9 @@ class App extends Component<{}, AppState> {
                                 onRemoveRow={this.handleRemoveRow}
                                 onCopySlot={this.handleCopySlot}
                                 onDeleteSlot={this.handleDeleteSlot}
+                                onSetRest={this.handleSetRest}
+                                onToggleTie={this.handleToggleTie}
+                                onBpmChange={this.handleSequencerBpmChange}
                             />
                         )}
 
