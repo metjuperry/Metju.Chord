@@ -8,6 +8,7 @@ import { useMedia } from './useMedia';
 import SoundPanel from './components/SoundPanel';
 import Progression from './components/Progression';
 import HelpDialog from './components/HelpDialog';
+import DrumEditor from './components/DrumEditor';
 import {
     ArpPattern, ChordParams, MusicalKey, ResolvedChord, StickDir,
     STICK_DIRS, ScaleId, buildChordMidi, keyPitchClass, resolveChord, romanNumeral, scaleLabel, scalePitchClasses,
@@ -27,6 +28,10 @@ import {
     audibleTracks, clipAt, fitTo, isChordClip, newTrack, place, remove, setLength, songEnd, songLoopEnd, split,
 } from './progression';
 import { SeqEvent, SeqOptions, SequencerPlayer, ticksToSeconds } from './audio/sequencer';
+import {
+    DrumPattern, DrumVoice, PatternBars, TICKS_PER_SIXTEENTH, emptyPattern, expandPattern, hasHit, presetsFor, setBars,
+    sixteenthsPerBar, sixteenthsPerStep, toggleHit,
+} from './drums';
 
 const DEGREE_KEYS: { [code: string]: number } = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5, Digit7: 6 };
 const STICK_KEYS: { [code: string]: StickDir } = {
@@ -38,11 +43,23 @@ const MAX_INVERSION = 3;
 /** Instruments offered to new tracks, in order. */
 const NEW_TRACK_INSTRUMENTS: InstrumentId[] = ['lead', 'strings', 'bells', 'brass', 'organ', 'pluck', 'epiano', 'warmpad'];
 
-/** What the sequencer schedules: a chord and the track it plays on. */
-interface Scheduled {
-    clip: ChordClip;
-    track: string;
+/** What the sequencer schedules: a chord or a drum hit, and the track it plays on. */
+type Scheduled =
+    | { clip: ChordClip; track: string; drum?: undefined }
+    | { drum: DrumVoice; track: string };
+
+/** Keep the engine's strips in step with the tracks: an instrument per chord track, a kit per drum track. */
+function syncTracks(engine: ReturnType<typeof getEngine>, tracks: Track[]) {
+    tracks.forEach(t => (t.drums
+        ? engine.setDrumTrack(t.id, { volume: t.volume })
+        : engine.setTrack(t.id, { instrument: t.instrument, volume: t.volume })));
 }
+
+interface PlayState { tracks: Track[]; barTicks: number; stepTicks: number; total: number; loop: boolean }
+/** Where looping playback wraps: the end of the music, rounded up to a bar, but never past the sequencer's length. */
+const loopLength = (s: PlayState) => Math.min(songLoopEnd(s.tracks, s.barTicks), s.total * s.stepTicks);
+/** How far playback goes before it wraps or stops. */
+const playLength = (s: PlayState) => (s.loop ? loopLength(s) : songEnd(s.tracks, s.barTicks));
 
 /** The song and settings saved in this browser, if any. */
 function loadSaved(): SavedState | null {
@@ -116,8 +133,20 @@ const App: React.FC = () => {
         editSong(sg => ({ ...sg, tracks: update(sg.tracks) }), mergeKey);
     const setBpm = (b: number) => editSong(sg => ({ ...sg, bpm: b }), 'bpm');
     const [selectedTrack, setSelectedTrack] = useState('');
-    // The selected track: pads play through it and recordings land on it
-    const current = tracks.find(t => t.id === selectedTrack) ?? tracks[0];
+    const [chordTrack, setChordTrack] = useState('');
+    /** The track selected in the sequencer: a chord track or a drum track. */
+    const selTrack = tracks.find(t => t.id === selectedTrack) ?? tracks[0];
+    // The chord track the pads play through and recordings land on: the selected one, or with a
+    // drum track selected, the chord track that was selected before it
+    const current = (!selTrack.drums ? selTrack : undefined)
+        ?? tracks.find(t => t.id === chordTrack && !t.drums)
+        ?? tracks.find(t => !t.drums)
+        ?? tracks[0];
+    const drumTrack = selTrack.drums ? selTrack : null;
+    const pickTrack = (id: string) => {
+        setSelectedTrack(id);
+        if (!tracks.find(t => t.id === id)?.drums) setChordTrack(id);
+    };
     const clips = current.clips;
     const instrument = current.instrument;
     const updateTrack = (id: string, patch: Partial<Track>) =>
@@ -127,6 +156,8 @@ const App: React.FC = () => {
     const setInstrument = (id: InstrumentId) => updateTrack(current.id, { instrument: id });
     const [selected, setSelected] = useState(0);
     const [playhead, setPlayhead] = useState(0);
+    /** The playhead in 1/16 steps from the top of the song, for the drum grid. */
+    const [playSixteenth, setPlaySixteenth] = useState(-1);
     const [playing, setPlaying] = useState(false);
     const [loop, setLoop] = useState(initial.loop);
     const [recording, setRecording] = useState(false);
@@ -138,8 +169,8 @@ const App: React.FC = () => {
     const [metBeat, setMetBeat] = useState<number | null>(null);
 
     // Latest state for Transport callbacks and the global key handler
-    const live = useRef({ stepTicks: T, barTicks, selectedKey, scale, voiceLeading, octave, inversion, stickDir, instrument, playMode, arpPattern, arpRate, noteLength, clips, tracks, total, selected, loop, recording });
-    live.current = { stepTicks: T, barTicks, selectedKey, scale, voiceLeading, octave, inversion, stickDir, instrument, playMode, arpPattern, arpRate, noteLength, clips, tracks, total, selected, loop, recording };
+    const live = useRef({ ts, stepTicks: T, barTicks, selectedKey, scale, voiceLeading, octave, inversion, stickDir, instrument, playMode, arpPattern, arpRate, noteLength, clips, tracks, total, selected, loop, recording });
+    live.current = { ts, stepTicks: T, barTicks, selectedKey, scale, voiceLeading, octave, inversion, stickDir, instrument, playMode, arpPattern, arpRate, noteLength, clips, tracks, total, selected, loop, recording };
 
     useEffect(() => {
         document.documentElement.setAttribute('data-theme', theme);
@@ -152,7 +183,7 @@ const App: React.FC = () => {
         await Tone.start();
         const engine = getEngine(); // built on first use, after the user gesture
         engine.setBpm(transportBpm(bpm, ts));
-        tracks.forEach(t => engine.setTrack(t.id, { instrument: t.instrument, volume: t.volume }));
+        syncTracks(engine, tracks);
         engine.selectTrack(current.id);
         setAudioReady(true);
     };
@@ -167,7 +198,7 @@ const App: React.FC = () => {
     useEffect(() => {
         if (!audioReady) return;
         const engine = getEngine();
-        tracks.forEach(t => engine.setTrack(t.id, { instrument: t.instrument, volume: t.volume }));
+        syncTracks(engine, tracks);
         engineTracks.current.forEach(id => {
             if (!tracks.some(t => t.id === id)) engine.removeTrack(id);
         });
@@ -267,16 +298,22 @@ const App: React.FC = () => {
     /** The progression as timed events, and how it loops (the grid is in steps, the events in ticks). */
     const schedule = (s = live.current): { events: SeqEvent<Scheduled>[]; opts: SeqOptions } => ({
         // Mute and solo only affect playback, so a muted track can still be played live from the pads
-        events: audibleTracks(s.tracks).flatMap(t => t.clips.filter(isChordClip).map(clip => ({
-            tick: clip.start, duration: clip.len, data: { clip, track: t.id },
-        }))),
-        opts: { loop: s.loop, loopEnd: Math.min(songLoopEnd(s.tracks, s.barTicks), s.total * s.stepTicks), end: songEnd(s.tracks) },
+        events: audibleTracks(s.tracks).flatMap((t): SeqEvent<Scheduled>[] => (t.drums
+            // a drum pattern repeats from the top until the loop (or the song) ends
+            ? expandPattern(t.drums, s.ts, playLength(s)).map(h => ({ tick: h.tick, duration: TICKS_PER_SIXTEENTH, data: { drum: h.voice, track: t.id } }))
+            : t.clips.filter(isChordClip).map(clip => ({ tick: clip.start, duration: clip.len, data: { clip, track: t.id } })))),
+        opts: { loop: s.loop, loopEnd: loopLength(s), end: songEnd(s.tracks, s.barTicks) },
     });
 
     // Each chord plays on its track's instrument, with the key and chord/arp settings it was recorded with.
     // The screen, stick and keyboard strip belong to live playing only, so nothing here touches them.
     const playEvent = (event: SeqEvent<Scheduled>, time: number) => {
-        const { clip, track } = event.data;
+        const data = event.data;
+        if (data.drum) {
+            getEngine().playDrum(data.track, data.drum, time);
+            return;
+        }
+        const { clip, track } = data;
         const c = clip.chord;
         const chord = resolveChord(c.key, c);
         const seconds = ticksToSeconds(event.duration);
@@ -315,6 +352,7 @@ const App: React.FC = () => {
         if (!playing) return;
         let frame = 0;
         let last = -1;
+        let lastSixteenth = -1;
         const draw = () => {
             const pos = player.current?.position();
             if (pos !== null && pos !== undefined) {
@@ -323,11 +361,19 @@ const App: React.FC = () => {
                     last = step;
                     setPlayhead(step);
                 }
+                const sixteenth = Math.floor(pos / TICKS_PER_SIXTEENTH);
+                if (sixteenth !== lastSixteenth) {
+                    lastSixteenth = sixteenth;
+                    setPlaySixteenth(sixteenth);
+                }
             }
             frame = requestAnimationFrame(draw);
         };
         frame = requestAnimationFrame(draw);
-        return () => cancelAnimationFrame(frame);
+        return () => {
+            cancelAnimationFrame(frame);
+            setPlaySixteenth(-1);
+        };
     }, [playing]);
 
     useEffect(() => () => player.current?.stop(), []);
@@ -374,7 +420,7 @@ const App: React.FC = () => {
     const selClip = clipAt(clips, selTick);
     const select = (step: number, track?: string) => {
         setSelected(step);
-        if (track) setSelectedTrack(track);
+        if (track) pickTrack(track);
         if (!playing) setPlayhead(step);
     };
     const trackActions = {
@@ -383,31 +429,77 @@ const App: React.FC = () => {
             const inst = NEW_TRACK_INSTRUMENTS.find(i => !used.has(i)) ?? 'epiano';
             const track = newTrack(tracks, inst);
             setTracks(ts => [...ts, track]);
+            pickTrack(track.id);
+        },
+        /** A drum track that starts with the first starter beat for the time signature, so Play just works. */
+        addDrums: () => {
+            const track: Track = { ...newTrack(tracks, 'epiano', tracks.some(t => t.drums) ? 'Drums 2' : 'Drums'), drums: presetsFor(ts)[0].make(ts) };
+            setTracks(all => [...all, track]);
             setSelectedTrack(track.id);
         },
         remove: (id: string) => {
-            if (tracks.length < 2) return;
+            const target = tracks.find(t => t.id === id);
+            // the pads need a chord track to play through, so the last one stays
+            if (!target || (!target.drums && tracks.filter(t => !t.drums).length < 2)) return;
             const rest = tracks.filter(t => t.id !== id);
             setTracks(ts => ts.filter(t => t.id !== id));
-            if (id === current.id) setSelectedTrack(rest[0].id);
+            if (id === selTrack.id) pickTrack(current.id !== id ? current.id : rest.find(t => !t.drums)!.id);
         },
     };
+
+    // ---- drum pattern editing (the selected drum track) ---------------------------------------
+    const setPattern = (update: (p: DrumPattern) => DrumPattern, mergeKey?: string) => {
+        if (!drumTrack) return;
+        const id = drumTrack.id;
+        editSong(sg => {
+            const tracks = sg.tracks.map(t => (t.id === id && t.drums ? { ...t, drums: update(t.drums) } : t));
+            // a pattern longer than the sequencer grows it by whole rows, so all of it plays
+            const bars = Math.max(...tracks.map(t => t.drums?.bars ?? 0));
+            const row = stepsPerRow(sg.timeSignature);
+            const steps = Math.max(sg.steps, Math.ceil((bars * sg.timeSignature.beats) / row) * row);
+            return { ...sg, tracks, steps };
+        }, mergeKey);
+    };
+    /** Hear a drum on the selected drum track (when tapping it on in the grid, or its name). */
+    const auditionDrum = async (voice: DrumVoice) => {
+        if (!drumTrack) return;
+        await startAudio();
+        getEngine().playDrum(drumTrack.id, voice);
+    };
+    const drumActions = {
+        toggle: (voice: DrumVoice, i: number) => {
+            if (!drumTrack?.drums) return;
+            // while stopped, hear what you just turned on
+            if (!playing && !hasHit(drumTrack.drums, voice, i)) auditionDrum(voice);
+            setPattern(p => toggleHit(p, voice, i));
+        },
+        bars: (bars: PatternBars) => setPattern(p => setBars(p, bars, ts)),
+        preset: (id: string) => {
+            const preset = presetsFor(ts).find(p => p.id === id);
+            if (preset) setPattern(() => preset.make(ts));
+        },
+        clear: () => setPattern(p => emptyPattern(p.bars)),
+    };
     const starts = clips.map(c => c.start / T);
+    /** Chord edits apply to the selected chord track; with a drum track selected they do nothing. */
+    const chordEdit = <A extends unknown[]>(fn: (...args: A) => unknown) => (...args: A) => {
+        if (!drumTrack) fn(...args);
+    };
     const edit = {
-        longer: () => selClip && setClips(setLength(clips, selClip, selClip.len + T, totalTicks)),
-        shorter: () => selClip && setClips(setLength(clips, selClip, selClip.len - T, totalTicks)),
-        split: () => selClip && setClips(split(clips, selClip, selTick)),
-        copy: () => selClip && setClipboard(selClip),
-        paste: () => clipboard && setClips(place(clips, { ...clipboard, start: selTick, len: Math.min(clipboard.len, totalTicks - selTick) })),
-        rest: () => {
+        longer: chordEdit(() => selClip && setClips(setLength(clips, selClip, selClip.len + T, totalTicks))),
+        shorter: chordEdit(() => selClip && setClips(setLength(clips, selClip, selClip.len - T, totalTicks))),
+        split: chordEdit(() => selClip && setClips(split(clips, selClip, selTick))),
+        copy: chordEdit(() => selClip && setClipboard(selClip)),
+        paste: chordEdit(() => clipboard && setClips(place(clips, { ...clipboard, start: selTick, len: Math.min(clipboard.len, totalTicks - selTick) }))),
+        rest: chordEdit(() => {
             const base = selClip ?? { start: selTick, len: T };
             setClips(place(selClip ? remove(clips, selClip) : clips, { start: base.start, len: base.len, rest: true }));
-        },
-        del: () => selClip && setClips(remove(clips, selClip)),
-        restamp: () => isChordClip(selClip) && setClips(place(remove(clips, selClip), { ...selClip, chord: { ...selClip.chord, ...currentSound() } })),
+        }),
+        del: chordEdit(() => selClip && setClips(remove(clips, selClip))),
+        restamp: chordEdit(() => isChordClip(selClip) && setClips(place(remove(clips, selClip), { ...selClip, chord: { ...selClip.chord, ...currentSound() } }))),
         clearAll: () => {
             stopPlayback();
-            setTracks(ts => ts.map(t => ({ ...t, clips: [] })));
+            setTracks(ts => ts.map(t => ({ ...t, clips: [], ...(t.drums ? { drums: emptyPattern(t.drums.bars) } : {}) })));
             setSelected(0);
             setPlayhead(0);
         },
@@ -720,10 +812,32 @@ const App: React.FC = () => {
                 timeSignature={ts}
                 onTimeSignature={edit.timeSignature}
                 tracks={tracks.map(t => ({ ...t, clips: t.clips.map(c => ({ ...c, start: c.start / T, len: c.len / T })) }))}
-                selectedTrack={current.id}
-                onSelectTrack={id => setSelectedTrack(id)}
+                selectedTrack={selTrack.id}
+                onSelectTrack={pickTrack}
                 onUpdateTrack={updateTrack}
                 onAddTrack={trackActions.add}
+                onAddDrums={trackActions.addDrums}
+                sixteenthsPerStep={sixteenthsPerStep(ts)}
+                sixteenthsPerBar={sixteenthsPerBar(ts)}
+                loopSteps={loop ? loopLength({ tracks, barTicks, stepTicks: T, total, loop }) / T : total}
+                padTrack={current.name}
+                drumEditor={drumTrack?.drums && (
+                    <DrumEditor
+                        name={drumTrack.name}
+                        color={drumTrack.color}
+                        pattern={drumTrack.drums}
+                        perBar={sixteenthsPerBar(ts)}
+                        perBeat={sixteenthsPerStep(ts)}
+                        playSixteenth={playSixteenth}
+                        presets={presetsFor(ts)}
+                        padTrack={current.name}
+                        onToggle={drumActions.toggle}
+                        onBars={drumActions.bars}
+                        onPreset={drumActions.preset}
+                        onClear={drumActions.clear}
+                        onAudition={auditionDrum}
+                    />
+                )}
                 onRemoveTrack={trackActions.remove}
                 selected={selected}
                 playhead={playhead}

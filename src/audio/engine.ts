@@ -1,6 +1,8 @@
 import * as Tone from 'tone';
 import { ArpPattern, arpOrder } from '../theory';
 import { Instrument, InstrumentId, createInstrument } from './instruments';
+import { DrumKit } from './drumkit';
+import type { DrumVoice } from '../drums';
 
 export type FxName = 'reverb' | 'delay' | 'chorus' | 'distortion';
 
@@ -54,6 +56,8 @@ export class Engine {
 
     /** One strip per sequencer track: its instrument into its own volume, then into the shared effects. */
     private strips = new Map<string, Strip>();
+    /** Drum tracks: a kit into its own volume, straight to the master (dry, so the chord effects don't smear the beat). */
+    private kits = new Map<string, { kit: DrumKit; level: Tone.Volume }>();
     /** The track the pads and keyboard play through. */
     private current = 'main';
     private transportUsers = new Set<string>();
@@ -110,7 +114,40 @@ export class Engine {
         }, 150);
     }
 
+    /** Create or update a drum track's kit and level. */
+    setDrumTrack(id: string, opts: { volume: number }) {
+        const existing = this.kits.get(id);
+        if (existing) {
+            existing.level.volume.rampTo(opts.volume, 0.05);
+            return;
+        }
+        const level = new Tone.Volume(opts.volume).connect(this.master);
+        const kit = new DrumKit();
+        kit.output.connect(level);
+        this.kits.set(id, { kit, level });
+    }
+
+    /** Play one drum hit on a drum track at an audio-clock `time`. */
+    playDrum(track: string, voice: DrumVoice, time?: number, velocity = 1) {
+        const strip = this.kits.get(track);
+        if (!strip) return;
+        try {
+            strip.kit.trigger(voice, time ?? Tone.now(), velocity);
+        } catch {
+            // two hits on one monophonic voice at the same instant: the second is dropped
+        }
+    }
+
     removeTrack(id: string) {
+        const kit = this.kits.get(id);
+        if (kit) {
+            this.kits.delete(id);
+            kit.level.volume.rampTo(-80, 0.05);
+            setTimeout(() => {
+                kit.kit.dispose();
+                kit.level.dispose();
+            }, 600);
+        }
         const strip = this.strips.get(id);
         if (!strip) return;
         this.strips.delete(id);

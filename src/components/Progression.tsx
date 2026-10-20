@@ -3,6 +3,10 @@ import './Progression.css';
 import { MAX_TRACKS, Clip, Track, clipAt, clipEnd } from '../progression';
 import { TIME_SIGNATURES, TimeSignature, isCompound, tsLabel } from '../song';
 import { INSTRUMENTS, InstrumentId } from '../audio/instruments';
+import { DrumPattern, DrumVoice, hasHit, isEmptyPattern } from '../drums';
+
+/** Which drums show on which line of a drum lane's miniature: cymbals, the backbeat, the kick. */
+const MINI_LINES: DrumVoice[][] = [['hat', 'openhat', 'rim'], ['snare', 'clap', 'tomhi', 'tomlo'], ['kick']];
 
 /** A track as the grid shows it: clip positions and lengths in steps. */
 export type TrackView = Track;
@@ -29,6 +33,16 @@ interface ProgressionProps {
     onSelectTrack: (track: string) => void;
     onUpdateTrack: (track: string, patch: Partial<Pick<Track, 'instrument' | 'volume' | 'mute' | 'solo' | 'name'>>) => void;
     onAddTrack: () => void;
+    onAddDrums: () => void;
+    /** 1/16 steps per sequencer step and per bar, for drum lanes. */
+    sixteenthsPerStep: number;
+    sixteenthsPerBar: number;
+    /** Steps that play before the loop wraps; drum lanes past it are dimmed. */
+    loopSteps: number;
+    /** Shown instead of the chord toolbar while a drum track is selected. */
+    drumEditor?: React.ReactNode;
+    /** The chord track the pads play through. */
+    padTrack: string;
     onRemoveTrack: (track: string) => void;
     onTogglePlay: () => void;
     onFirst: () => void;
@@ -76,13 +90,17 @@ const TrackStrip: React.FC<{
             <span className="track-dot" />
             <span className="track-name">{track.name}</span>
         </button>
-        <select
-            aria-label={`${track.name} instrument`}
-            value={track.instrument}
-            onChange={e => onUpdate(track.id, { instrument: e.target.value as InstrumentId })}
-        >
-            {INSTRUMENTS.map(i => <option key={i.id} value={i.id}>{i.label}</option>)}
-        </select>
+        {track.drums ? (
+            <span className="track-kit">Drum kit</span>
+        ) : (
+            <select
+                aria-label={`${track.name} instrument`}
+                value={track.instrument}
+                onChange={e => onUpdate(track.id, { instrument: e.target.value as InstrumentId })}
+            >
+                {INSTRUMENTS.map(i => <option key={i.id} value={i.id}>{i.label}</option>)}
+            </select>
+        )}
         <label className="track-volume" title={`Volume ${track.volume > 0 ? '+' : ''}${track.volume} dB`}>
             <span className="visually-hidden">{track.name} volume</span>
             <input type="range" min={-24} max={6} step={1} value={track.volume} onChange={e => onUpdate(track.id, { volume: parseInt(e.target.value, 10) })} />
@@ -108,11 +126,40 @@ const Progression: React.FC<ProgressionProps> = props => {
     const anySolo = tracks.some(t => t.solo);
     const silenced = (t: TrackView) => (anySolo ? !t.solo : t.mute);
 
+    /** A drum track's lane: each step shows the pattern's hits in it, repeating from the top of the song. */
+    const renderDrumSteps = (track: TrackView, pattern: DrumPattern, rowStart: number, rowEnd: number) => {
+        const per = props.sixteenthsPerStep;
+        const length = pattern.bars * props.sixteenthsPerBar;
+        const isCurrent = track.id === current.id;
+        return Array.from({ length: rowEnd - rowStart }, (_, j) => {
+            const step = rowStart + j;
+            const past = step >= props.loopSteps;
+            return (
+                <button
+                    key={step}
+                    className={`drum-mini ${isCurrent ? 'selected' : ''} ${playing && playhead === step ? 'here' : ''}`}
+                    style={{ gridColumn: `${j + 1} / span 1`, opacity: past ? 0.35 : undefined }}
+                    aria-label={`${track.name}, step ${step + 1}`}
+                    onClick={() => props.onSelect(step, track.id)}
+                >
+                    {Array.from({ length: per }, (_, k) => {
+                        const i = (step * per + k) % length;
+                        return (
+                            <span key={k} className="drum-mini-col">
+                                {MINI_LINES.map((voices, l) => <i key={l} className={voices.some(v => hasHit(pattern, v, i)) ? 'on' : ''} />)}
+                            </span>
+                        );
+                    })}
+                </button>
+            );
+        });
+    };
+
     /** One track's lane within a row. A chord held past the end of a row continues in the next row. */
     const renderLane = (track: TrackView, rowStart: number, rowEnd: number) => {
         const isCurrent = track.id === current.id;
-        const items: React.ReactNode[] = [];
-        for (let step = rowStart; step < rowEnd;) {
+        const items: React.ReactNode[] = track.drums ? renderDrumSteps(track, track.drums, rowStart, rowEnd) : [];
+        for (let step = rowStart; step < rowEnd && !track.drums;) {
             const clip = clipAt(track.clips, step);
             if (!clip) {
                 const s = step;
@@ -189,7 +236,7 @@ const Progression: React.FC<ProgressionProps> = props => {
         return (
             <div
                 key={track.id}
-                className={`lane-row ${isCurrent ? 'current' : ''} ${silenced(track) ? 'silenced' : ''}`}
+                className={`lane-row ${isCurrent ? 'current' : ''} ${silenced(track) ? 'silenced' : ''} ${track.drums ? 'drum-lane' : ''}`}
                 style={{ '--track': track.color } as React.CSSProperties}
             >
                 <button className="lane-label" onClick={() => props.onSelectTrack(track.id)} aria-label={`Select ${track.name}`}>
@@ -252,8 +299,10 @@ const Progression: React.FC<ProgressionProps> = props => {
                 </button>
                 <span className="section-note prog-hint">
                     {recording
-                        ? `Play a pad to write it on ${current.name}, step ${selected + 1}${props.currentSound ? ` (${props.currentSound})` : ''}; the cursor moves on.`
-                        : `Pads play and record on the selected track (${current.name}). Select a step, press Record, then play pads.`}
+                        ? `Play a pad to write it on ${props.padTrack}, step ${selected + 1}${props.currentSound ? ` (${props.currentSound})` : ''}; the cursor moves on.`
+                        : current.drums
+                            ? `Program ${current.name} below; pads play and record on ${props.padTrack}.`
+                            : `Pads play and record on the selected track (${current.name}). Select a step, press Record, then play pads.`}
                 </span>
                 {props.songMenu}
                 <div className="bars">
@@ -278,26 +327,31 @@ const Progression: React.FC<ProgressionProps> = props => {
                         track={t}
                         selected={t.id === current.id}
                         silenced={silenced(t)}
-                        canRemove={tracks.length > 1}
+                        canRemove={!!t.drums || tracks.filter(x => !x.drums).length > 1}
                         onSelect={() => props.onSelectTrack(t.id)}
                         onUpdate={props.onUpdateTrack}
                         onRemove={() => props.onRemoveTrack(t.id)}
                     />
                 ))}
                 {tracks.length < MAX_TRACKS && (
-                    <button className="chip-button add-track" onClick={props.onAddTrack}>+ Track</button>
+                    <>
+                        <button className="chip-button add-track" onClick={props.onAddTrack}>+ Track</button>
+                        <button className="chip-button add-track" onClick={props.onAddDrums}>+ Drums</button>
+                    </>
                 )}
             </div>
 
             <div className="seq-rows">{Array.from({ length: rows }, (_, r) => renderRow(r))}</div>
 
-            <div className="legend" aria-hidden="true">
+            {current.drums && props.drumEditor}
+
+            {!current.drums && <div className="legend" aria-hidden="true">
                 <span><i className="lg-strike" />chord is struck</span>
                 <span><i className="lg-sustain" />keeps ringing (held, not struck again)</span>
                 <span><i className="lg-passed" />already played</span>
-            </div>
+            </div>}
 
-            <div className="toolbar" role="toolbar" aria-label="Chord actions">
+            {!current.drums && <div className="toolbar" role="toolbar" aria-label="Chord actions">
                 <span className="sel-label">
                     <span className="track-dot" style={{ background: current.color }} />
                     {current.name} · {selClip && selClip.len > 1 ? `Steps ${selClip.start + 1}–${clipEnd(selClip)}` : `Step ${selected + 1}`}
@@ -316,8 +370,8 @@ const Progression: React.FC<ProgressionProps> = props => {
                 <button className="chip-button" onClick={props.onRest}>Make rest <kbd>.</kbd></button>
                 <button className="chip-button" disabled={!selInfo} onClick={props.onRestamp} title="Re-apply the current key and chord/arp settings to this chord">Use current settings</button>
                 <button className="chip-button" disabled={!selClip} onClick={props.onDelete}>Delete <kbd>⌫</kbd></button>
-                <button className="chip-button danger" disabled={tracks.every(t => t.clips.length === 0)} onClick={props.onClearAll}>Clear all</button>
-            </div>
+                <button className="chip-button danger" disabled={tracks.every(t => t.clips.length === 0 && (!t.drums || isEmptyPattern(t.drums)))} onClick={props.onClearAll}>Clear all</button>
+            </div>}
         </section>
     );
 };
