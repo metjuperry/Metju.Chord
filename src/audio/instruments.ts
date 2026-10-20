@@ -29,7 +29,7 @@ export function createInstrument(id: InstrumentId): Instrument {
                 oscillator: { type: 'fatsawtooth', count: 3, spread: 20 },
                 envelope: { attack: 0.08, decay: 0.3, sustain: 0.7, release: 1.5 },
             } as Partial<Tone.SynthOptions>);
-            synth.volume.value = -15;
+            synth.volume.value = -6;
             const filter = new Tone.Filter(2200, 'lowpass');
             synth.connect(filter);
             return { synth, output: filter, nodes: [synth, filter] };
@@ -43,7 +43,7 @@ export function createInstrument(id: InstrumentId): Instrument {
                 modulation: { type: 'sine' },
                 modulationEnvelope: { attack: 0.005, decay: 0.4, sustain: 0.1, release: 0.5 },
             } as Partial<Tone.FMSynthOptions>);
-            synth.volume.value = -13;
+            synth.volume.value = 3.5;
             return { synth, output: synth, nodes: [synth] };
         }
         case 'organ': {
@@ -53,7 +53,7 @@ export function createInstrument(id: InstrumentId): Instrument {
                 modulation: { type: 'square' },
                 envelope: { attack: 0.01, decay: 0, sustain: 1, release: 0.08 },
             } as Partial<Tone.AMSynthOptions>);
-            synth.volume.value = -15;
+            synth.volume.value = 3.5;
             const chorus = new Tone.Chorus(4, 2.5, 0.3).start();
             chorus.wet.value = 0.35;
             synth.connect(chorus);
@@ -64,7 +64,7 @@ export function createInstrument(id: InstrumentId): Instrument {
                 oscillator: { type: 'triangle' },
                 envelope: { attack: 0.002, decay: 0.35, sustain: 0, release: 0.4 },
             } as Partial<Tone.SynthOptions>);
-            synth.volume.value = -12;
+            synth.volume.value = -7;
             const filter = new Tone.Filter(3500, 'lowpass');
             synth.connect(filter);
             return { synth, output: filter, nodes: [synth, filter] };
@@ -76,7 +76,7 @@ export function createInstrument(id: InstrumentId): Instrument {
                 filter: { Q: 2 },
                 filterEnvelope: { attack: 0.01, decay: 0.3, sustain: 0.4, baseFrequency: 200, octaves: 3 },
             } as Partial<Tone.MonoSynthOptions>);
-            synth.volume.value = -16;
+            synth.volume.value = -14;
             return { synth, output: synth, nodes: [synth] };
         }
     }
