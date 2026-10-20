@@ -23,7 +23,9 @@ A chord instrument modelled on pocket chord machines like the HiChord: seven cho
 ### Progression
 
 - A step sequencer that grows a row of 8 steps at a time (SEQ-8, SEQ-16, …), one step per beat in 4/4. A chord held across several steps is one block with a strike dot and a sustain bar, and it carries on into the next row when it crosses a row break.
-- Each recorded chord keeps the key, instrument and play settings (chord/arp, pattern, rate, note length) it was recorded with, so one progression can mix instruments. "Use current sound" re-applies the live settings to a chord.
+- Tracks: up to six lanes, each with its own instrument, volume, mute and solo. Pads play and record on the selected track; mute and solo only affect playback, so you can still play a muted track live.
+- Each recorded chord keeps the key and chord/arp settings it was recorded with. "Use current settings" re-applies the live ones to a chord.
+- Chords are stored in ticks (96 per beat) and played by a lookahead scheduler on the audio clock, so edits made while playing are heard straight away and tempo changes apply immediately.
 - Playback doesn't touch the screen or the stick; they only follow what you play live.
 - Press **R** (or Record), pick a step, and play pads to write chords; the cursor moves on.
 - Lengthen with the edge grip or **[ ]**, split with **/**, rest with **.**, copy and paste, add or remove rows, loop.

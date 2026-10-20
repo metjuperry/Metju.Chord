@@ -4,10 +4,9 @@ import type { InstrumentId } from './audio/instruments';
 
 export type PlayMode = 'Chord' | 'Arp';
 
-/** Everything about how a recorded chord sounds, captured when it was recorded. */
+/** How a recorded chord is played, captured when it was recorded. The instrument belongs to the track. */
 export interface ClipSound {
     key: MusicalKey;
-    instrument: InstrumentId;
     playMode: PlayMode;
     arpPattern: ArpPattern;
     arpRate: ArpRate;
@@ -111,3 +110,49 @@ export const lastEnd = (clips: Clip[]) => clips.reduce((m, c) => Math.max(m, cli
 export function loopEnd(clips: Clip[]): number {
     return Math.max(TICKS_PER_BAR, Math.ceil(lastEnd(clips) / TICKS_PER_BAR) * TICKS_PER_BAR);
 }
+
+// ---- tracks ----------------------------------------------------------------------------
+
+/** A lane of the sequencer with its own instrument and level. */
+export interface Track {
+    id: string;
+    name: string;
+    color: string;
+    instrument: InstrumentId;
+    /** Level in dB, 0 = as matched by `npm run levels`. */
+    volume: number;
+    mute: boolean;
+    solo: boolean;
+    clips: Clip[];
+}
+
+export const TRACK_COLORS = ['#ffcc00', '#4fd1c5', '#7fb4ff', '#d38cff', '#ff7aa8', '#c8e06e'];
+export const MAX_TRACKS = TRACK_COLORS.length;
+
+let nextTrackId = 1;
+
+export function newTrack(existing: Track[], instrument: InstrumentId, name?: string): Track {
+    const used = new Set(existing.map(t => t.color));
+    return {
+        id: `t${nextTrackId++}`,
+        name: name ?? `Track ${existing.length + 1}`,
+        color: TRACK_COLORS.find(c => !used.has(c)) ?? TRACK_COLORS[existing.length % TRACK_COLORS.length],
+        instrument,
+        volume: 0,
+        mute: false,
+        solo: false,
+        clips: [],
+    };
+}
+
+/** Tracks the sequencer should play: soloed ones if any are soloed, otherwise all that aren't muted. */
+export function audibleTracks(tracks: Track[]): Track[] {
+    const soloed = tracks.filter(t => t.solo);
+    return soloed.length ? soloed : tracks.filter(t => !t.mute);
+}
+
+/** Where all tracks together end, in ticks. */
+export const songEnd = (tracks: Track[]) => Math.max(0, ...tracks.map(t => lastEnd(t.clips)));
+
+/** Where playback wraps for all tracks: the end of the last clip on any track, rounded up to a bar. */
+export const songLoopEnd = (tracks: Track[]) => loopEnd(tracks.flatMap(t => t.clips));

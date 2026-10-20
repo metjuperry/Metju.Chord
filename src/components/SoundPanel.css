@@ -189,3 +189,16 @@
     left: 23px;
     background: var(--accent-ink);
 }
+
+.track-tag {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.track-tag .track-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}

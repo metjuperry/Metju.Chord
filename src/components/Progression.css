@@ -95,15 +95,159 @@
 
 .seq-row {
     display: flex;
-    gap: 10px;
-    align-items: flex-start;
 }
 
-.row-label {
-    flex: 0 0 44px;
-    padding-top: 6px;
-    font-size: 10px;
+/* ---- tracks ---------------------------------------------------------------- */
+
+.track-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.track-strip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px 4px 4px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+}
+
+.track-strip.selected {
+    border-color: var(--track);
+    box-shadow: inset 0 0 0 1px var(--track);
+}
+
+.track-strip.silenced .track-name {
     color: var(--muted);
+    text-decoration: line-through;
+}
+
+.track-pick {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.track-strip.selected .track-pick {
+    background: color-mix(in srgb, var(--track) 18%, transparent);
+}
+
+.track-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--track, var(--accent));
+    flex: 0 0 auto;
+}
+
+.track-strip select {
+    height: 30px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+    font-size: 11px;
+}
+
+.track-volume input {
+    width: 72px;
+}
+
+.ms-button {
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--line-2);
+    border-radius: 5px;
+    background: var(--bg);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--muted);
+}
+
+.ms-button[aria-pressed='true'] {
+    background: var(--hot);
+    border-color: var(--hot);
+    color: var(--accent-ink);
+}
+
+.ms-button.solo[aria-pressed='true'] {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+.ms-button.remove {
+    border-color: transparent;
+    background: transparent;
+    font-size: 14px;
+}
+
+.add-track {
+    height: 40px;
+}
+
+/* each row: a ruler line, then one lane per track, all sharing a label column */
+.lane-row {
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 8px;
+    align-items: stretch;
+}
+
+.lane-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 0 6px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    font-size: 11px;
+    color: var(--muted);
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.lane-label.static {
+    font-size: 10px;
+}
+
+.lane-row.current > .lane-label {
+    color: var(--text);
+    font-weight: 700;
+    background: color-mix(in srgb, var(--track) 14%, transparent);
+}
+
+.lane-row.silenced .lane {
+    opacity: 0.45;
+}
+
+.lane-row .clip .onset,
+.lane-row .clip .strike {
+    background: var(--track);
+}
+
+.playhead-track {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 100px;
+    right: 0;
+    pointer-events: none;
 }
 
 .lane-scroll {
@@ -115,7 +259,7 @@
 
 .lane-inner {
     position: relative;
-    min-width: 560px;
+    min-width: 660px;
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -173,7 +317,7 @@
 
 .cell {
     width: 100%;
-    height: 96px;
+    height: 82px;
     border-radius: 8px;
 }
 
@@ -228,7 +372,7 @@
     position: absolute;
     left: 12px;
     right: 10px;
-    top: 56px;
+    top: 50px;
     font-size: 10px;
     color: var(--muted);
     white-space: nowrap;
@@ -289,9 +433,9 @@
     position: absolute;
     left: 12px;
     right: 10px;
-    top: 30px;
+    top: 26px;
     font-family: var(--font-display);
-    font-size: 22px;
+    font-size: 20px;
     font-weight: 700;
     white-space: nowrap;
     overflow: hidden;
@@ -311,7 +455,7 @@
 }
 
 .clip .envelope {
-    bottom: 12px;
+    bottom: 9px;
     height: 10px;
 }
 
@@ -361,9 +505,9 @@
 .grip {
     position: absolute;
     right: -3px;
-    top: 24px;
+    top: 20px;
     width: 18px;
-    height: 48px;
+    height: 42px;
     border: 0;
     border-radius: 5px;
     background: var(--accent);
@@ -441,6 +585,9 @@
 }
 
 .sel-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 12px;
     margin-right: 6px;
 }
@@ -494,4 +641,24 @@
 .chip-button.danger:disabled {
     color: var(--faint);
     border-color: var(--line);
+}
+
+@media (max-width: 560px) {
+    .lane-row {
+        grid-template-columns: 52px minmax(0, 1fr);
+        gap: 6px;
+    }
+
+    .lane-label {
+        padding: 0 4px;
+        font-size: 10px;
+    }
+
+    .playhead-track {
+        left: 58px;
+    }
+
+    .progression {
+        padding: 16px;
+    }
 }

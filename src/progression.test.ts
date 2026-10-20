@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { Clip, place, setLength, split, fitTo, loopEnd, clipAt, TICKS_PER_STEP as S } from './progression';
+import { Clip, place, setLength, split, fitTo, loopEnd, clipAt, TICKS_PER_STEP as S, newTrack, audibleTracks, songLoopEnd, Track } from './progression';
 
 // Positions below are written in steps and stored in ticks
 const chord = (start: number, len: number, degree = 0): Clip => ({
-    start: start * S, len: len * S, chord: { degree, type: 'triad', inversion: 0, octave: 4, key: 'C', instrument: 'epiano', playMode: 'Chord', arpPattern: 'up', arpRate: '8n', noteLength: 0.3 },
+    start: start * S, len: len * S, chord: { degree, type: 'triad', inversion: 0, octave: 4, key: 'C', playMode: 'Chord', arpPattern: 'up', arpRate: '8n', noteLength: 0.3 },
 });
 const span = (clips: Clip[]) => clips.map(c => [c.start / S, c.len / S]);
 
@@ -60,5 +60,31 @@ describe('progression lane', () => {
         const clips = [chord(0, 1), chord(1, 3)];
         expect(clipAt(clips, 2 * S)).toBe(clips[1]);
         expect(clipAt(clips, 5 * S)).toBeUndefined();
+    });
+});
+
+describe('tracks', () => {
+    const make = (n: number) => {
+        const tracks: Track[] = [];
+        for (let i = 0; i < n; i++) tracks.push(newTrack(tracks, 'epiano'));
+        return tracks;
+    };
+
+    it('gives each new track its own colour and a numbered name', () => {
+        const tracks = make(3);
+        expect(new Set(tracks.map(t => t.color)).size).toBe(3);
+        expect(tracks.map(t => t.name)).toEqual(['Track 1', 'Track 2', 'Track 3']);
+        expect(new Set(tracks.map(t => t.id)).size).toBe(3);
+    });
+
+    it('plays every unmuted track, or only the soloed ones', () => {
+        const [a, b, c] = make(3);
+        expect(audibleTracks([a, { ...b, mute: true }, c]).map(t => t.name)).toEqual(['Track 1', 'Track 3']);
+        expect(audibleTracks([a, { ...b, solo: true }, { ...c, solo: true, mute: true }]).map(t => t.name)).toEqual(['Track 2', 'Track 3']);
+    });
+
+    it('loops at the end of the longest track', () => {
+        const [a, b] = make(2);
+        expect(songLoopEnd([{ ...a, clips: [chord(0, 2)] }, { ...b, clips: [chord(5, 2)] }]) / S).toBe(8);
     });
 });
