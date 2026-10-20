@@ -2,27 +2,41 @@ import React, { Component } from 'react';
 import './SettingsPanel.css';
 import { MusicalKey } from './ScalePicker';
 
-type SynthType = 'Synth' | 'AMSynth' | 'FMSynth' | 'MonoSynth' | 'MembraneSynth';
+import { INSTRUMENTS, InstrumentId } from './audio/instruments';
+import { ArpRate } from './audio/engine';
+import { ArpPattern } from './theory';
+
 type PlayMode = 'Chord' | 'Arp';
-type ArpPattern = 'up' | 'down' | 'upDown' | 'random';
+
+export const ARP_RATES: { rate: ArpRate; label: string }[] = [
+    { rate: '4n', label: '1/4' },
+    { rate: '8n', label: '1/8' },
+    { rate: '8t', label: '1/8T' },
+    { rate: '16n', label: '1/16' },
+    { rate: '16t', label: '1/16T' },
+    { rate: '32n', label: '1/32' },
+];
+
+const ordinal = (n: number) => `${n}${['th', 'st', 'nd', 'rd'][n] ?? 'th'}`;
 
 interface SettingsPanelProps {
     selectedKey: MusicalKey;
     octave: number;
-    synthType: SynthType;
+    synthType: InstrumentId;
     playMode: PlayMode;
     inversion: number;
+    maxInversion: number;
     arpPattern: ArpPattern;
-    arpSpeed: number;
+    arpRate: ArpRate;
     noteLength: number;
     showArpSettings: boolean;
     onKeyChange: (key: MusicalKey) => void;
     onOctaveChange: (octave: number) => void;
-    onSynthChange: (synth: SynthType) => void;
+    onSynthChange: (synth: InstrumentId) => void;
     onPlayModeChange: (mode: PlayMode) => void;
     onInversionChange: (change: number) => void;
     onArpPatternChange: (pattern: ArpPattern) => void;
-    onArpSpeedChange: (speed: number) => void;
+    onArpRateChange: (rate: ArpRate) => void;
     onNoteLengthChange: (length: number) => void;
 }
 
@@ -36,7 +50,7 @@ class SettingsPanel extends Component<SettingsPanelProps> {
     };
 
     render() {
-        const { selectedKey, octave, synthType, playMode, inversion, arpPattern, arpSpeed, noteLength, showArpSettings } = this.props;
+        const { selectedKey, octave, synthType, playMode, inversion, maxInversion, arpPattern, arpRate, noteLength, showArpSettings } = this.props;
 
         return (
             <div className="settings-panel-wrapper">
@@ -87,14 +101,12 @@ class SettingsPanel extends Component<SettingsPanelProps> {
                                 <select
                                     className="setting-select"
                                     value={synthType}
-                                    onChange={(e) => this.props.onSynthChange(e.target.value as SynthType)}
+                                    onChange={(e) => this.props.onSynthChange(e.target.value as InstrumentId)}
                                     title="Synthesizer Type"
                                 >
-                                    <option value="Synth">Basic</option>
-                                    <option value="AMSynth">AM Synth</option>
-                                    <option value="FMSynth">FM Synth</option>
-                                    <option value="MonoSynth">Mono</option>
-                                    <option value="MembraneSynth">Membrane</option>
+                                    {INSTRUMENTS.map(({ id, label }) => (
+                                        <option key={id} value={id}>{label}</option>
+                                    ))}
                                 </select>
                             </div>
                         </div>
@@ -111,12 +123,12 @@ class SettingsPanel extends Component<SettingsPanelProps> {
                                         −
                                     </button>
                                     <span className="inversion-display">
-                                        {inversion === 0 ? 'Root' : `${inversion}${inversion === 1 ? 'st' : 'nd'}`}
+                                        {inversion === 0 ? 'Root' : ordinal(inversion)}
                                     </span>
                                     <button
                                         className="inversion-button"
                                         onClick={() => this.props.onInversionChange(1)}
-                                        disabled={inversion >= 2}
+                                        disabled={inversion >= maxInversion}
                                     >
                                         +
                                     </button>
@@ -171,14 +183,14 @@ class SettingsPanel extends Component<SettingsPanelProps> {
                                 <input
                                     type="range"
                                     className="setting-slider"
-                                    min="0.05"
-                                    max="0.5"
-                                    step="0.05"
-                                    value={arpSpeed}
-                                    onChange={(e) => this.props.onArpSpeedChange(parseFloat(e.target.value))}
+                                    min="0"
+                                    max={ARP_RATES.length - 1}
+                                    step="1"
+                                    value={ARP_RATES.findIndex(r => r.rate === arpRate)}
+                                    onChange={(e) => this.props.onArpRateChange(ARP_RATES[parseInt(e.target.value)].rate)}
                                     title="Arpeggiator Speed"
                                 />
-                                <span className="slider-value">{(arpSpeed * 1000).toFixed(0)}ms</span>
+                                <span className="slider-value">{ARP_RATES.find(r => r.rate === arpRate)?.label}</span>
                             </div>
                         </div>
 

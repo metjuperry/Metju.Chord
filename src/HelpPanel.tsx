@@ -35,11 +35,13 @@ class HelpPanel extends Component<HelpPanelProps> {
                             <h3>🎹 CHORD GRID</h3>
                             <p>The joystick-style grid modifies the selected chord:</p>
                             <ul>
-                                <li><strong>Center</strong> - Basic triad</li>
-                                <li><strong>Up</strong> - Add 7th</li>
-                                <li><strong>Down</strong> - Sus4</li>
-                                <li><strong>Left</strong> - Add9</li>
-                                <li><strong>Right</strong> - Add 6th</li>
+                                <li><strong>Triad</strong> - The diatonic triad (centre)</li>
+                                <li><strong>Flip 3rd</strong> - The triad with its 3rd flipped, major to minor or minor to major</li>
+                                <li><strong>7th</strong> - Dominant 7th built on the chord's root (a secondary dominant)</li>
+                                <li><strong>maj7</strong> - Diatonic 7th chord</li>
+                                <li><strong>add9</strong> - Diatonic 7th chord plus a major 9th</li>
+                                <li><strong>sus4 / sus2/6</strong> - Suspended chords</li>
+                                <li><strong>dim / aug</strong> - Diminished and augmented triads</li>
                             </ul>
                             <p>Try different positions while playing chords!</p>
                         </section>
@@ -49,9 +51,9 @@ class HelpPanel extends Component<HelpPanelProps> {
                             <ul>
                                 <li><strong>Key</strong> - Select the musical key (C, D, E, F, G, A, B)</li>
                                 <li><strong>Octave</strong> - Adjust pitch range (1-7)</li>
-                                <li><strong>Synth Type</strong> - Choose different synthesizer sounds</li>
+                                <li><strong>Synth Type</strong> - Choose an instrument: Pad, E-Piano, Organ, Pluck or Lead/Bass</li>
                                 <li><strong>Play Mode</strong> - Switch between Chord and Arp (arpeggio)</li>
-                                <li><strong>Inversion</strong> - Rearrange chord notes (0-2)</li>
+                                <li><strong>Inversion</strong> - Rearrange chord notes (up to one fewer than the number of notes in the chord)</li>
                             </ul>
                         </section>
 

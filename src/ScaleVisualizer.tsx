@@ -1,7 +1,7 @@
 import React, { Component } from 'react';
 import './ScaleVisualizer.css';
 import { MusicalKey } from './ScalePicker';
-import { getNoteInKey } from './chordUtils';
+import { getNoteInKey } from './theory';
 
 interface ScaleVisualizerProps {
     selectedKey: MusicalKey;

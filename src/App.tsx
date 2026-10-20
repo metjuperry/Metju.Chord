@@ -5,38 +5,55 @@ import ChordGrid from './ChordGrid';
 import { MusicalKey } from './ScalePicker';
 import ChordDisplay from './ChordDisplay';
 import SettingsPanel from './SettingsPanel';
-import Sequencer, { SequencerSlot } from './Sequencer';
+import Sequencer, { SequencerSlot, SlotCell, REST_SLOT, sameChord } from './Sequencer';
 import Metronome from './Metronome';
 import FeatureMenu from './FeatureMenu';
 import EffectsPanel from './EffectsPanel';
 import ScaleVisualizer from './ScaleVisualizer';
 import HelpPanel from './HelpPanel';
-import { buildChord, getNoteInKey } from './chordUtils';
+import { ArpPattern, ChordParams, ChordType, maxInversion, resolveChord } from './theory';
+import { getEngine, ArpRate } from './audio/engine';
+import { InstrumentId } from './audio/instruments';
 import * as Tone from 'tone';
-
-type SynthType = 'Synth' | 'AMSynth' | 'FMSynth' | 'MonoSynth' | 'MembraneSynth';
 
 type PlayMode = 'Chord' | 'Arp';
 
-type ArpPattern = 'up' | 'down' | 'upDown' | 'random';
+// ChordGrid joystick positions -> chord types
+const POSITION_TYPE: { [position: string]: ChordType } = {
+    'neutral': 'triad',
+    'maj/min': 'flip',
+    'dim': 'dim',
+    'aug': 'aug',
+    '7': 'dom7',
+    'maj/min7': 'diatonic7',
+    'maj/min9': 'diatonic9',
+    'sus4': 'sus4',
+    'sus2/maj6': 'sus2',
+};
+
+// Number keys 1-7 (by physical key, so layouts like AZERTY work) -> scale degrees
+const KEY_DEGREE: { [code: string]: number } = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5, Digit7: 6 };
+
+const EMPTY_ROW = (): SlotCell[] => Array(8).fill(null);
 
 interface AppState {
     selectedKey: MusicalKey;
     octave: number;
-    synthType: SynthType;
+    synthType: InstrumentId;
     playMode: PlayMode;
     inversion: number;
     joystickPosition: string;
     lastPlayedChord: string;
     lastPlayedNotes: string[];
-    sequencerSlots: SequencerSlot[];
+    sequencerSlots: SlotCell[];
     recordingIndex: number | null;
     playingIndex: number | null;
+    isSequencerPlaying: boolean;
+    loopMode: boolean;
     arpPattern: ArpPattern;
-    arpSpeed: number;
+    arpRate: ArpRate;
     noteLength: number;
     bpm: number;
-    sequencerBpm: number;
     menuOpen: boolean;
     showMetronome: boolean;
     showSequencer: boolean;
@@ -50,27 +67,31 @@ interface AppState {
 }
 
 class App extends Component<{}, AppState> {
-    private synth: Tone.PolySynth | null = null;
+    /** Chords currently sounding from a pad or key, keyed by source, so release always matches the press. */
+    private holds = new Map<string, () => void>();
+    private seqLoop: Tone.Loop | null = null;
+    private seqCursor: number | null = null;
 
     constructor(props: {}) {
         super(props);
         this.state = {
             selectedKey: 'C',
             octave: 4,
-            synthType: 'Synth',
+            synthType: 'epiano',
             playMode: 'Chord',
             inversion: 0,
             joystickPosition: 'neutral',
             lastPlayedChord: '',
             lastPlayedNotes: [],
-            sequencerSlots: Array(8).fill({ chordName: '', notes: [] }),
+            sequencerSlots: EMPTY_ROW(),
             recordingIndex: null,
             playingIndex: null,
+            isSequencerPlaying: false,
+            loopMode: false,
             arpPattern: 'up',
-            arpSpeed: 0.15,
+            arpRate: '8n',
             noteLength: 0.5,
             bpm: 120,
-            sequencerBpm: 120,
             menuOpen: false,
             showMetronome: false,
             showSequencer: false,
@@ -84,25 +105,21 @@ class App extends Component<{}, AppState> {
         };
     }
 
-    async componentDidMount() {
+    componentDidMount() {
         this.applyTheme(this.state.theme);
-        window.addEventListener('keydown', this.handleKeyPress);
+        window.addEventListener('keydown', this.handleKeyDown);
+        window.addEventListener('keyup', this.handleKeyUp);
+        window.addEventListener('blur', this.releaseAllHolds);
 
-        // Initialize synth without starting AudioContext
-        try {
-            await this.initializeSynth(this.state.synthType, false);
-            this.setState({ isLoading: false });
-        } catch (error) {
-            console.error('Failed to initialize audio:', error);
-            this.setState({ isLoading: false });
-        }
+        this.setState({ isLoading: false });
     }
 
     componentWillUnmount() {
-        if (this.synth) {
-            this.synth.dispose();
-        }
-        window.removeEventListener('keydown', this.handleKeyPress);
+        this.stopSequencer();
+        this.releaseAllHolds();
+        window.removeEventListener('keydown', this.handleKeyDown);
+        window.removeEventListener('keyup', this.handleKeyUp);
+        window.removeEventListener('blur', this.releaseAllHolds);
     }
 
     applyTheme = (theme: 'dark' | 'light') => {
@@ -117,166 +134,124 @@ class App extends Component<{}, AppState> {
         });
     };
 
-    handleKeyPress = (event: KeyboardEvent) => {
-        // Ignore if typing in an input or select element
-        if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) {
-            return;
-        }
+    // ---- chord resolution ----------------------------------------------------
 
-        // Map number keys 1-7 to scale degrees (0-6 array indices)
-        const keyMap: { [key: string]: number } = {
-            '1': 0, // I
-            '2': 1, // ii
-            '3': 2, // iii
-            '4': 3, // IV
-            '5': 4, // V
-            '6': 5, // vi
-            '7': 6, // vii
-        };
+    chordType = (): ChordType => POSITION_TYPE[this.state.joystickPosition] ?? 'root';
 
-        const scaleDegree = keyMap[event.key];
+    maxInversion = (): number => maxInversion(this.chordType());
 
-        if (scaleDegree !== undefined) {
-            const notes = this.getNotesForButton(scaleDegree);
-            const chordName = this.getChordNameForButton(scaleDegree);
+    chordParams = (degree: number): ChordParams => ({
+        degree,
+        type: this.chordType(),
+        inversion: Math.min(this.state.inversion, this.maxInversion()),
+        octave: this.state.octave,
+    });
 
-            if (this.synth) {
-                this.playChord(notes, chordName);
-            }
+    describeSlot = (slot: SequencerSlot) => {
+        const chord = resolveChord(this.state.selectedKey, slot);
+        return { name: chord.name.symbol, notes: chord.notes };
+    };
+
+    // ---- pads and keyboard: one path ------------------------------------------
+
+    handleKeyDown = (event: KeyboardEvent) => {
+        if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
+        if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
+
+        const degree = KEY_DEGREE[event.code];
+        if (degree !== undefined) {
+            this.pressChord(`key:${event.code}`, degree);
         }
     };
 
-    playChord = async (notes: string[], chordName: string) => {
-        const { octave, playMode, arpPattern, arpSpeed, noteLength, recordingIndex, sequencerSlots } = this.state;
+    handleKeyUp = (event: KeyboardEvent) => {
+        this.releaseChord(`key:${event.code}`);
+    };
 
-        await this.ensureAudioReady();
+    pressChord = (id: string, degree: number) => {
+        if (!this.state.audioReady || this.holds.has(id)) return;
 
-        // Update display
-        this.setState({
-            lastPlayedChord: chordName,
-            lastPlayedNotes: notes,
-        });
+        const { selectedKey, playMode, arpPattern, arpRate, noteLength, recordingIndex, sequencerSlots } = this.state;
+        const params = this.chordParams(degree);
+        const chord = resolveChord(selectedKey, params);
 
-        // Record to sequencer if recording
-        if (recordingIndex !== null && this.synth) {
+        const update: Partial<AppState> = {
+            lastPlayedChord: chord.name.long,
+            lastPlayedNotes: chord.notes,
+        };
+        if (recordingIndex !== null) {
             const newSlots = [...sequencerSlots];
-            newSlots[recordingIndex] = {
-                chordName,
-                notes,
-                octave,
-                playMode,
-            };
-            this.setState({
-                sequencerSlots: newSlots,
-                recordingIndex: null,
-            });
+            newSlots[recordingIndex] = { ...params, playMode };
+            update.sequencerSlots = newSlots;
+            update.recordingIndex = null; // Stop recording after capturing one chord
         }
-
-        // Play the notes
-        const notesToPlay = notes.map(note => `${note}${octave}`);
+        this.setState(update as AppState);
 
         if (playMode === 'Arp') {
-            // Simple arpeggio for keyboard - use NoteButton logic for consistency
-            const arpNotes = this.getArpeggiatedNotes(notesToPlay, arpPattern);
-            arpNotes.forEach((note, i) => {
-                setTimeout(() => {
-                    this.synth?.triggerAttackRelease(note, noteLength);
-                }, i * arpSpeed * 1000);
-            });
+            this.holds.set(id, getEngine().startArp(chord.midi, { pattern: arpPattern, rate: arpRate, noteLength }));
         } else {
-            // Chord mode
-            this.synth?.triggerAttackRelease(notesToPlay, noteLength);
+            getEngine().attack(chord.midi);
+            this.holds.set(id, () => getEngine().release(chord.midi));
         }
     };
 
-    getArpeggiatedNotes = (notes: string[], pattern: ArpPattern): string[] => {
-        const sorted = [...notes].sort();
-        switch (pattern) {
-            case 'down':
-                return sorted.reverse();
-            case 'upDown':
-                return [...sorted, ...sorted.slice(0, -1).reverse()];
-            case 'random':
-                return [...notes].sort(() => Math.random() - 0.5);
-            case 'up':
-            default:
-                return sorted;
+    releaseChord = (id: string) => {
+        const stop = this.holds.get(id);
+        if (stop) {
+            this.holds.delete(id);
+            stop();
         }
     };
+
+    releaseAllHolds = () => {
+        Array.from(this.holds.keys()).forEach(this.releaseChord);
+    };
+
+    handlePadPress = (degree: number) => this.pressChord(`pad:${degree}`, degree);
+    handlePadRelease = (degree: number) => this.releaseChord(`pad:${degree}`);
 
     ensureAudioReady = async () => {
         if (!this.state.audioReady) {
             await Tone.start();
+            // The engine is built on first use, after the user gesture
+            const engine = getEngine();
+            engine.setBpm(this.state.bpm);
+            engine.setInstrument(this.state.synthType);
             this.setState({ audioReady: true });
         }
     };
 
-    initializeSynth = async (type: SynthType, startAudio: boolean = true) => {
-        // Dispose of old synth if it exists
-        if (this.synth) {
-            this.synth.dispose();
-        }
-
-        // Create new synth based on type
-        switch (type) {
-            case 'AMSynth':
-                this.synth = new Tone.PolySynth(Tone.AMSynth).toDestination();
-                break;
-            case 'FMSynth':
-                this.synth = new Tone.PolySynth(Tone.FMSynth).toDestination();
-                break;
-            case 'MonoSynth':
-                this.synth = new Tone.PolySynth(Tone.MonoSynth).toDestination();
-                break;
-            case 'MembraneSynth':
-                this.synth = new Tone.PolySynth(Tone.MembraneSynth).toDestination();
-                break;
-            case 'Synth':
-            default:
-                this.synth = new Tone.PolySynth(Tone.Synth).toDestination();
-                break;
-        }
-
-        // Only start audio if requested (for user gesture requirement)
-        if (startAudio) {
-            await this.ensureAudioReady();
-        }
-    };
+    // ---- settings ---------------------------------------------------------------
 
     handleKeyChange = (key: MusicalKey) => {
         this.setState({ selectedKey: key });
-        console.log('Selected key:', key);
     };
 
     handleOctaveChange = (octave: number) => {
         this.setState({ octave });
-        console.log('Selected octave:', octave);
     };
 
-    handleSynthChange = (synthType: SynthType) => {
+    handleSynthChange = (synthType: InstrumentId) => {
         this.setState({ synthType });
-        this.initializeSynth(synthType);
-        console.log('Selected synth:', synthType);
+        getEngine().setInstrument(synthType);
     };
 
     handlePlayModeChange = (playMode: PlayMode) => {
         this.setState({ playMode });
-        console.log('Play mode:', playMode);
     };
 
     handleInversionChange = (change: number) => {
         this.setState((prevState) => ({
-            inversion: Math.max(0, Math.min(2, prevState.inversion + change))
+            inversion: Math.max(0, Math.min(this.maxInversion(), prevState.inversion + change))
         }));
     };
 
     handleArpPatternChange = (arpPattern: ArpPattern) => {
         this.setState({ arpPattern });
-        console.log('Arp pattern:', arpPattern);
     };
 
-    handleArpSpeedChange = (arpSpeed: number) => {
-        this.setState({ arpSpeed });
+    handleArpRateChange = (arpRate: ArpRate) => {
+        this.setState({ arpRate });
     };
 
     handleNoteLengthChange = (noteLength: number) => {
@@ -284,11 +259,8 @@ class App extends Component<{}, AppState> {
     };
 
     handleBpmChange = (bpm: number) => {
+        getEngine().setBpm(bpm);
         this.setState({ bpm });
-    };
-
-    handleSequencerBpmChange = (bpm: number) => {
-        this.setState({ sequencerBpm: bpm });
     };
 
     handleMenuToggle = () => {
@@ -320,9 +292,11 @@ class App extends Component<{}, AppState> {
     };
 
     handleJoystickChange = (position: string) => {
-        this.setState({ joystickPosition: position });
-        console.log('Joystick position:', position);
+        const max = maxInversion(POSITION_TYPE[position] ?? 'root');
+        this.setState(prev => ({ joystickPosition: position, inversion: Math.min(prev.inversion, max) }));
     };
+
+    // ---- sequencer editing --------------------------------------------------------
 
     handleSequencerSlotClick = (index: number) => {
         this.setState((prevState) => ({
@@ -332,127 +306,147 @@ class App extends Component<{}, AppState> {
     };
 
     handleClearSequencer = () => {
+        this.stopSequencer();
         this.setState({
-            sequencerSlots: Array(8).fill({ chordName: '', notes: [] }),
+            sequencerSlots: EMPTY_ROW(),
             recordingIndex: null,
             playingIndex: null,
         });
     };
 
     handleAddRow = () => {
-        const { sequencerSlots } = this.state;
-        const newSlots = [...sequencerSlots, ...Array(8).fill({ chordName: '', notes: [] })];
-        this.setState({ sequencerSlots: newSlots });
+        this.setState(prev => ({ sequencerSlots: [...prev.sequencerSlots, ...EMPTY_ROW()] }));
     };
 
     handleRemoveRow = () => {
         const { sequencerSlots } = this.state;
         if (sequencerSlots.length > 8) {
-            const newSlots = sequencerSlots.slice(0, -8);
             this.setState({
-                sequencerSlots: newSlots,
+                sequencerSlots: sequencerSlots.slice(0, -8),
                 recordingIndex: null,
                 playingIndex: null,
             });
         }
     };
 
-    handleCopySlot = (targetIndex: number, copiedSlot: SequencerSlot) => {
-        // Paste the copied slot to target index
-        const { sequencerSlots } = this.state;
-        const newSlots = [...sequencerSlots];
-        newSlots[targetIndex] = { ...copiedSlot };
+    private setSlot = (index: number, slot: SlotCell) => {
+        const newSlots = [...this.state.sequencerSlots];
+        newSlots[index] = slot;
         this.setState({ sequencerSlots: newSlots });
+    };
+
+    handleCopySlot = (targetIndex: number, copiedSlot: SequencerSlot) => {
+        this.setSlot(targetIndex, { ...copiedSlot });
     };
 
     handleDeleteSlot = (index: number) => {
-        const { sequencerSlots } = this.state;
-        const newSlots = [...sequencerSlots];
-        newSlots[index] = { chordName: '', notes: [] };
-        this.setState({ sequencerSlots: newSlots });
+        this.setSlot(index, null);
     };
 
     handleSetRest = (index: number) => {
-        const { sequencerSlots } = this.state;
-        const newSlots = [...sequencerSlots];
-        newSlots[index] = { chordName: 'REST', notes: [], isRest: true };
-        this.setState({ sequencerSlots: newSlots });
+        this.setSlot(index, { ...REST_SLOT });
     };
 
     handleToggleTie = (index: number) => {
-        const { sequencerSlots } = this.state;
-        const newSlots = [...sequencerSlots];
-        newSlots[index] = { ...newSlots[index], isTied: !newSlots[index].isTied };
-        this.setState({ sequencerSlots: newSlots });
+        const slot = this.state.sequencerSlots[index];
+        if (slot) this.setSlot(index, { ...slot, isTied: !slot.isTied });
     };
 
-    playSequencerSlot = async (index: number) => {
-        const { sequencerSlots } = this.state;
+    // ---- sequencer playback (Tone.Transport) --------------------------------------
+
+    /** Plays one slot. With `time` (from a Transport callback) audio is scheduled on the audio clock and the UI follows via Draw. */
+    playSequencerSlot = (index: number, time?: number) => {
+        const { sequencerSlots, selectedKey, arpPattern, arpRate, noteLength } = this.state;
         const slot = sequencerSlots[index];
+        if (!slot) return;
 
-        if (!slot.chordName || !this.synth) return;
-
-        // Check if previous slot is tied to this one (sustain instead of retrigger)
-        const prevSlot = index > 0 ? sequencerSlots[index - 1] : null;
-        const isTiedFromPrevious = prevSlot && prevSlot.isTied && prevSlot.chordName === slot.chordName;
-
-        // Set playing state immediately
-        this.setState({
-            lastPlayedChord: slot.chordName,
-            lastPlayedNotes: slot.notes,
-            playingIndex: index
+        const chord = slot.isRest ? null : resolveChord(selectedKey, slot);
+        const showSlot = () => this.setState({
+            lastPlayedChord: chord ? chord.name.long : 'REST',
+            lastPlayedNotes: chord ? chord.notes : [],
+            playingIndex: index,
         });
-
-        // If it's a rest, don't play any sound
-        if (slot.isRest) {
-            return;
-        }
-
-        // If tied from previous slot, don't retrigger (just sustain)
-        if (isTiedFromPrevious) {
-            return;
-        }
-
-        await this.ensureAudioReady();
-
-        // Calculate note duration based on BPM and tied chain length
-        const { sequencerBpm } = this.state;
-        const beatDuration = 60 / sequencerBpm; // Duration of one beat in seconds
-
-        // Count how many slots are in the tie chain (including this one if tied)
-        let tieCount = 1;
-        if (slot.isTied) {
-            let nextIndex = index + 1;
-            while (nextIndex < sequencerSlots.length) {
-                const nextSlot = sequencerSlots[nextIndex];
-                if (nextSlot.chordName === slot.chordName && sequencerSlots[nextIndex - 1].isTied) {
-                    tieCount++;
-                    nextIndex++;
-                } else {
-                    break;
-                }
-            }
-        }
-
-        const duration = beatDuration * tieCount;
-
-        // Add octave numbers back for playback using saved octave and playMode
-        const octave = slot.octave ?? 4;
-        const slotPlayMode = slot.playMode ?? 'Chord';
-        const notesToPlay = slot.notes.map(note => `${note}${octave}`);
-
-        if (slotPlayMode === 'Arp') {
-            // Arpeggiate: play notes one after another
-            const arpDelay = 0.1;
-            notesToPlay.forEach((note, i) => {
-                setTimeout(() => {
-                    this.synth?.triggerAttackRelease(note, duration);
-                }, i * arpDelay * 1000);
-            });
+        if (time === undefined) {
+            showSlot();
         } else {
-            // Chord: play all notes at once
-            this.synth.triggerAttackRelease(notesToPlay, duration);
+            Tone.getDraw().schedule(showSlot, time);
         }
+
+        if (!chord) return;
+
+        // A tied slot sustains the previous chord instead of retriggering
+        const prev = index > 0 ? sequencerSlots[index - 1] : null;
+        if (prev && prev.isTied && sameChord(prev, slot)) return;
+
+        // Length of the tie chain starting here, in steps
+        let steps = 1;
+        for (let i = index; sequencerSlots[i]?.isTied && sequencerSlots[i + 1] && sameChord(sequencerSlots[i]!, sequencerSlots[i + 1]!); i++) {
+            steps++;
+        }
+        const seconds = steps * Tone.Time('4n').toSeconds();
+        const when = time ?? Tone.now();
+
+        if (slot.playMode === 'Arp') {
+            getEngine().scheduleArp(chord.midi, { pattern: arpPattern, rate: arpRate, noteLength }, when, seconds);
+        } else {
+            getEngine().playChord(chord.midi, { duration: seconds, time: when });
+        }
+    };
+
+    /** Next filled slot after `from`, wrapping to the start when looping. */
+    private nextFilledSlot = (from: number | null, wrap: boolean): number | null => {
+        const { sequencerSlots } = this.state;
+        for (let i = (from ?? -1) + 1; i < sequencerSlots.length; i++) {
+            if (sequencerSlots[i]) return i;
+        }
+        return wrap ? sequencerSlots.findIndex(slot => slot) : null;
+    };
+
+    toggleSequencer = () => {
+        if (this.state.isSequencerPlaying) {
+            this.stopSequencer();
+        } else {
+            this.startSequencer();
+        }
+    };
+
+    startSequencer = async () => {
+        await this.ensureAudioReady();
+        if (this.seqLoop) return;
+
+        this.seqCursor = this.state.playingIndex;
+        this.seqLoop = new Tone.Loop(time => this.sequencerTick(time), '4n');
+
+        const startAt = getEngine().quantizedStart('4n');
+        getEngine().acquireTransport('sequencer');
+        this.seqLoop.start(startAt);
+        this.setState({ isSequencerPlaying: true });
+    };
+
+    private sequencerTick = (time: number) => {
+        const next = this.nextFilledSlot(this.seqCursor, this.state.loopMode);
+        if (next === null || next < 0) {
+            Tone.getDraw().schedule(this.stopSequencer, time);
+            return;
+        }
+        this.seqCursor = next;
+        this.playSequencerSlot(next, time);
+    };
+
+    stopSequencer = () => {
+        if (this.seqLoop) {
+            this.seqLoop.stop();
+            this.seqLoop.dispose();
+            this.seqLoop = null;
+            getEngine().releaseTransport('sequencer');
+        }
+        if (this.state.isSequencerPlaying) {
+            this.setState({ isSequencerPlaying: false });
+        }
+    };
+
+    handleLoopToggle = () => {
+        this.setState(prev => ({ loopMode: !prev.loopMode }));
     };
 
     handleStepFirst = () => {
@@ -462,176 +456,36 @@ class App extends Component<{}, AppState> {
 
     handleStepPrev = () => {
         const { playingIndex, sequencerSlots } = this.state;
+        const from = playingIndex === null ? sequencerSlots.length : playingIndex;
 
-        if (playingIndex === null) {
-            // If nothing playing, go to last filled slot
-            for (let i = sequencerSlots.length - 1; i >= 0; i--) {
-                if (sequencerSlots[i].chordName) {
-                    this.playSequencerSlot(i);
-                    return;
-                }
-            }
-        } else {
-            // Go to previous filled slot
-            for (let i = playingIndex - 1; i >= 0; i--) {
-                if (sequencerSlots[i].chordName) {
-                    this.playSequencerSlot(i);
-                    return;
-                }
-            }
-            // Wrap to last filled slot
-            for (let i = sequencerSlots.length - 1; i > playingIndex; i--) {
-                if (sequencerSlots[i].chordName) {
-                    this.playSequencerSlot(i);
-                    return;
-                }
+        // Previous filled slot, wrapping to the last one
+        for (let step = 1; step <= sequencerSlots.length; step++) {
+            const i = (((from - step) % sequencerSlots.length) + sequencerSlots.length) % sequencerSlots.length;
+            if (sequencerSlots[i]) {
+                this.playSequencerSlot(i);
+                return;
             }
         }
     };
 
     handleStepNext = () => {
-        const { playingIndex, sequencerSlots } = this.state;
-
-        if (playingIndex === null) {
-            // If nothing playing, go to first filled slot
-            const firstFilledIndex = sequencerSlots.findIndex(slot => slot.chordName);
-            if (firstFilledIndex !== -1) {
-                this.playSequencerSlot(firstFilledIndex);
-            }
-        } else {
-            // Go to next filled slot
-            for (let i = playingIndex + 1; i < sequencerSlots.length; i++) {
-                if (sequencerSlots[i].chordName) {
-                    this.playSequencerSlot(i);
-                    return;
-                }
-            }
-            // Wrap to first filled slot
-            for (let i = 0; i < playingIndex; i++) {
-                if (sequencerSlots[i].chordName) {
-                    this.playSequencerSlot(i);
-                    return;
-                }
-            }
+        const { playingIndex } = this.state;
+        const next = this.nextFilledSlot(playingIndex, true);
+        if (next !== null && next >= 0) {
+            this.playSequencerSlot(next);
         }
     };
 
-    handleChordPlayed = (label: string) => {
-        const { selectedKey, octave, playMode, joystickPosition, recordingIndex, sequencerSlots } = this.state;
-
-        // Map Roman numerals to scale positions (0-indexed)
-        // Support both uppercase and lowercase
-        const romanToPosition: { [key: string]: number } = {
-            'I': 0,
-            'II': 1, 'ii': 1,
-            'III': 2, 'iii': 2,
-            'IV': 3,
-            'V': 4,
-            'VI': 5, 'vi': 5,
-            'VII': 6, 'vii': 6
-        };
-
-        const scalePosition = romanToPosition[label] ?? 0;
-        const rootNote = getNoteInKey(selectedKey, scalePosition);
-
-        // Check if the chord is minor (lowercase roman numeral)
-        const isMinor = label === label.toLowerCase();
-
-        // Get the actual notes being played
-        const notes = this.getNotesForButton(scalePosition);
-        // Remove octave numbers for display
-        const displayNotes = notes.map(note => note.replace(/\d+$/, ''));
-
-        let chordName = '';
-        if (joystickPosition === 'neutral') {
-            chordName = `${rootNote}`;
-        } else if (joystickPosition === 'maj/min') {
-            chordName = isMinor ? `${rootNote} Minor` : `${rootNote} Major`;
-        } else if (joystickPosition === 'dim') {
-            chordName = `${rootNote} Diminished`;
-        } else if (joystickPosition === 'aug') {
-            chordName = `${rootNote} Augmented`;
-        } else if (joystickPosition === '7') {
-            chordName = `${rootNote} Dominant 7th`;
-        } else if (joystickPosition === 'maj/min7') {
-            chordName = isMinor ? `${rootNote} Minor 7th` : `${rootNote} Major 7th`;
-        } else if (joystickPosition === 'maj/min9') {
-            chordName = isMinor ? `${rootNote} Minor 9th` : `${rootNote} Major 9th`;
-        } else if (joystickPosition === 'sus4') {
-            chordName = `${rootNote} Sus4`;
-        } else if (joystickPosition === 'sus2/maj6') {
-            chordName = `${rootNote} Sus2`;
-        }
-
-        this.setState({ lastPlayedChord: chordName, lastPlayedNotes: displayNotes });
-
-        // If recording, save to the sequencer slot
-        if (recordingIndex !== null) {
-            const newSlots = [...sequencerSlots];
-            newSlots[recordingIndex] = { chordName, notes: displayNotes, octave, playMode };
-            this.setState({
-                sequencerSlots: newSlots,
-                recordingIndex: null // Stop recording after capturing one chord
-            });
-        }
-    };
-
-    getNotesForButton = (scalePosition: number): string[] => {
-        const { selectedKey, octave, inversion, joystickPosition } = this.state;
-
-        const position = joystickPosition;
-
-        // Build a chord based on the joystick position
-        const chordNotes = buildChord(selectedKey, scalePosition, position, octave);
-
-        // Apply inversion
-        return this.applyInversion(chordNotes, inversion);
-    };
-
-    applyInversion = (notes: string[], inversion: number): string[] => {
-        if (inversion === 0 || notes.length === 0) {
-            return notes;
-        }
-
-        const result = [...notes];
-        const inversions = inversion % notes.length;
-
-        for (let i = 0; i < inversions; i++) {
-            // Move the lowest note up an octave
-            const bottomNote = result.shift()!;
-            const noteName = bottomNote.replace(/\d+$/, '');
-            const noteOctave = parseInt(bottomNote.match(/\d+$/)?.[0] || '4');
-            result.push(`${noteName}${noteOctave + 1}`);
-        }
-
-        return result;
-    };
-
-    getChordNameForButton = (scaleDegree: number): string => {
-        const { selectedKey, joystickPosition } = this.state;
-        const romanNumerals = ['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii'];
-        let chordName = romanNumerals[scaleDegree];
-
-        // Add joystick modifiers
-        if (joystickPosition === 'up') {
-            chordName += '7';
-        } else if (joystickPosition === 'down') {
-            chordName += 'sus4';
-        } else if (joystickPosition === 'left') {
-            chordName += 'add9';
-        } else if (joystickPosition === 'right') {
-            chordName += '6';
-        }
-
-        return `${selectedKey} ${chordName}`;
-    };
+    renderPad = (degree: number, label: string) => (
+        <NoteButton label={label} degree={degree} onPress={this.handlePadPress} onRelease={this.handlePadRelease} />
+    );
 
     handleStartAudio = async () => {
         await this.ensureAudioReady();
     };
 
     render() {
-        const { selectedKey, octave, synthType, playMode, inversion, joystickPosition, lastPlayedChord, lastPlayedNotes, sequencerSlots, recordingIndex, playingIndex, arpPattern, arpSpeed, noteLength, bpm, menuOpen, showMetronome, showSequencer, showArpSettings, showEffects, showScaleViz, showHelp, isLoading, audioReady } = this.state;
+        const { selectedKey, octave, synthType, playMode, inversion, joystickPosition, lastPlayedChord, lastPlayedNotes, sequencerSlots, recordingIndex, playingIndex, arpPattern, arpRate, noteLength, bpm, isSequencerPlaying, loopMode, menuOpen, showMetronome, showSequencer, showArpSettings, showEffects, showScaleViz, showHelp, isLoading, audioReady } = this.state;
 
         if (isLoading) {
             return (
@@ -695,8 +549,9 @@ class App extends Component<{}, AppState> {
                             synthType={synthType}
                             playMode={playMode}
                             inversion={inversion}
+                            maxInversion={this.maxInversion()}
                             arpPattern={arpPattern}
-                            arpSpeed={arpSpeed}
+                            arpRate={arpRate}
                             noteLength={noteLength}
                             showArpSettings={showArpSettings}
                             onKeyChange={this.handleKeyChange}
@@ -705,7 +560,7 @@ class App extends Component<{}, AppState> {
                             onPlayModeChange={this.handlePlayModeChange}
                             onInversionChange={this.handleInversionChange}
                             onArpPatternChange={this.handleArpPatternChange}
-                            onArpSpeedChange={this.handleArpSpeedChange}
+                            onArpRateChange={this.handleArpRateChange}
                             onNoteLengthChange={this.handleNoteLengthChange}
                         />
                         <ChordDisplay chordName={lastPlayedChord} notes={lastPlayedNotes} />
@@ -723,15 +578,15 @@ class App extends Component<{}, AppState> {
                         <div className="button-container">
                             <h3 className="button-container-title">SCALE DEGREES</h3>
                             <div className="button-row button-row-top">
-                                <NoteButton notes={this.getNotesForButton(1)} label="ii" synth={this.synth} playMode={playMode} onPlay={this.handleChordPlayed} arpPattern={arpPattern} arpSpeed={arpSpeed} noteLength={noteLength} />
-                                <NoteButton notes={this.getNotesForButton(3)} label="IV" synth={this.synth} playMode={playMode} onPlay={this.handleChordPlayed} arpPattern={arpPattern} arpSpeed={arpSpeed} noteLength={noteLength} />
-                                <NoteButton notes={this.getNotesForButton(5)} label="vi" synth={this.synth} playMode={playMode} onPlay={this.handleChordPlayed} arpPattern={arpPattern} arpSpeed={arpSpeed} noteLength={noteLength} />
+                                {this.renderPad(1, 'ii')}
+                                {this.renderPad(3, 'IV')}
+                                {this.renderPad(5, 'vi')}
                             </div>
                             <div className="button-row button-row-bottom">
-                                <NoteButton notes={this.getNotesForButton(0)} label="I" synth={this.synth} playMode={playMode} onPlay={this.handleChordPlayed} arpPattern={arpPattern} arpSpeed={arpSpeed} noteLength={noteLength} />
-                                <NoteButton notes={this.getNotesForButton(2)} label="iii" synth={this.synth} playMode={playMode} onPlay={this.handleChordPlayed} arpPattern={arpPattern} arpSpeed={arpSpeed} noteLength={noteLength} />
-                                <NoteButton notes={this.getNotesForButton(4)} label="V" synth={this.synth} playMode={playMode} onPlay={this.handleChordPlayed} arpPattern={arpPattern} arpSpeed={arpSpeed} noteLength={noteLength} />
-                                <NoteButton notes={this.getNotesForButton(6)} label="vii" synth={this.synth} playMode={playMode} onPlay={this.handleChordPlayed} arpPattern={arpPattern} arpSpeed={arpSpeed} noteLength={noteLength} />
+                                {this.renderPad(0, 'I')}
+                                {this.renderPad(2, 'iii')}
+                                {this.renderPad(4, 'V')}
+                                {this.renderPad(6, 'vii')}
                             </div>
                         </div>
                     </div>
@@ -742,19 +597,24 @@ class App extends Component<{}, AppState> {
                                 slots={sequencerSlots}
                                 recordingIndex={recordingIndex}
                                 playingIndex={playingIndex}
-                                bpm={this.state.sequencerBpm}
+                                isPlaying={isSequencerPlaying}
+                                loopMode={loopMode}
+                                bpm={bpm}
+                                describeSlot={this.describeSlot}
                                 onSlotClick={this.handleSequencerSlotClick}
                                 onClear={this.handleClearSequencer}
                                 onStepFirst={this.handleStepFirst}
                                 onStepPrev={this.handleStepPrev}
                                 onStepNext={this.handleStepNext}
+                                onTogglePlay={this.toggleSequencer}
+                                onToggleLoop={this.handleLoopToggle}
                                 onAddRow={this.handleAddRow}
                                 onRemoveRow={this.handleRemoveRow}
                                 onCopySlot={this.handleCopySlot}
                                 onDeleteSlot={this.handleDeleteSlot}
                                 onSetRest={this.handleSetRest}
                                 onToggleTie={this.handleToggleTie}
-                                onBpmChange={this.handleSequencerBpmChange}
+                                onBpmChange={this.handleBpmChange}
                             />
                         )}
 
@@ -765,7 +625,7 @@ class App extends Component<{}, AppState> {
                                 )}
 
                                 {showEffects && (
-                                    <EffectsPanel synth={this.synth} />
+                                    <EffectsPanel />
                                 )}
                             </div>
                         )}
