@@ -13,9 +13,17 @@
     --hot: #ff6600;
     --hot-text: #ff8a4c;
 
-    /* The device face stays dark in both themes, like hardware */
+    /* The device body: graphite in dark mode, cream in light mode. Its screen, stick and pads keep their own colours. */
     --device: #1c1c20;
     --device-edge: #2e2e34;
+    --device-text: #f2f0e6;
+    --device-muted: #b8b5a8;
+    --device-faint: #55555c;
+    --device-line: #44444b;
+    --device-inset: #121214;
+    --device-led: #3a3a40;
+    --device-glow: rgba(255, 255, 255, 0.06);
+    --device-shadow: rgba(0, 0, 0, 0.25);
     --oled: #050807;
     --oled-text: #ffd21a;
     --oled-dim: #c29a00;
@@ -42,6 +50,17 @@
     --accent-ink: #000000;
     --hot: #e65c00;
     --hot-text: #b6440b;
+
+    --device: #ebe6d8;
+    --device-edge: #d3cbb6;
+    --device-text: #1c1b17;
+    --device-muted: #5f5a4c;
+    --device-faint: #a39c8a;
+    --device-line: #c3bba6;
+    --device-inset: #ddd6c3;
+    --device-led: #c9c1ad;
+    --device-glow: rgba(255, 255, 255, 0.7);
+    --device-shadow: rgba(70, 60, 30, 0.18);
 }
 
 * {

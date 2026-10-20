@@ -6,8 +6,8 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
-    color: #f2f0e6;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 40px rgba(0, 0, 0, 0.25);
+    color: var(--device-text);
+    box-shadow: inset 0 1px 0 var(--device-glow), 0 18px 40px var(--device-shadow);
 }
 
 .device-top {
@@ -22,7 +22,7 @@
     font-size: 13px;
     letter-spacing: 0.18em;
     text-transform: uppercase;
-    color: #b8b5a8;
+    color: var(--device-muted);
 }
 
 .device-leds {
@@ -34,7 +34,7 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #3a3a40;
+    background: var(--device-led);
 }
 
 .device-leds .led-rec {
@@ -216,7 +216,7 @@
     border: 1px solid transparent;
     border-radius: 8px;
     background: transparent;
-    color: #f2f0e6;
+    color: var(--device-text);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -225,7 +225,7 @@
 }
 
 .stick-dir:hover {
-    border-color: #44444b;
+    border-color: var(--device-line);
 }
 
 .dir-name {
@@ -240,7 +240,7 @@
 
 .dir-rule {
     font-size: 9px;
-    color: #b8b5a8;
+    color: var(--device-muted);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     white-space: nowrap;
@@ -250,7 +250,7 @@
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: #44444b;
+    background: var(--device-line);
     flex: 0 0 auto;
 }
 
@@ -313,11 +313,11 @@
 .stick-caption {
     margin: 0;
     font-size: 11px;
-    color: #b8b5a8;
+    color: var(--device-muted);
 }
 
 .stick-caption b {
-    color: #f2f0e6;
+    color: var(--device-text);
 }
 
 .pads {
@@ -409,40 +409,40 @@
 
 .device-caption {
     font-size: 11px;
-    color: #b8b5a8;
+    color: var(--device-muted);
     text-transform: uppercase;
     letter-spacing: 0.12em;
 }
 
 .segmented.dark {
-    background: #121214;
+    background: var(--device-inset);
     border-color: var(--device-edge);
 }
 
 .segmented.dark > button {
-    color: #f2f0e6;
+    color: var(--device-text);
 }
 
 .segmented.dark > button[aria-pressed='true'] {
-    background: #f2f0e6;
-    color: #14130f;
+    background: var(--device-text);
+    color: var(--device);
 }
 
 .segmented.dark > button:disabled {
-    color: #55555c;
+    color: var(--device-faint);
 }
 
 .device-hint {
     margin: 0;
     font-size: 11px;
-    color: #b8b5a8;
+    color: var(--device-muted);
     line-height: 1.6;
 }
 
 .device-hint kbd {
     font-family: inherit;
-    color: #f2f0e6;
-    border: 1px solid #44444b;
+    color: var(--device-text);
+    border: 1px solid var(--device-line);
     border-radius: 4px;
     padding: 0 4px;
 }
@@ -489,13 +489,25 @@
     align-items: center;
     gap: 8px;
     font-size: 11px;
-    color: #b8b5a8;
+    color: var(--device-muted);
 }
 
 .vl-toggle .switch {
-    background: #3a3a40;
+    background: var(--device-led);
 }
 
 .vl-toggle .switch[aria-checked='true'] {
     background: #ffcc00;
 }
+
+[data-theme='light'] .pad {
+    box-shadow: 0 4px 0 #c79f00, 0 6px 12px rgba(70, 60, 30, 0.2);
+}
+
+[data-theme='light'] .pad.held {
+    box-shadow: 0 1px 0 #b34700, 0 2px 6px rgba(70, 60, 30, 0.2);
+}
+
+/* On the cream body, in-scale keys need to be whiter than the case to stand out */
+[data-theme='light'] .scale-keys .white.in { background: #ffffff; }
+[data-theme='light'] .scale-keys .white.out { background: #c9c1ad; }
