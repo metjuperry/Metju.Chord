@@ -2,6 +2,7 @@ import { ArpPattern, KEYS, MusicalKey, ChordType, SCALE_IDS, ScaleId } from './t
 import type { ArpRate } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
 import { Clip, PPQ, PlayMode, STEPS_PER_ROW, TRACK_COLORS, Track, newTrack } from './progression';
+import { DRUM_VOICES, DrumPattern, PATTERN_BARS, PatternBars, fitPattern, sixteenthsPerBar } from './drums';
 
 // ---- the song: everything undo/redo, saving and sharing cover ---------------------------
 
@@ -50,6 +51,7 @@ export function changeTimeSignature(song: Song, next: TimeSignature): Song {
         steps,
         tracks: song.tracks.map(t => ({
             ...t,
+            ...(t.drums ? { drums: fitPattern(t.drums, next) } : {}),
             clips: t.clips.map(c => ({ ...c, start: Math.round(c.start * scale), len: Math.max(1, Math.round(c.len * scale)) })),
         })),
     };
@@ -77,7 +79,6 @@ export interface Settings {
     noteLength: number;
     loop: boolean;
     theme: 'dark' | 'light';
-    /** Vibrate on pad presses and stick moves (phones). */
 }
 
 export interface SavedState {
@@ -145,8 +146,24 @@ function readClip(v: unknown, maxTick: number): Clip | null {
     };
 }
 
-function readTrack(v: unknown, index: number, maxTick: number): Track | null {
+function readPattern(v: unknown, barLen: number): DrumPattern | undefined {
+    if (!isObj(v)) return undefined;
+    const bars = oneOf<PatternBars>(v.bars, PATTERN_BARS, 1);
+    const len = bars * barLen;
+    const src = isObj(v.hits) ? v.hits : {};
+    const hits: DrumPattern['hits'] = {};
+    for (const voice of DRUM_VOICES) {
+        const list = src[voice];
+        if (!Array.isArray(list)) continue;
+        const kept = [...new Set(list.filter((i): i is number => Number.isInteger(i) && i >= 0 && i < len))].sort((a, b) => a - b);
+        if (kept.length) hits[voice] = kept;
+    }
+    return { bars, hits };
+}
+
+function readTrack(v: unknown, index: number, maxTick: number, barLen: number): Track | null {
     if (!isObj(v)) return null;
+    const drums = readPattern(v.drums, barLen);
     const clips = (Array.isArray(v.clips) ? v.clips : [])
         .map(c => readClip(c, maxTick))
         .filter((c): c is Clip => c !== null)
@@ -161,7 +178,8 @@ function readTrack(v: unknown, index: number, maxTick: number): Track | null {
         volume: int(v.volume, -24, 6, 0),
         mute: bool(v.mute, false),
         solo: bool(v.solo, false),
-        clips,
+        clips: drums ? [] : clips,
+        ...(drums ? { drums } : {}),
     };
 }
 
@@ -173,9 +191,11 @@ export function readSong(v: unknown): Song | null {
     const steps = int(v.steps, 1, 512, STEPS_PER_ROW);
     const maxTick = steps * ticksPerStep(timeSignature);
     const tracks = v.tracks.slice(0, TRACK_COLORS.length)
-        .map((t, i) => readTrack(t, i, maxTick))
+        .map((t, i) => readTrack(t, i, maxTick, sixteenthsPerBar(timeSignature)))
         .filter((t): t is Track => t !== null);
     if (tracks.length === 0) return null;
+    // the pads always need a chord track to play through
+    if (tracks.every(t => t.drums)) tracks.unshift(newTrack(tracks, 'epiano', 'Keys'));
     // ids must be unique
     const seen = new Set<string>();
     tracks.forEach((t, i) => {
