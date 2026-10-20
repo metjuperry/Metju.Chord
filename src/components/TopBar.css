@@ -1,0 +1,157 @@
+.top-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 16px;
+    padding: 12px 16px;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-right: 4px;
+}
+
+.brand-mark {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    background: var(--accent);
+    color: var(--accent-ink);
+}
+
+.brand-name {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 0.02em;
+}
+
+.brand-dot {
+    color: var(--accent);
+}
+
+[data-theme='light'] .brand-dot {
+    color: var(--hot);
+}
+
+.top-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.key-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: 3px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+}
+
+.key-strip button {
+    min-width: 30px;
+    height: 34px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.key-strip button.sharp {
+    color: var(--muted);
+}
+
+.key-strip button[aria-pressed='true'] {
+    background: var(--accent);
+    color: var(--accent-ink);
+}
+
+.scale-chip {
+    font-size: 12px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+}
+
+.step-button {
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--panel-2);
+    font-size: 15px;
+}
+
+.step-button:disabled {
+    color: var(--faint);
+}
+
+.step-value {
+    min-width: 36px;
+    text-align: center;
+    font-weight: 700;
+}
+
+.step-value.tempo {
+    min-width: 66px;
+    font-weight: 400;
+}
+
+.step-value.tempo b {
+    font-size: 16px;
+}
+
+.unit {
+    color: var(--muted);
+    font-size: 11px;
+}
+
+.metronome-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--bg);
+    font-size: 12px;
+}
+
+.metronome-toggle[aria-pressed='true'] {
+    border-color: var(--accent);
+}
+
+.beat-dots {
+    display: flex;
+    gap: 4px;
+}
+
+.beat-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--line-2);
+}
+
+.beat-dot.on {
+    background: var(--accent);
+}
+
+.beat-dot.down {
+    background: var(--hot);
+}
+
+.top-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+}

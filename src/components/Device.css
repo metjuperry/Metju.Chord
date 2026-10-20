@@ -1,0 +1,481 @@
+.device {
+    background: var(--device);
+    border: 1px solid var(--device-edge);
+    border-radius: 28px;
+    padding: 18px 22px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    color: #f2f0e6;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 40px rgba(0, 0, 0, 0.25);
+}
+
+.device-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.device-label {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #b8b5a8;
+}
+
+.device-leds {
+    display: flex;
+    gap: 8px;
+}
+
+.device-leds span {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #3a3a40;
+}
+
+.device-leds .led-rec {
+    background: var(--hot);
+    box-shadow: 0 0 8px var(--hot);
+}
+
+.device-leds .led-play {
+    background: #ffcc00;
+    box-shadow: 0 0 8px #ffcc00;
+}
+
+/* ---- OLED ---------------------------------------------------------------- */
+
+.oled {
+    background: var(--oled);
+    border: 1px solid #000;
+    border-radius: 12px;
+    padding: 12px 18px 14px;
+    font-family: var(--font-oled);
+    color: var(--oled-text);
+    box-shadow: inset 0 0 0 2px #111614, inset 0 0 24px rgba(255, 204, 0, 0.05);
+    text-shadow: 0 0 6px rgba(255, 204, 0, 0.35);
+    min-height: 170px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.oled-status,
+.oled-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 18px;
+    font-size: 19px;
+    line-height: 1;
+    color: var(--oled-dim);
+    text-transform: uppercase;
+}
+
+.oled-flag {
+    margin-left: auto;
+}
+
+.oled-flag.rec {
+    color: #ff8a57;
+    text-shadow: 0 0 6px rgba(255, 107, 31, 0.6);
+}
+
+.oled-foot span:last-child {
+    margin-left: auto;
+}
+
+.oled-main {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 6px 0;
+}
+
+.oled-symbol {
+    font-size: 92px;
+    line-height: 0.85;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.oled-main.idle .oled-symbol {
+    font-size: 56px;
+    color: var(--oled-dim);
+}
+
+.oled-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    padding-bottom: 6px;
+}
+
+.oled-numeral {
+    font-size: 28px;
+    border: 1px solid var(--oled-dim);
+    border-radius: 4px;
+    padding: 0 8px;
+    line-height: 1.1;
+}
+
+.oled-stick {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 20px;
+    color: var(--oled-dim);
+}
+
+/* ---- keyboard strip ------------------------------------------------------ */
+
+.scale-keys {
+    position: relative;
+    height: 54px;
+    display: grid;
+    grid-template-columns: repeat(14, minmax(0, 1fr));
+    gap: 2px;
+}
+
+.scale-keys .white {
+    border-radius: 0 0 4px 4px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding-bottom: 4px;
+    font-size: 9px;
+    font-weight: 700;
+    color: #17160f;
+}
+
+.scale-keys .white.in { background: #e6e1d3; }
+.scale-keys .white.out { background: #8a877b; }
+.scale-keys .white.on { background: #ffcc00; }
+
+.scale-keys .black {
+    position: absolute;
+    top: 0;
+    width: 4.4%;
+    height: 32px;
+    border-radius: 0 0 3px 3px;
+    border: 1px solid var(--device);
+}
+
+.scale-keys .black.in { background: #4d4a3c; }
+.scale-keys .black.out { background: #121214; }
+.scale-keys .black.on { background: #ffcc00; }
+
+/* ---- stick + pads -------------------------------------------------------- */
+
+.device-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 22px;
+    align-items: center;
+}
+
+.stick-area {
+    flex: 0 0 auto;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.stick {
+    position: relative;
+    width: 292px;
+    height: 236px;
+}
+
+.stick-well {
+    position: absolute;
+    left: calc(50% - 62px);
+    top: calc(50% - 62px);
+    width: 124px;
+    height: 124px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 40%, #121215, #0a0a0c);
+    box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+.stick-dir {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    min-width: 68px;
+    height: 44px;
+    padding: 2px 8px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: #f2f0e6;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+}
+
+.stick-dir:hover {
+    border-color: #44444b;
+}
+
+.dir-name {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+.dir-rule {
+    font-size: 9px;
+    color: #b8b5a8;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+}
+
+.stick-dir .led {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #44444b;
+    flex: 0 0 auto;
+}
+
+.stick-dir[aria-pressed='true'] {
+    border-color: #6b5a10;
+}
+
+.stick-dir[aria-pressed='true'] .led {
+    background: #ffe680;
+}
+
+.stick-dir.active {
+    background: #ffcc00;
+    color: #000;
+}
+
+.stick-dir.active .dir-rule {
+    color: #4a3d00;
+}
+
+.stick-dir.active .led {
+    background: #000;
+}
+
+.stick-knob {
+    position: absolute;
+    left: calc(50% - 38px);
+    top: calc(50% - 38px);
+    width: 76px;
+    height: 76px;
+    border-radius: 50%;
+    border: 1px solid #4a4a52;
+    background: radial-gradient(circle at 40% 35%, #5a5a63, #2a2a30 70%);
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5);
+    color: #f2f0e6;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    transition: transform 0.08s ease-out;
+}
+
+.stick-knob.active {
+    color: #ffcc00;
+}
+
+.knob-name {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 15px;
+}
+
+.knob-rule {
+    font-size: 9px;
+    color: #b8b5a8;
+    text-transform: uppercase;
+}
+
+.stick-caption {
+    margin: 0;
+    font-size: 11px;
+    color: #b8b5a8;
+}
+
+.stick-caption b {
+    color: #f2f0e6;
+}
+
+.pads {
+    flex: 1 1 340px;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    grid-template-areas:
+        '. p2 p2 p4 p4 p6 p6 .'
+        'p1 p1 p3 p3 p5 p5 p7 p7';
+    gap: 10px;
+}
+
+.pad {
+    height: 96px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--cap);
+    color: var(--cap-ink);
+    box-shadow: 0 4px 0 #b38f00, 0 6px 12px rgba(0, 0, 0, 0.35);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: flex-start;
+    text-align: left;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: transform 0.05s, box-shadow 0.05s;
+}
+
+.pad.held {
+    background: #ff6600;
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 #b34700, 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.pad-number {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 30px;
+    line-height: 1;
+}
+
+.pad-meta {
+    display: flex;
+    width: 100%;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.pad-numeral {
+    font-size: 11px;
+    color: var(--cap-sub);
+}
+
+.pad.held .pad-numeral {
+    color: #4a1d00;
+}
+
+.pad-symbol {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ---- foot ---------------------------------------------------------------- */
+
+.device-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 24px;
+    border-top: 1px solid var(--device-edge);
+    padding-top: 14px;
+}
+
+.inversion {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.device-caption {
+    font-size: 11px;
+    color: #b8b5a8;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+}
+
+.segmented.dark {
+    background: #121214;
+    border-color: var(--device-edge);
+}
+
+.segmented.dark > button {
+    color: #f2f0e6;
+}
+
+.segmented.dark > button[aria-pressed='true'] {
+    background: #f2f0e6;
+    color: #14130f;
+}
+
+.segmented.dark > button:disabled {
+    color: #55555c;
+}
+
+.device-hint {
+    margin: 0;
+    font-size: 11px;
+    color: #b8b5a8;
+    line-height: 1.6;
+}
+
+.device-hint kbd {
+    font-family: inherit;
+    color: #f2f0e6;
+    border: 1px solid #44444b;
+    border-radius: 4px;
+    padding: 0 4px;
+}
+
+@media (max-width: 560px) {
+    .device {
+        padding: 14px;
+        border-radius: 20px;
+    }
+
+    .oled-symbol {
+        font-size: 64px;
+    }
+
+    .oled-status,
+    .oled-foot {
+        font-size: 16px;
+    }
+
+    .pad {
+        height: 84px;
+        padding: 8px;
+    }
+
+    .pad-number {
+        font-size: 24px;
+    }
+
+    .pad-symbol {
+        font-size: 13px;
+    }
+
+    .pad-numeral {
+        display: none;
+    }
+}

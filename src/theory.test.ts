@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { buildChordMidi, invert, nameChord, resolveChord, toToneNotes, arpOrder, ChordType, maxInversion } from './theory';
+import { buildChordMidi, invert, nameChord, resolveChord, toToneNotes, arpOrder, ChordType, maxInversion, stickChordType, triadQuality, romanNumeral, STICK_DIRS } from './theory';
 
-const TYPES: ChordType[] = ['root', 'triad', 'flip', 'dim', 'aug', 'dom7', 'diatonic7', 'diatonic9', 'sus2', 'sus4'];
+const TYPES: ChordType[] = ['root', 'triad', 'flip', 'minor', 'dim', 'aug', 'six', 'dom7', 'diatonic7', 'diatonic9', 'sus2', 'sus4'];
 const intervals = (m: number[]) => m.map(n => n - m[0]);
 
 describe('buildChordMidi', () => {
@@ -141,5 +141,40 @@ describe('arpOrder', () => {
 
     it('random is a permutation', () => {
         expect([...arpOrder([60, 64, 67, 71], 'random')].sort()).toEqual([60, 64, 67, 71]);
+    });
+});
+
+describe('stick mapping (HiChord default)', () => {
+    const nameIn = (degree: number, dir: Parameters<typeof stickChordType>[0]) =>
+        resolveChord('C', { degree, type: stickChordType(dir, triadQuality(degree)), inversion: 0, octave: 4 }).name.symbol;
+
+    it('knows the diatonic triad qualities', () => {
+        expect([0, 1, 2, 3, 4, 5, 6].map(triadQuality)).toEqual(['major', 'minor', 'minor', 'major', 'major', 'minor', 'dim']);
+        expect([0, 1, 2, 3, 4, 5, 6].map(romanNumeral)).toEqual(['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°']);
+    });
+
+    it('plays the plain triad in the centre', () => {
+        expect([0, 1, 2, 3, 4, 5, 6].map(d => nameIn(d, 'C'))).toEqual(['C', 'Dm', 'Em', 'F', 'G', 'Am', 'B°']);
+    });
+
+    it('maps every direction on a major, a minor and the diminished degree', () => {
+        expect(['U', 'UR', 'R', 'DR', 'D', 'DL', 'L', 'UL'].map(d => nameIn(0, d as any)))
+            .toEqual(['Cm', 'C7', 'Cmaj7', 'Cmaj9', 'Csus4', 'C6', 'C°', 'C+']);
+        expect(['U', 'UR', 'R', 'DR', 'D', 'DL', 'L', 'UL'].map(d => nameIn(5, d as any)))
+            .toEqual(['A', 'A7', 'Am7', 'Am9', 'Asus4', 'Asus2', 'A°', 'A+']);
+        expect(['U', 'UR', 'R', 'DR', 'D', 'DL', 'L', 'UL'].map(d => nameIn(6, d as any)))
+            .toEqual(['B°', 'B7', 'Bm7♭5', 'Bm7♭5', 'B°', 'B°', 'Bm', 'B+']);
+    });
+
+    it('names every stick chord on every degree in every key', () => {
+        const keys = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
+        for (const key of keys) {
+            for (let degree = 0; degree < 7; degree++) {
+                for (const dir of STICK_DIRS) {
+                    const chord = resolveChord(key, { degree, type: stickChordType(dir, triadQuality(degree)), inversion: 0, octave: 4 });
+                    expect(chord.name.symbol).not.toContain('?');
+                }
+            }
+        }
     });
 });
