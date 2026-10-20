@@ -25,6 +25,7 @@ A chord instrument modelled on pocket chord machines like the HiChord: seven cho
 
 - A step sequencer that grows a row of 8 steps at a time (SEQ-8, SEQ-16, …), one step per beat in 4/4. A chord held across several steps is one block with a strike dot and a sustain bar, and it carries on into the next row when it crosses a row break.
 - Tracks: up to six lanes, each with its own instrument, volume, mute and solo. Pads play and record on the selected track; mute and solo only affect playback, so you can still play a muted track live.
+- Drums: **+ Drums** adds a drum track with a synthesised 808/909-style kit (kick, snare, clap, closed and open hat, two toms, rim). Program it on a 1/16 step grid of 1, 2 or 4 bars that loops under the whole song, or start from a beat that fits the time signature (Rock, Four on the floor, Half-time, Boom bap, Bossa nova, Disco in 4/4; Waltz in 3/4; a 6/8 groove; a basic beat for any meter). Drums play dry, without the chord effects. The pads keep playing the last chord track you selected.
 - Each recorded chord keeps the key and chord/arp settings it was recorded with. "Use current settings" re-applies the live ones to a chord.
 - Chords are stored in ticks (96 per beat) and played by a lookahead scheduler on the audio clock, so edits made while playing are heard straight away and tempo changes apply immediately.
 - Playback doesn't touch the screen or the stick; they only follow what you play live.

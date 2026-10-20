@@ -1,0 +1,208 @@
+.drum-editor {
+    --drum-label: 74px;
+    --drum-cell: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+}
+
+.drum-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+}
+
+.drum-head .segmented > button {
+    min-height: 30px;
+    padding: 0 10px;
+    white-space: nowrap;
+}
+
+.drum-head .segmented > button[aria-pressed='true'] {
+    background: var(--track);
+    color: #000;
+}
+
+.drum-preset {
+    height: 32px;
+    padding: 0 6px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+}
+
+.drum-hint {
+    flex: 1 1 200px;
+}
+
+.drum-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-x: auto;
+}
+
+.drum-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: calc(var(--drum-label) + var(--drum-cols, 16) * (var(--drum-cell) + 3px));
+}
+
+.drum-bar-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--muted);
+    padding-left: 2px;
+}
+
+.drum-row {
+    display: grid;
+    column-gap: 3px;
+    align-items: stretch;
+}
+
+.drum-name {
+    padding: 0 6px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 11px;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.drum-name:hover {
+    color: var(--text);
+    background: var(--panel-2);
+}
+
+.drum-cell {
+    height: 30px;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: var(--panel-2);
+}
+
+/* every other beat a shade darker, so the 1/16s read in groups */
+.drum-cell.alt {
+    background: var(--bg);
+}
+
+.drum-cell.beat {
+    border-left-color: var(--line-2);
+    border-left-width: 2px;
+}
+
+.drum-cell.on {
+    background: var(--track);
+    border-color: var(--track);
+}
+
+.drum-cell.now {
+    box-shadow: inset 0 0 0 2px var(--text);
+}
+
+.drum-cell.on.now {
+    filter: brightness(1.25);
+}
+
+.drum-row.kick .drum-cell {
+    height: 34px;
+}
+
+.drum-count span {
+    font-size: 10px;
+    color: var(--faint);
+    text-align: left;
+    padding-left: 3px;
+}
+
+/* ---- a drum track's lane in the sequencer rows: a miniature of its pattern ---------------------- */
+
+.drum-mini {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    gap: 2px;
+    width: 100%;
+    height: 40px;
+    padding: 6px 6px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+}
+
+.drum-mini.selected {
+    border-color: var(--track);
+    box-shadow: inset 0 0 0 1px var(--track);
+}
+
+.drum-mini.here {
+    background: color-mix(in srgb, var(--track) 18%, var(--panel-2));
+}
+
+.drum-mini-col {
+    display: grid;
+    grid-template-rows: repeat(3, 1fr);
+    justify-items: center;
+    align-items: center;
+}
+
+.drum-mini-col i {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--track);
+    opacity: 0;
+}
+
+.drum-mini-col i.on {
+    opacity: 1;
+}
+
+/* phones: landscape keeps the names, portrait squeezes 16 cells into the width */
+@media (max-height: 560px) {
+    .drum-editor {
+        --drum-cell: 18px;
+    }
+
+    .drum-cell {
+        height: 28px;
+    }
+
+    .drum-hint {
+        display: none;
+    }
+}
+
+@media (max-width: 560px) {
+    .drum-editor {
+        --drum-label: 50px;
+        --drum-cell: 14px;
+    }
+
+    .drum-name {
+        padding: 0 2px;
+        font-size: 10px;
+    }
+
+    .drum-cell {
+        height: 28px;
+        border-radius: 4px;
+    }
+
+    .drum-hint {
+        display: none;
+    }
+}
