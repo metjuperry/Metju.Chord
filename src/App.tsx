@@ -12,16 +12,33 @@ import {
 } from './theory';
 import { ArpRate, getEngine } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
+import { ARP_RATES } from './components/SoundPanel';
 import {
-    BEATS_PER_BAR, Clip, PlayMode, clipAt, clipEnd, fitTo, isChordClip, loopEnd, place, remove, setLength, split,
+    BEATS_PER_BAR, STEPS_PER_ROW, TICKS_PER_STEP as T, ChordClip, Clip, ClipSound, PlayMode, Track,
+    audibleTracks, clipAt, fitTo, isChordClip, newTrack, place, remove, setLength, songEnd, songLoopEnd, split,
 } from './progression';
+import { SeqEvent, SeqOptions, SequencerPlayer, ticksToSeconds } from './audio/sequencer';
 
 const DEGREE_KEYS: { [code: string]: number } = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5, Digit7: 6 };
 const STICK_KEYS: { [code: string]: StickDir } = {
     KeyQ: 'UL', KeyW: 'U', KeyE: 'UR', KeyA: 'L', KeyS: 'C', KeyD: 'R', KeyZ: 'DL', KeyX: 'D', KeyC: 'DR',
 };
 const INVERSION_LABELS = ['ROOT POS', '1ST INV', '2ND INV', '3RD INV'];
+const ARP_PATTERN_LABELS: { [p in ArpPattern]: string } = { up: 'up', down: 'down', upDown: 'up-down', random: 'random' };
 const MAX_INVERSION = 3;
+/** Instruments offered to new tracks, in order. */
+const NEW_TRACK_INSTRUMENTS: InstrumentId[] = ['lead', 'strings', 'bells', 'brass', 'organ', 'pluck', 'epiano', 'warmpad'];
+
+/** What the sequencer schedules: a chord and the track it plays on. */
+interface Scheduled {
+    clip: ChordClip;
+    track: string;
+}
+
+const initialTracks = (): Track[] => {
+    const keys = newTrack([], 'epiano', 'Keys');
+    return [keys, newTrack([keys], 'warmpad', 'Pad')];
+};
 
 /** What the screen shows: the last chord struck, by a pad or by the progression. */
 interface Shown {
@@ -43,7 +60,6 @@ const App: React.FC = () => {
     const [selectedKey, setSelectedKey] = useState<MusicalKey>('C');
     const [octave, setOctave] = useState(4);
     const [bpm, setBpm] = useState(100);
-    const [instrument, setInstrument] = useState<InstrumentId>('epiano');
     const [playMode, setPlayMode] = useState<PlayMode>('Chord');
     const [arpPattern, setArpPattern] = useState<ArpPattern>('up');
     const [arpRate, setArpRate] = useState<ArpRate>('8n');
@@ -62,24 +78,31 @@ const App: React.FC = () => {
     const [shown, setShown] = useState<Shown | null>(null);
 
     // ---- progression ----------------------------------------------------------------
-    const [total, setTotal] = useState(16);
-    const [clips, setClips] = useState<Clip[]>([]);
+    const [total, setTotal] = useState(STEPS_PER_ROW);
+    const [tracks, setTracks] = useState<Track[]>(initialTracks);
+    const [selectedTrack, setSelectedTrack] = useState('');
+    // The selected track: pads play through it and recordings land on it
+    const current = tracks.find(t => t.id === selectedTrack) ?? tracks[0];
+    const clips = current.clips;
+    const instrument = current.instrument;
+    const updateTrack = (id: string, patch: Partial<Track>) => setTracks(ts => ts.map(t => (t.id === id ? { ...t, ...patch } : t)));
+    const setClips = (next: Clip[]) => updateTrack(current.id, { clips: next });
+    const setInstrument = (id: InstrumentId) => updateTrack(current.id, { instrument: id });
     const [selected, setSelected] = useState(0);
     const [playhead, setPlayhead] = useState(0);
     const [playing, setPlaying] = useState(false);
     const [loop, setLoop] = useState(true);
     const [recording, setRecording] = useState(false);
     const [clipboard, setClipboard] = useState<Clip | null>(null);
-    const seqLoop = useRef<Tone.Loop | null>(null);
-    const seqBeat = useRef(0);
+    const player = useRef<SequencerPlayer<Scheduled> | null>(null);
 
     // ---- metronome ------------------------------------------------------------------
     const [metronomeOn, setMetronomeOn] = useState(false);
     const [metBeat, setMetBeat] = useState<number | null>(null);
 
     // Latest state for Transport callbacks and the global key handler
-    const live = useRef({ selectedKey, octave, inversion, stickDir, playMode, arpPattern, arpRate, noteLength, clips, total, selected, loop, recording });
-    live.current = { selectedKey, octave, inversion, stickDir, playMode, arpPattern, arpRate, noteLength, clips, total, selected, loop, recording };
+    const live = useRef({ selectedKey, octave, inversion, stickDir, instrument, playMode, arpPattern, arpRate, noteLength, clips, tracks, total, selected, loop, recording });
+    live.current = { selectedKey, octave, inversion, stickDir, instrument, playMode, arpPattern, arpRate, noteLength, clips, tracks, total, selected, loop, recording };
 
     useEffect(() => {
         document.documentElement.setAttribute('data-theme', theme);
@@ -92,7 +115,8 @@ const App: React.FC = () => {
         await Tone.start();
         const engine = getEngine(); // built on first use, after the user gesture
         engine.setBpm(bpm);
-        engine.setInstrument(instrument);
+        tracks.forEach(t => engine.setTrack(t.id, { instrument: t.instrument, volume: t.volume }));
+        engine.selectTrack(current.id);
         setAudioReady(true);
     };
 
@@ -100,9 +124,21 @@ const App: React.FC = () => {
         if (audioReady) getEngine().setBpm(bpm);
     }, [bpm, audioReady]);
 
+    // Keep the engine's per-track strips (instrument, volume) in step with the tracks
+    const engineTracks = useRef(new Set<string>());
     useEffect(() => {
-        if (audioReady) getEngine().setInstrument(instrument);
-    }, [instrument, audioReady]);
+        if (!audioReady) return;
+        const engine = getEngine();
+        tracks.forEach(t => engine.setTrack(t.id, { instrument: t.instrument, volume: t.volume }));
+        engineTracks.current.forEach(id => {
+            if (!tracks.some(t => t.id === id)) engine.removeTrack(id);
+        });
+        engineTracks.current = new Set(tracks.map(t => t.id));
+    }, [tracks, audioReady]);
+
+    useEffect(() => {
+        if (audioReady) getEngine().selectTrack(current.id);
+    }, [current.id, audioReady]);
 
     // ---- chords -------------------------------------------------------------------
 
@@ -111,6 +147,15 @@ const App: React.FC = () => {
         type: stickChordType(dir, triadQuality(degree)),
         inversion: s.inversion,
         octave: s.octave,
+    });
+
+    /** The sound settings a chord recorded right now would be baked with. */
+    const currentSound = (s = live.current): ClipSound => ({
+        key: s.selectedKey,
+        playMode: s.playMode,
+        arpPattern: s.arpPattern,
+        arpRate: s.arpRate,
+        noteLength: s.noteLength,
     });
 
     /** Start a chord sounding; returns how to stop it. */
@@ -123,8 +168,7 @@ const App: React.FC = () => {
         if (s.playMode === 'Arp') {
             stop = engine.startArp(chord.midi, { pattern: s.arpPattern, rate: s.arpRate, noteLength: s.noteLength });
         } else {
-            engine.attack(chord.midi);
-            stop = () => engine.release(chord.midi);
+            stop = engine.attack(chord.midi);
         }
         setShown({ chord, degree, dir: s.stickDir, inversion: s.inversion });
         return { params, stop };
@@ -140,7 +184,7 @@ const App: React.FC = () => {
 
         const s = live.current;
         if (s.recording) {
-            setClips(place(s.clips, { start: s.selected, len: 1, chord: { ...params, playMode: s.playMode } }));
+            setClips(place(s.clips, { start: s.selected * T, len: T, chord: { ...params, ...currentSound(s) } }));
             setSelected(Math.min(s.selected + 1, s.total - 1));
             setPlayhead(Math.min(s.selected + 1, s.total - 1));
         }
@@ -167,71 +211,77 @@ const App: React.FC = () => {
             holds.current.set(id, { degree: hold.degree, stop: sound(hold.degree).stop });
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [stickDir, inversion, octave, selectedKey, playMode, arpPattern, arpRate]);
+    }, [stickDir, inversion, octave, selectedKey, instrument, playMode, arpPattern, arpRate]);
 
     // ---- progression playback (Transport) --------------------------------------------
 
-    const stopPlayback = useCallback(() => {
-        if (seqLoop.current) {
-            seqLoop.current.stop();
-            seqLoop.current.dispose();
-            seqLoop.current = null;
-            getEngine().releaseTransport('sequencer');
+    /** The progression as timed events, and how it loops (the grid is in steps, the events in ticks). */
+    const schedule = (s = live.current): { events: SeqEvent<Scheduled>[]; opts: SeqOptions } => ({
+        // Mute and solo only affect playback, so a muted track can still be played live from the pads
+        events: audibleTracks(s.tracks).flatMap(t => t.clips.filter(isChordClip).map(clip => ({
+            tick: clip.start, duration: clip.len, data: { clip, track: t.id },
+        }))),
+        opts: { loop: s.loop, loopEnd: Math.min(songLoopEnd(s.tracks), s.total * T), end: songEnd(s.tracks) },
+    });
+
+    // Each chord plays on its track's instrument, with the key and chord/arp settings it was recorded with.
+    // The screen, stick and keyboard strip belong to live playing only, so nothing here touches them.
+    const playEvent = (event: SeqEvent<Scheduled>, time: number) => {
+        const { clip, track } = event.data;
+        const c = clip.chord;
+        const chord = resolveChord(c.key, c);
+        const seconds = ticksToSeconds(event.duration);
+        const engine = getEngine();
+        if (c.playMode === 'Arp') {
+            engine.scheduleArp(chord.midi, { pattern: c.arpPattern, rate: c.arpRate, noteLength: c.noteLength }, time, seconds, track);
+        } else {
+            engine.playChord(chord.midi, { duration: seconds * 0.98, time, track });
         }
+    };
+    const playEventRef = useRef(playEvent);
+    playEventRef.current = playEvent;
+
+    const stopPlayback = useCallback(() => {
+        player.current?.stop();
         setPlaying(false);
     }, []);
 
-    const tick = (time: number) => {
-        const s = live.current;
-        const lastEnd = s.clips.reduce((m, c) => Math.max(m, clipEnd(c)), 0);
-        const end = s.loop ? Math.min(loopEnd(s.clips), s.total) : lastEnd;
-        let beat = seqBeat.current;
-        if (beat >= end) {
-            if (!s.loop || lastEnd === 0) {
-                Tone.getDraw().schedule(stopPlayback, time);
-                return;
-            }
-            beat = 0;
-        }
-        seqBeat.current = beat + 1;
-
-        const clip = s.clips.find(c => c.start === beat);
-        let strike: Shown | null = null;
-        if (isChordClip(clip)) {
-            const chord = resolveChord(s.selectedKey, clip.chord);
-            const seconds = clip.len * Tone.Time('4n').toSeconds();
-            const engine = getEngine();
-            if (clip.chord.playMode === 'Arp') {
-                engine.scheduleArp(chord.midi, { pattern: s.arpPattern, rate: s.arpRate, noteLength: s.noteLength }, time, seconds);
-            } else {
-                engine.playChord(chord.midi, { duration: seconds * 0.98, time });
-            }
-            strike = { chord, degree: clip.chord.degree, dir: dirForType(clip), inversion: clip.chord.inversion };
-        }
-        Tone.getDraw().schedule(() => {
-            setPlayhead(beat);
-            if (strike) setShown(strike);
-        }, time);
-    };
-
     const startPlayback = async () => {
         await startAudio();
-        if (seqLoop.current) return;
-        const s = live.current;
-        seqBeat.current = playhead >= (s.loop ? loopEnd(s.clips) : s.total) ? 0 : playhead;
-        const engine = getEngine();
-        seqLoop.current = new Tone.Loop(t => tickRef.current(t), '4n');
-        const startAt = engine.quantizedStart('4n');
-        engine.acquireTransport('sequencer');
-        seqLoop.current.start(startAt);
+        if (player.current?.playing) return;
+        const { opts } = schedule();
+        if (!opts.loop && opts.end === 0) return;
+        const limit = opts.loop ? opts.loopEnd : opts.end;
+        const from = playhead * T < limit ? playhead * T : 0;
+        // The player reads the latest clips on every pass, so edits while playing need no extra wiring
+        player.current = new SequencerPlayer<Scheduled>(() => schedule(), (e, t) => playEventRef.current(e, t), stopPlayback);
+        player.current.start(from);
         setPlaying(true);
     };
-    const tickRef = useRef(tick);
-    tickRef.current = tick;
 
     const togglePlay = () => (playing ? stopPlayback() : startPlayback());
 
-    useEffect(() => () => stopPlayback(), [stopPlayback]);
+    // The playhead follows the Transport position, read once per frame
+    useEffect(() => {
+        if (!playing) return;
+        let frame = 0;
+        let last = -1;
+        const draw = () => {
+            const pos = player.current?.position();
+            if (pos !== null && pos !== undefined) {
+                const step = Math.floor(pos / T);
+                if (step !== last) {
+                    last = step;
+                    setPlayhead(step);
+                }
+            }
+            frame = requestAnimationFrame(draw);
+        };
+        frame = requestAnimationFrame(draw);
+        return () => cancelAnimationFrame(frame);
+    }, [playing]);
+
+    useEffect(() => () => player.current?.stop(), []);
 
     // ---- metronome ------------------------------------------------------------------
 
@@ -265,35 +315,54 @@ const App: React.FC = () => {
 
     // ---- progression editing -----------------------------------------------------------
 
-    const selClip = clipAt(clips, selected);
-    const select = (beat: number) => {
-        setSelected(beat);
-        if (!playing) setPlayhead(beat);
+    const totalTicks = total * T;
+    const selTick = selected * T;
+    const selClip = clipAt(clips, selTick);
+    const select = (step: number, track?: string) => {
+        setSelected(step);
+        if (track) setSelectedTrack(track);
+        if (!playing) setPlayhead(step);
     };
-    const starts = clips.map(c => c.start);
+    const trackActions = {
+        add: () => {
+            const used = new Set(tracks.map(t => t.instrument));
+            const inst = NEW_TRACK_INSTRUMENTS.find(i => !used.has(i)) ?? 'epiano';
+            const track = newTrack(tracks, inst);
+            setTracks([...tracks, track]);
+            setSelectedTrack(track.id);
+        },
+        remove: (id: string) => {
+            if (tracks.length < 2) return;
+            const rest = tracks.filter(t => t.id !== id);
+            setTracks(rest);
+            if (id === current.id) setSelectedTrack(rest[0].id);
+        },
+    };
+    const starts = clips.map(c => c.start / T);
     const edit = {
-        longer: () => selClip && setClips(setLength(clips, selClip, selClip.len + 1, total)),
-        shorter: () => selClip && setClips(setLength(clips, selClip, selClip.len - 1, total)),
-        split: () => selClip && setClips(split(clips, selClip, selected)),
+        longer: () => selClip && setClips(setLength(clips, selClip, selClip.len + T, totalTicks)),
+        shorter: () => selClip && setClips(setLength(clips, selClip, selClip.len - T, totalTicks)),
+        split: () => selClip && setClips(split(clips, selClip, selTick)),
         copy: () => selClip && setClipboard(selClip),
-        paste: () => clipboard && setClips(place(clips, { ...clipboard, start: selected, len: Math.min(clipboard.len, total - selected) })),
+        paste: () => clipboard && setClips(place(clips, { ...clipboard, start: selTick, len: Math.min(clipboard.len, totalTicks - selTick) })),
         rest: () => {
-            const base = selClip ?? { start: selected, len: 1 };
+            const base = selClip ?? { start: selTick, len: T };
             setClips(place(selClip ? remove(clips, selClip) : clips, { start: base.start, len: base.len, rest: true }));
         },
         del: () => selClip && setClips(remove(clips, selClip)),
+        restamp: () => isChordClip(selClip) && setClips(place(remove(clips, selClip), { ...selClip, chord: { ...selClip.chord, ...currentSound() } })),
         clearAll: () => {
             stopPlayback();
-            setClips([]);
+            setTracks(ts => ts.map(t => ({ ...t, clips: [] })));
             setSelected(0);
             setPlayhead(0);
         },
-        addBar: () => setTotal(total + BEATS_PER_BAR),
-        removeBar: () => {
-            if (total <= BEATS_PER_BAR) return;
-            const next = total - BEATS_PER_BAR;
+        addRow: () => setTotal(total + STEPS_PER_ROW),
+        removeRow: () => {
+            if (total <= STEPS_PER_ROW) return;
+            const next = total - STEPS_PER_ROW;
             setTotal(next);
-            setClips(fitTo(clips, next));
+            setTracks(ts => ts.map(t => ({ ...t, clips: fitTo(t.clips, next * T) })));
             setSelected(Math.min(selected, next - 1));
             setPlayhead(Math.min(playhead, next - 1));
         },
@@ -388,7 +457,6 @@ const App: React.FC = () => {
     ])) as { [d in StickDir]: string };
 
     const instrumentLabel = INSTRUMENTS.find(i => i.id === instrument)?.label ?? '';
-    const playingClip = playing ? clipAt(clips, playhead) : undefined;
     const screen: ScreenView = shown
         ? {
             idle: false,
@@ -399,23 +467,24 @@ const App: React.FC = () => {
             stick: shown.dir,
             inversionLabel: INVERSION_LABELS[Math.min(shown.inversion, shown.chord.midi.length - 1)],
             status: [`${selectedKey} MAJOR`, `OCT ${octave}`, `${bpm} BPM`, `${playMode} · ${instrumentLabel}`],
-            flag: playing
-                ? `BEAT ${playhead + 1}${playingClip && playingClip.len > 1 && playhead > playingClip.start ? ` · HELD ${playhead - playingClip.start + 1}/${playingClip.len}` : ''}`
-                : undefined,
         }
         : {
             idle: true, symbol: '', long: '', numeral: '', notes: [], stick: 'C', inversionLabel: '',
             status: [`${selectedKey} MAJOR`, `OCT ${octave}`, `${bpm} BPM`, `${playMode} · ${instrumentLabel}`],
         };
 
-    const sounding = shown && (held.length > 0 || playing) ? shown.chord.midi : [];
+    const sounding = shown && held.length > 0 ? shown.chord.midi : [];
     const maxInv = Math.min(MAX_INVERSION, Math.max(...pads.map(p =>
         resolveChord(selectedKey, paramsFor(p.degree, stickDir)).midi.length - 1)));
 
+    const labelOf = (id: InstrumentId) => INSTRUMENTS.find(i => i.id === id)?.label ?? id;
+    const soundText = (c: ClipSound) =>
+        [c.playMode === 'Arp' ? `Arp ${ARP_PATTERN_LABELS[c.arpPattern]} ${ARP_RATES.find(r => r.rate === c.arpRate)?.label ?? ''}` : null,
+            c.key !== selectedKey ? `${c.key} major` : null].filter(Boolean).join(' · ');
     const describe = (clip: Clip) =>
         isChordClip(clip)
-            ? { symbol: resolveChord(selectedKey, clip.chord).name.symbol, numeral: romanNumeral(clip.chord.degree) }
-            : { symbol: 'Rest', numeral: '' };
+            ? { symbol: resolveChord(clip.chord.key, clip.chord).name.symbol, numeral: romanNumeral(clip.chord.degree), sound: soundText(clip.chord) }
+            : { symbol: 'Rest', numeral: '', sound: '' };
 
     const beatDot = metronomeOn ? metBeat : playing ? playhead % BEATS_PER_BAR : null;
 
@@ -468,6 +537,8 @@ const App: React.FC = () => {
                     onInversion={setInversion}
                 />
                 <SoundPanel
+                    trackName={current.name}
+                    trackColor={current.color}
                     instrument={instrument}
                     playMode={playMode}
                     arpPattern={arpPattern}
@@ -483,7 +554,12 @@ const App: React.FC = () => {
 
             <Progression
                 total={total}
-                clips={clips}
+                tracks={tracks.map(t => ({ ...t, clips: t.clips.map(c => ({ ...c, start: c.start / T, len: c.len / T })) }))}
+                selectedTrack={current.id}
+                onSelectTrack={id => setSelectedTrack(id)}
+                onUpdateTrack={updateTrack}
+                onAddTrack={trackActions.add}
+                onRemoveTrack={trackActions.remove}
                 selected={selected}
                 playhead={playhead}
                 playing={playing}
@@ -498,8 +574,8 @@ const App: React.FC = () => {
                 onNext={edit.next}
                 onToggleLoop={() => setLoop(l => !l)}
                 onToggleRecord={() => setRecording(r => !r)}
-                onAddBar={edit.addBar}
-                onRemoveBar={edit.removeBar}
+                onAddRow={edit.addRow}
+                onRemoveRow={edit.removeRow}
                 onLonger={edit.longer}
                 onShorter={edit.shorter}
                 onSplit={edit.split}
@@ -507,6 +583,8 @@ const App: React.FC = () => {
                 onPaste={edit.paste}
                 onRest={edit.rest}
                 onDelete={edit.del}
+                onRestamp={edit.restamp}
+                currentSound={soundText(currentSound())}
                 onClearAll={edit.clearAll}
             />
 
@@ -514,13 +592,5 @@ const App: React.FC = () => {
         </div>
     );
 };
-
-/** The stick direction a recorded chord type came from, for the screen's stick readout. */
-function dirForType(clip: Clip): StickDir {
-    if (!isChordClip(clip)) return 'C';
-    const quality = triadQuality(clip.chord.degree);
-    const dirs: StickDir[] = ['C', 'U', 'UR', 'R', 'DR', 'D', 'DL', 'L', 'UL'];
-    return dirs.find(d => stickChordType(d, quality) === clip.chord.type) ?? 'C';
-}
 
 export default App;

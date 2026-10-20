@@ -37,6 +37,9 @@ const WAVES: { [id in InstrumentId]: string } = {
 };
 
 interface SoundPanelProps {
+    /** The selected track, whose instrument this panel sets. */
+    trackName: string;
+    trackColor: string;
     instrument: InstrumentId;
     playMode: PlayMode;
     arpPattern: ArpPattern;
@@ -132,14 +135,17 @@ const Effects: React.FC = () => {
 };
 
 const SoundPanel: React.FC<SoundPanelProps> = ({
-    instrument, playMode, arpPattern, arpRate, noteLength,
+    trackName, trackColor, instrument, playMode, arpPattern, arpRate, noteLength,
     onInstrument, onPlayMode, onArpPattern, onArpRate, onNoteLength,
 }) => {
     const rateIndex = Math.max(0, ARP_RATES.findIndex(r => r.rate === arpRate));
     return (
         <aside className="sound-panel" aria-label="Sound">
             <section className="panel sound-section" aria-labelledby="inst-title">
-                <h2 className="eyebrow" id="inst-title">Instrument</h2>
+                <div className="section-head">
+                    <h2 className="eyebrow" id="inst-title">Instrument</h2>
+                    <span className="section-note track-tag"><span className="track-dot" style={{ background: trackColor }} />{trackName} track</span>
+                </div>
                 <div className="instrument-grid" role="group" aria-labelledby="inst-title">
                     {INSTRUMENTS.map(({ id, label }) => (
                         <button key={id} aria-pressed={instrument === id} onClick={() => onInstrument(id)}>
@@ -170,7 +176,9 @@ const SoundPanel: React.FC<SoundPanelProps> = ({
                         <Slider label="Note length" value={noteLength} min={0.05} max={2} step={0.05} display={`${noteLength.toFixed(2)} s`} onChange={onNoteLength} />
                     </div>
                 )}
-                {playMode === 'Chord' && <p className="section-note">Chords ring while you hold a pad.</p>}
+                <p className="section-note">
+                    {playMode === 'Chord' ? 'Chords ring while you hold a pad. ' : ''}Chord/Arp settings are saved with each recorded chord; the instrument belongs to the track.
+                </p>
             </section>
 
             <Effects />

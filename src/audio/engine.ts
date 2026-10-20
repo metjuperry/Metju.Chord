@@ -22,9 +22,15 @@ export interface ArpOptions {
 
 const velocityFor = (voices: number) => 1 / Math.sqrt(Math.max(1, voices));
 
+interface Strip {
+    instrument: InstrumentId;
+    voice: Instrument;
+    level: Tone.Volume;
+}
+
 /**
  * Owns every audio node. Signal path:
- *   instrument -> fxIn -> distortion -> chorus -> delay -> reverb -> fxOut -> master -> limiter -> destination
+ *   track instrument -> track volume -> fxIn -> distortion -> chorus -> delay -> reverb -> fxOut -> master -> limiter -> destination
  * The effects chain is created once and never rewired; "disabled" just means wet = 0.
  */
 export class Engine {
@@ -46,7 +52,10 @@ export class Engine {
         distortion: { enabled: false, amount: 0.4 },
     };
 
-    private instrument: Instrument | null = null;
+    /** One strip per sequencer track: its instrument into its own volume, then into the shared effects. */
+    private strips = new Map<string, Strip>();
+    /** The track the pads and keyboard play through. */
+    private current = 'main';
     private transportUsers = new Set<string>();
 
     constructor() {
@@ -66,44 +75,82 @@ export class Engine {
 
     // ---- instruments -------------------------------------------------------
 
-    setInstrument(id: InstrumentId) {
-        const next = createInstrument(id);
-        next.output.connect(this.fxIn);
-        const previous = this.instrument;
-        this.instrument = next;
-
-        if (previous) {
-            // Fade out rather than cutting, so a switch while notes ring does not click.
-            const fade = new Tone.Gain(1);
-            previous.output.disconnect();
-            previous.output.connect(fade);
-            fade.connect(this.fxIn);
-            fade.gain.rampTo(0, 0.05);
-            setTimeout(() => {
-                previous.nodes.forEach(n => n.dispose());
-                fade.dispose();
-            }, 150);
+    /** Create or update a track's strip. Changing its instrument swaps the synth with a short fade. */
+    setTrack(id: string, opts: { instrument: InstrumentId; volume: number }) {
+        let strip = this.strips.get(id);
+        if (!strip) {
+            const level = new Tone.Volume(opts.volume).connect(this.fxIn);
+            const voice = createInstrument(opts.instrument);
+            voice.output.connect(level);
+            strip = { instrument: opts.instrument, voice, level };
+            this.strips.set(id, strip);
+            return;
         }
+        strip.level.volume.rampTo(opts.volume, 0.05);
+        if (strip.instrument !== opts.instrument) {
+            const previous = strip.voice;
+            strip.voice = createInstrument(opts.instrument);
+            strip.voice.output.connect(strip.level);
+            strip.instrument = opts.instrument;
+            this.fadeOut(previous);
+        }
+    }
+
+    /** Fade a voice out over 50 ms (still through the effects and limiter) and dispose it, so swapping instruments mid-note doesn't click. */
+    private fadeOut(voice: Instrument, then?: () => void) {
+        const fade = new Tone.Gain(1).connect(this.fxIn);
+        voice.output.disconnect();
+        voice.output.connect(fade);
+        voice.synth.releaseAll();
+        fade.gain.rampTo(0, 0.05);
+        setTimeout(() => {
+            voice.nodes.forEach(n => n.dispose());
+            fade.dispose();
+            then?.();
+        }, 150);
+    }
+
+    removeTrack(id: string) {
+        const strip = this.strips.get(id);
+        if (!strip) return;
+        this.strips.delete(id);
+        this.fadeOut(strip.voice, () => strip.level.dispose());
+    }
+
+    /** The track the pads and keyboard play through. */
+    selectTrack(id: string) {
+        this.current = id;
+    }
+
+    /** Pads and keyboard play this instrument (on the selected track). Used by the level check too. */
+    setInstrument(id: InstrumentId) {
+        const strip = this.strips.get(this.current);
+        this.setTrack(this.current, { instrument: id, volume: strip ? strip.level.volume.value : 0 });
+    }
+
+    private voice(track: string = this.current): Instrument {
+        if (!this.strips.has(track)) this.setTrack(track, { instrument: 'epiano', volume: 0 });
+        return this.strips.get(track)!.voice;
     }
 
     // ---- playing -----------------------------------------------------------
 
-    /** Play a chord for `duration` (seconds or Tone time) at an audio-clock `time`. */
-    playChord(midi: number[], opts: { duration: Tone.Unit.Time; time?: number }) {
-        this.instrument?.synth.triggerAttackRelease(
+    /** Play a chord for `duration` (seconds or Tone time) at an audio-clock `time`, on `track` (default: the selected one). */
+    playChord(midi: number[], opts: { duration: Tone.Unit.Time; time?: number; track?: string }) {
+        this.voice(opts.track).synth.triggerAttackRelease(
             this.toFreqs(midi), opts.duration, opts.time ?? Tone.now(), velocityFor(midi.length));
     }
 
-    attack(midi: number[], time?: number) {
-        this.instrument?.synth.triggerAttack(this.toFreqs(midi), time ?? Tone.now(), velocityFor(midi.length));
-    }
-
-    release(midi: number[], time?: number) {
-        this.instrument?.synth.triggerRelease(this.toFreqs(midi), time ?? Tone.now());
+    /** Start a chord on the selected track; returns how to release it (on that same synth, even if the selection changes). */
+    attack(midi: number[], time?: number): () => void {
+        const synth = this.voice().synth;
+        const freqs = this.toFreqs(midi);
+        synth.triggerAttack(freqs, time ?? Tone.now(), velocityFor(midi.length));
+        return () => synth.triggerRelease(freqs, Tone.now());
     }
 
     releaseAll() {
-        this.instrument?.synth.releaseAll();
+        this.strips.forEach(s => s.voice.synth.releaseAll());
     }
 
     private toFreqs(midi: number[]): number[] {
@@ -148,6 +195,7 @@ export class Engine {
 
     /** Arpeggiate while held. Returns the function that stops it. */
     startArp(midi: number[], opts: ArpOptions): () => void {
+        const synth = this.voice().synth;
         const owner = `arp:${Math.random().toString(36).slice(2)}`;
         let cycle = arpOrder(midi, opts.pattern);
         let step = 0;
@@ -158,7 +206,7 @@ export class Engine {
                 cycle = arpOrder(midi, opts.pattern); // reshuffles for 'random'
                 step = 0;
             }
-            this.instrument?.synth.triggerAttackRelease(
+            synth.triggerAttackRelease(
                 Tone.Frequency(cycle[step++], 'midi').toFrequency(), opts.noteLength, time, velocity);
         }, opts.rate);
 
@@ -174,7 +222,8 @@ export class Engine {
     }
 
     /** Schedule an arpeggio at an exact audio time, filling `seconds` (used by sequencer steps). */
-    scheduleArp(midi: number[], opts: ArpOptions, time: number, seconds: number) {
+    scheduleArp(midi: number[], opts: ArpOptions, time: number, seconds: number, track?: string) {
+        const synth = this.voice(track).synth;
         const stepSeconds = Tone.Time(opts.rate).toSeconds();
         const steps = Math.max(1, Math.floor((seconds + 1e-6) / stepSeconds));
         let cycle = arpOrder(midi, opts.pattern);
@@ -183,7 +232,7 @@ export class Engine {
                 cycle = arpOrder(midi, opts.pattern);
                 k = 0;
             }
-            this.instrument?.synth.triggerAttackRelease(
+            synth.triggerAttackRelease(
                 Tone.Frequency(cycle[k], 'midi').toFrequency(),
                 Math.min(opts.noteLength, stepSeconds), time + i * stepSeconds, velocityFor(1));
         }
