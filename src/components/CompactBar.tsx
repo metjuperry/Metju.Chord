@@ -2,6 +2,7 @@ import React from 'react';
 import './CompactBar.css';
 import { KEYS, MusicalKey, SCALES, ScaleId } from '../theory';
 import { BPM_MAX, BPM_MIN, OCTAVE_MAX, OCTAVE_MIN } from './TopBar';
+import { haptic } from '../haptics';
 
 export type AppMode = 'play' | 'seq' | 'sound';
 
@@ -59,12 +60,12 @@ const CompactBar: React.FC<CompactBarProps> = p => (
         </div>
 
         <div className="cb-group">
-            <button className={`cb-play ${p.playing ? 'on' : ''}`} aria-label={p.playing ? 'Stop progression' : 'Play progression'} onClick={p.onTogglePlay}>
+            <button className={`cb-play ${p.playing ? 'on' : ''}`} aria-label={p.playing ? 'Stop progression' : 'Play progression'} onClick={() => { haptic('press'); p.onTogglePlay(); }}>
                 {p.playing
                     ? <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><rect x="3" y="3" width="8" height="8" /></svg>
                     : <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 1.5v11L12.5 7z" /></svg>}
             </button>
-            <button className={`cb-rec ${p.recording ? 'on' : ''}`} aria-pressed={p.recording} aria-label="Record" onClick={p.onToggleRecord}>
+            <button className={`cb-rec ${p.recording ? 'on' : ''}`} aria-pressed={p.recording} aria-label="Record" onClick={() => { haptic('lock'); p.onToggleRecord(); }}>
                 <span className="rec-dot" />
             </button>
         </div>
