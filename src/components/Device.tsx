@@ -39,6 +39,8 @@ interface DeviceProps {
     inversion: number;
     maxInversion: number;
     recording: boolean;
+    voiceLeading: boolean;
+    onVoiceLeading: (on: boolean) => void;
     onPadDown: (degree: number) => void;
     onPadUp: (degree: number) => void;
     onStick: (dir: StickDir) => void;
@@ -194,7 +196,7 @@ const Pad: React.FC<{ pad: PadView; onDown: (d: number) => void; onUp: (d: numbe
 
 const Device: React.FC<DeviceProps> = ({
     screen, sounding, scalePcs, octave, pads, stickDir, latchedDir, stickChords, stickFor, inversion, maxInversion, recording,
-    onPadDown, onPadUp, onStick, onInversion,
+    voiceLeading, onVoiceLeading, onPadDown, onPadUp, onStick, onInversion,
 }) => (
     <section className="device" aria-label="Instrument">
         <div className="device-top">
@@ -222,11 +224,17 @@ const Device: React.FC<DeviceProps> = ({
                 <span className="device-caption" id="inv-label">Inversion</span>
                 <div className="segmented dark" role="group" aria-labelledby="inv-label">
                     {INVERSIONS.map((label, i) => (
-                        <button key={label} aria-pressed={inversion === i} disabled={i > maxInversion} onClick={() => onInversion(i)}>
+                        <button key={label} aria-pressed={!voiceLeading && inversion === i} disabled={voiceLeading || i > maxInversion} onClick={() => onInversion(i)}>
                             {label}
                         </button>
                     ))}
                 </div>
+                <label className="vl-toggle" title="Pick each chord's inversion so it moves as little as possible from the last chord">
+                    <button className="switch" role="switch" aria-checked={voiceLeading} onClick={() => onVoiceLeading(!voiceLeading)}>
+                        <span />
+                    </button>
+                    <span>Voice leading{voiceLeading ? ' · auto' : ''}</span>
+                </label>
             </div>
             <p className="device-hint">
                 Click a stick direction to latch it, or hold <kbd>Q W E</kbd> <kbd>A D</kbd> <kbd>Z X C</kbd> while playing <kbd>1–7</kbd>.

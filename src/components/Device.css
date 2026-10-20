@@ -479,3 +479,23 @@
         display: none;
     }
 }
+
+.inversion {
+    flex-wrap: wrap;
+}
+
+.vl-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: #b8b5a8;
+}
+
+.vl-toggle .switch {
+    background: #3a3a40;
+}
+
+.vl-toggle .switch[aria-checked='true'] {
+    background: #ffcc00;
+}

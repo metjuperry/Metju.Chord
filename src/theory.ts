@@ -3,8 +3,26 @@ export type MusicalKey = 'C' | 'C#' | 'D' | 'D#' | 'E' | 'F' | 'F#' | 'G' | 'G#'
 export const KEYS: MusicalKey[] = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 export const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+export const FLAT_NAMES = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'];
 
-const MAJOR = [0, 2, 4, 5, 7, 9, 11];
+// ---- scales: every 7-note scale works with the pads, the stick and the numerals -------
+
+export type ScaleId = 'major' | 'minor' | 'harmonicMinor' | 'melodicMinor' | 'dorian' | 'phrygian' | 'lydian' | 'mixolydian';
+
+export const SCALES: { id: ScaleId; label: string; steps: number[] }[] = [
+    { id: 'major', label: 'Major', steps: [0, 2, 4, 5, 7, 9, 11] },
+    { id: 'minor', label: 'Minor', steps: [0, 2, 3, 5, 7, 8, 10] },
+    { id: 'harmonicMinor', label: 'Harmonic minor', steps: [0, 2, 3, 5, 7, 8, 11] },
+    { id: 'melodicMinor', label: 'Melodic minor', steps: [0, 2, 3, 5, 7, 9, 11] },
+    { id: 'dorian', label: 'Dorian', steps: [0, 2, 3, 5, 7, 9, 10] },
+    { id: 'phrygian', label: 'Phrygian', steps: [0, 1, 3, 5, 7, 8, 10] },
+    { id: 'lydian', label: 'Lydian', steps: [0, 2, 4, 6, 7, 9, 11] },
+    { id: 'mixolydian', label: 'Mixolydian', steps: [0, 2, 4, 5, 7, 9, 10] },
+];
+
+export const SCALE_IDS = SCALES.map(sc => sc.id);
+const stepsOf = (scale: ScaleId = 'major') => (SCALES.find(sc => sc.id === scale) ?? SCALES[0]).steps;
+export const scaleLabel = (scale: ScaleId = 'major') => (SCALES.find(sc => sc.id === scale) ?? SCALES[0]).label;
 
 export type ChordType =
     | 'root' | 'triad' | 'flip' | 'minor' | 'dim' | 'aug' | 'six'
@@ -16,25 +34,25 @@ export function keyPitchClass(key: MusicalKey): number {
     return NOTE_NAMES.indexOf(key);
 }
 
-export function getNoteInKey(key: MusicalKey, degree: number): string {
-    return NOTE_NAMES[(keyPitchClass(key) + MAJOR[degree]) % 12];
+export function getNoteInKey(key: MusicalKey, degree: number, scale: ScaleId = 'major'): string {
+    return NOTE_NAMES[(keyPitchClass(key) + stepsOf(scale)[degree]) % 12];
 }
 
 /**
- * Semitones above C of the scale tone `step` thirds above `degree` in the major
- * scale of `keyPc`. Rises monotonically with `step`: every scale-index wrap adds an octave.
+ * Semitones above C of the scale tone `step` thirds above `degree` in `scale` on `keyPc`.
+ * Rises monotonically with `step`: every scale-index wrap adds an octave.
  */
-export function scaleDegreeSemis(keyPc: number, degree: number, step: number): number {
+export function scaleDegreeSemis(keyPc: number, degree: number, step: number, scale: ScaleId = 'major'): number {
     const index = degree + 2 * step;
-    return keyPc + MAJOR[index % 7] + 12 * Math.floor(index / 7);
+    return keyPc + stepsOf(scale)[index % 7] + 12 * Math.floor(index / 7);
 }
 
 /** MIDI note numbers of a root-position chord, strictly ascending from the root. */
-export function buildChordMidi(keyPc: number, degree: number, type: ChordType, octave: number): number[] {
-    const rootSemis = scaleDegreeSemis(keyPc, degree, 0);
+export function buildChordMidi(keyPc: number, degree: number, type: ChordType, octave: number, scale: ScaleId = 'major'): number[] {
+    const rootSemis = scaleDegreeSemis(keyPc, degree, 0, scale);
     const rootPc = rootSemis % 12;
     const root = 12 * (octave + 1) + rootPc;
-    const diatonic = (step: number) => root + scaleDegreeSemis(keyPc, degree, step) - rootSemis;
+    const diatonic = (step: number) => root + scaleDegreeSemis(keyPc, degree, step, scale) - rootSemis;
 
     switch (type) {
         case 'triad':
@@ -78,8 +96,22 @@ export function invert(midi: number[], n: number): number[] {
     return result;
 }
 
-export function toToneNotes(midi: number[]): string[] {
-    return midi.map(m => `${NOTE_NAMES[m % 12]}${Math.floor(m / 12) - 1}`);
+export function toToneNotes(midi: number[], names: string[] = NOTE_NAMES): string[] {
+    return midi.map(m => `${names[m % 12]}${Math.floor(m / 12) - 1}`);
+}
+
+/** Where each mode's parent major key sits, in semitones below the tonic (C dorian → B♭ major). */
+const PARENT_MAJOR: { [s in ScaleId]: number } = {
+    major: 0, minor: 9, harmonicMinor: 9, melodicMinor: 9, dorian: 2, phrygian: 4, lydian: 5, mixolydian: 7,
+};
+
+/**
+ * Note names to display in a key and scale: flats when the key signature has flats
+ * (F, B♭, E♭, A♭, D♭ major and their modes), sharps otherwise. Display only; audio uses MIDI numbers.
+ */
+export function noteNames(key: MusicalKey, scale: ScaleId = 'major'): string[] {
+    const parent = (keyPitchClass(key) - PARENT_MAJOR[scale] + 12) % 12;
+    return [5, 10, 3, 8, 1].includes(parent) ? FLAT_NAMES : NOTE_NAMES;
 }
 
 /** One cycle of arpeggio notes, ordered by pitch. */
@@ -109,6 +141,8 @@ export interface ChordParams {
     type: ChordType;
     inversion: number;
     octave: number;
+    /** Scale the degree counts in; major when missing (songs saved before scales existed). */
+    scale?: ScaleId;
 }
 
 export interface ResolvedChord {
@@ -124,10 +158,11 @@ export const maxInversion = (type: ChordType): number =>
 /** The single path from chord parameters to notes and name, shared by pads, keyboard and sequencer. */
 export function resolveChord(key: MusicalKey, params: ChordParams): ResolvedChord {
     const keyPc = keyPitchClass(key);
-    const base = buildChordMidi(keyPc, params.degree, params.type, params.octave);
+    const base = buildChordMidi(keyPc, params.degree, params.type, params.octave, params.scale);
     const midi = invert(base, Math.min(params.inversion, base.length - 1));
     const rootPc = base[0] % 12;
-    return { midi, rootPc, notes: toToneNotes(midi), name: nameChord(midi, rootPc) };
+    const names = noteNames(key, params.scale);
+    return { midi, rootPc, notes: toToneNotes(midi, names), name: nameChord(midi, rootPc, names) };
 }
 
 const CHORD_NAMES: { [pcs: string]: [string, string] } = {
@@ -147,11 +182,15 @@ const CHORD_NAMES: { [pcs: string]: [string, string] } = {
     '0,2,3,7,10': ['m9', 'Minor 9th'],
     '0,2,4,7,10': ['9', 'Dominant 9th'],
     '0,4,7,9': ['6', 'Major 6th'],
+    '0,3,7,11': ['m(maj7)', 'Minor-major 7th'],
+    '0,2,3,7,11': ['m(maj9)', 'Minor-major 9th'],
+    '0,4,8,11': ['+maj7', 'Augmented major 7th'],
+    '0,2,4,8,11': ['+maj9', 'Augmented major 9th'],
 };
 
 /** Name a chord from its sounding notes; `rootPc` is the un-inverted root. */
-export function nameChord(midi: number[], rootPc: number): { symbol: string; long: string } {
-    const root = NOTE_NAMES[rootPc];
+export function nameChord(midi: number[], rootPc: number, names: string[] = NOTE_NAMES): { symbol: string; long: string } {
+    const root = names[rootPc];
     const pcs = Array.from(new Set(midi.map(m => (((m - rootPc) % 12) + 12) % 12))).sort((a, b) => a - b);
 
     if (pcs.length === 1) {
@@ -173,8 +212,8 @@ export const STICK_DIRS: StickDir[] = ['UL', 'U', 'UR', 'L', 'C', 'R', 'DL', 'D'
 export type TriadQuality = 'major' | 'minor' | 'dim' | 'aug';
 
 /** Quality of the plain diatonic triad on a degree (the same for every key). */
-export function triadQuality(degree: number): TriadQuality {
-    const [root, third, fifth] = buildChordMidi(0, degree, 'triad', 4);
+export function triadQuality(degree: number, scale: ScaleId = 'major'): TriadQuality {
+    const [root, third, fifth] = buildChordMidi(0, degree, 'triad', 4, scale);
     if (fifth - root === 6) return 'dim';
     if (fifth - root === 8) return 'aug';
     return third - root === 4 ? 'major' : 'minor';
@@ -209,8 +248,8 @@ export const STICK_LABELS: { [dir in StickDir]: string } = {
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
 
 /** Roman numeral of a degree's diatonic triad: upper case major, lower case minor, ° diminished. */
-export function romanNumeral(degree: number): string {
-    const q = triadQuality(degree);
+export function romanNumeral(degree: number, scale: ScaleId = 'major'): string {
+    const q = triadQuality(degree, scale);
     const r = ROMAN[degree];
     if (q === 'minor') return r.toLowerCase();
     if (q === 'dim') return `${r.toLowerCase()}°`;
@@ -218,8 +257,45 @@ export function romanNumeral(degree: number): string {
     return r;
 }
 
-/** Pitch classes of the major scale on `key`. */
-export function scalePitchClasses(key: MusicalKey): number[] {
+/** Pitch classes of `scale` on `key`. */
+export function scalePitchClasses(key: MusicalKey, scale: ScaleId = 'major'): number[] {
     const k = keyPitchClass(key);
-    return MAJOR.map(m => (k + m) % 12);
+    return stepsOf(scale).map(m => (k + m) % 12);
+}
+
+// ---- voice leading ---------------------------------------------------------------------
+
+export interface Voicing {
+    midi: number[];
+    inversion: number;
+    /** Whole octaves the chord was moved from its pad's octave (-1, 0 or +1). */
+    octaveShift: number;
+}
+
+/** How far a chord's notes move from the previous chord: each note to its nearest previous note. */
+function movement(next: number[], prev: number[]): number {
+    const travel = next.reduce((sum, n) => sum + Math.min(...prev.map(p => Math.abs(n - p))), 0);
+    // keep the chord's centre near the previous one so it doesn't creep up or down over a progression
+    const centre = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+    return travel + 0.5 * Math.abs(centre(next) - centre(prev));
+}
+
+/**
+ * Pick the inversion and octave (within one octave of the pad's) of a root-position chord that
+ * moves least from `prev`, keeping the bass between `low` and `high`. With nothing to lead from,
+ * the chord stays as it is.
+ */
+export function voiceLead(base: number[], prev: number[] | null, low = 40, high = 76): Voicing {
+    if (!prev || prev.length === 0) return { midi: base, inversion: 0, octaveShift: 0 };
+    let best: Voicing & { cost: number } | null = null;
+    for (let inversion = 0; inversion < base.length; inversion++) {
+        for (const octaveShift of [0, -1, 1]) {
+            const midi = invert(base, inversion).map(n => n + 12 * octaveShift);
+            if (midi[0] < low || midi[0] > high) continue;
+            // a small nudge towards root position and the pad's own octave, so ties stay predictable
+            const cost = movement(midi, prev) + 0.25 * inversion + 0.5 * Math.abs(octaveShift);
+            if (!best || cost < best.cost) best = { midi, inversion, octaveShift, cost };
+        }
+    }
+    return best ? { midi: best.midi, inversion: best.inversion, octaveShift: best.octaveShift } : { midi: base, inversion: 0, octaveShift: 0 };
 }

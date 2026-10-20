@@ -1,4 +1,4 @@
-import { ArpPattern, KEYS, MusicalKey, ChordType } from './theory';
+import { ArpPattern, KEYS, MusicalKey, ChordType, SCALE_IDS, ScaleId } from './theory';
 import type { ArpRate } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
 import { Clip, PPQ, PlayMode, STEPS_PER_ROW, TRACK_COLORS, Track, newTrack } from './progression';
@@ -27,6 +27,9 @@ export interface Song {
 /** Live playing settings, saved with the song but not part of undo. */
 export interface Settings {
     key: MusicalKey;
+    scale: ScaleId;
+    /** Pick each chord's inversion automatically so it moves as little as possible from the last one. */
+    voiceLeading: boolean;
     octave: number;
     inversion: number;
     playMode: PlayMode;
@@ -57,7 +60,7 @@ export function newSong(): Song {
 }
 
 export const defaultSettings = (): Settings => ({
-    key: 'C', octave: 4, inversion: 0, playMode: 'Chord', arpPattern: 'up', arpRate: '8n', noteLength: 0.3, loop: true, theme: 'dark',
+    key: 'C', scale: 'major', voiceLeading: false, octave: 4, inversion: 0, playMode: 'Chord', arpPattern: 'up', arpRate: '8n', noteLength: 0.3, loop: true, theme: 'dark',
 });
 
 // ---- reading saved data: anything malformed is dropped or replaced with a default --------
@@ -92,6 +95,7 @@ function readClip(v: unknown, maxTick: number): Clip | null {
             type: c.type as ChordType,
             inversion: int(c.inversion, 0, 4, 0),
             octave: int(c.octave, 1, 7, 4),
+            scale: oneOf<ScaleId>(c.scale, SCALE_IDS, 'major'),
             key: oneOf(c.key, KEYS, 'C'),
             playMode: oneOf<PlayMode>(c.playMode, ['Chord', 'Arp'], 'Chord'),
             arpPattern: oneOf(c.arpPattern, ARP_PATTERNS, 'up'),
@@ -146,6 +150,8 @@ export function readSettings(v: unknown): Settings {
     if (!isObj(v)) return d;
     return {
         key: oneOf(v.key, KEYS, d.key),
+        scale: oneOf<ScaleId>(v.scale, SCALE_IDS, d.scale),
+        voiceLeading: bool(v.voiceLeading, d.voiceLeading),
         octave: int(v.octave, 2, 6, d.octave),
         inversion: int(v.inversion, 0, 3, d.inversion),
         playMode: oneOf<PlayMode>(v.playMode, ['Chord', 'Arp'], d.playMode),

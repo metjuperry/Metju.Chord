@@ -5,8 +5,8 @@ import { TICKS_PER_STEP as S } from './progression';
 const sample = (): SavedState => {
     const song = newSong();
     song.tracks[0].clips = [
-        { start: 0, len: S, chord: { degree: 0, type: 'triad', inversion: 0, octave: 4, key: 'C', playMode: 'Chord', arpPattern: 'up', arpRate: '8n', noteLength: 0.3 } },
-        { start: S, len: 2 * S, chord: { degree: 5, type: 'diatonic7', inversion: 1, octave: 4, key: 'D', playMode: 'Arp', arpPattern: 'down', arpRate: '16n', noteLength: 0.2 } },
+        { start: 0, len: S, chord: { degree: 0, type: 'triad', inversion: 0, octave: 4, scale: 'major', key: 'C', playMode: 'Chord', arpPattern: 'up', arpRate: '8n', noteLength: 0.3 } },
+        { start: S, len: 2 * S, chord: { degree: 5, type: 'diatonic7', inversion: 1, octave: 4, scale: 'dorian', key: 'D', playMode: 'Arp', arpPattern: 'down', arpRate: '16n', noteLength: 0.2 } },
         { start: 3 * S, len: S, rest: true },
     ];
     song.tracks[1].mute = true;

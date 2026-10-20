@@ -8,7 +8,8 @@ import Progression from './components/Progression';
 import HelpDialog from './components/HelpDialog';
 import {
     ArpPattern, ChordParams, MusicalKey, ResolvedChord, StickDir,
-    STICK_DIRS, resolveChord, romanNumeral, scalePitchClasses, stickChordType, triadQuality,
+    STICK_DIRS, ScaleId, buildChordMidi, keyPitchClass, resolveChord, romanNumeral, scaleLabel, scalePitchClasses,
+    stickChordType, triadQuality, voiceLead,
 } from './theory';
 import { ArpRate, getEngine } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
@@ -54,6 +55,7 @@ function loadSaved(): SavedState | null {
 interface Shown {
     chord: ResolvedChord;
     degree: number;
+    scale: ScaleId;
     dir: StickDir;
     inversion: number;
 }
@@ -70,6 +72,8 @@ const App: React.FC = () => {
     const initial = saved?.settings ?? defaultSettings();
     const [theme, setTheme] = useState<'dark' | 'light'>(initial.theme);
     const [selectedKey, setSelectedKey] = useState<MusicalKey>(initial.key);
+    const [scale, setScale] = useState<ScaleId>(initial.scale);
+    const [voiceLeading, setVoiceLeading] = useState(initial.voiceLeading);
     const [octave, setOctave] = useState(initial.octave);
     const [playMode, setPlayMode] = useState<PlayMode>(initial.playMode);
     const [arpPattern, setArpPattern] = useState<ArpPattern>(initial.arpPattern);
@@ -121,8 +125,8 @@ const App: React.FC = () => {
     const [metBeat, setMetBeat] = useState<number | null>(null);
 
     // Latest state for Transport callbacks and the global key handler
-    const live = useRef({ selectedKey, octave, inversion, stickDir, instrument, playMode, arpPattern, arpRate, noteLength, clips, tracks, total, selected, loop, recording });
-    live.current = { selectedKey, octave, inversion, stickDir, instrument, playMode, arpPattern, arpRate, noteLength, clips, tracks, total, selected, loop, recording };
+    const live = useRef({ selectedKey, scale, voiceLeading, octave, inversion, stickDir, instrument, playMode, arpPattern, arpRate, noteLength, clips, tracks, total, selected, loop, recording });
+    live.current = { selectedKey, scale, voiceLeading, octave, inversion, stickDir, instrument, playMode, arpPattern, arpRate, noteLength, clips, tracks, total, selected, loop, recording };
 
     useEffect(() => {
         document.documentElement.setAttribute('data-theme', theme);
@@ -164,10 +168,14 @@ const App: React.FC = () => {
 
     const paramsFor = (degree: number, dir: StickDir, s = live.current): ChordParams => ({
         degree,
-        type: stickChordType(dir, triadQuality(degree)),
+        type: stickChordType(dir, triadQuality(degree, s.scale)),
         inversion: s.inversion,
         octave: s.octave,
+        scale: s.scale,
     });
+
+    /** The last chord played live, which voice leading moves from. */
+    const lastVoicing = useRef<number[] | null>(null);
 
     /** The sound settings a chord recorded right now would be baked with. */
     const currentSound = (s = live.current): ClipSound => ({
@@ -181,8 +189,15 @@ const App: React.FC = () => {
     /** Start a chord sounding; returns how to stop it. */
     const sound = (degree: number) => {
         const s = live.current;
-        const params = paramsFor(degree, s.stickDir, s);
+        let params = paramsFor(degree, s.stickDir, s);
+        if (s.voiceLeading) {
+            // choose the inversion and octave that move least from the last chord, and record exactly that
+            const base = buildChordMidi(keyPitchClass(s.selectedKey), degree, params.type, params.octave, params.scale);
+            const v = voiceLead(base, lastVoicing.current);
+            params = { ...params, inversion: v.inversion, octave: params.octave + v.octaveShift };
+        }
         const chord = resolveChord(s.selectedKey, params);
+        lastVoicing.current = chord.midi;
         const engine = getEngine();
         let stop: () => void;
         if (s.playMode === 'Arp') {
@@ -190,7 +205,7 @@ const App: React.FC = () => {
         } else {
             stop = engine.attack(chord.midi);
         }
-        setShown({ chord, degree, dir: s.stickDir, inversion: s.inversion });
+        setShown({ chord, degree, scale: s.scale, dir: s.stickDir, inversion: params.inversion });
         return { params, stop };
     };
 
@@ -231,7 +246,7 @@ const App: React.FC = () => {
             holds.current.set(id, { degree: hold.degree, stop: sound(hold.degree).stop });
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [stickDir, inversion, octave, selectedKey, instrument, playMode, arpPattern, arpRate]);
+    }, [stickDir, inversion, octave, selectedKey, scale, voiceLeading, instrument, playMode, arpPattern, arpRate]);
 
     // ---- progression playback (Transport) --------------------------------------------
 
@@ -408,7 +423,7 @@ const App: React.FC = () => {
     const snapshot = (): SavedState => ({
         version: SAVE_VERSION,
         song,
-        settings: { key: selectedKey, octave, inversion, playMode, arpPattern, arpRate, noteLength, loop, theme },
+        settings: { key: selectedKey, scale, voiceLeading, octave, inversion, playMode, arpPattern, arpRate, noteLength, loop, theme },
     });
 
     // Autosave a moment after any change
@@ -422,7 +437,7 @@ const App: React.FC = () => {
         }, 400);
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [song, selectedKey, octave, inversion, playMode, arpPattern, arpRate, noteLength, loop, theme]);
+    }, [song, selectedKey, scale, voiceLeading, octave, inversion, playMode, arpPattern, arpRate, noteLength, loop, theme]);
 
     /** Replace the song (undoable) and take over its saved settings. */
     const loadState = (state: SavedState, message: string) => {
@@ -430,6 +445,8 @@ const App: React.FC = () => {
         editSong(() => state.song);
         const st = state.settings;
         setSelectedKey(st.key);
+        setScale(st.scale);
+        setVoiceLeading(st.voiceLeading);
         setOctave(st.octave);
         setInversion(st.inversion);
         setPlayMode(st.playMode);
@@ -571,15 +588,15 @@ const App: React.FC = () => {
 
     const pads: PadView[] = useMemo(() => [0, 1, 2, 3, 4, 5, 6].map(degree => ({
         degree,
-        numeral: romanNumeral(degree),
-        symbol: resolveChord(selectedKey, { degree, type: stickChordType(stickDir, triadQuality(degree)), inversion, octave }).name.symbol,
+        numeral: romanNumeral(degree, scale),
+        symbol: resolveChord(selectedKey, { degree, type: stickChordType(stickDir, triadQuality(degree, scale)), inversion, octave, scale }).name.symbol,
         held: held.includes(degree),
-    })), [selectedKey, stickDir, inversion, octave, held]);
+    })), [selectedKey, scale, stickDir, inversion, octave, held]);
 
     // The stick labels follow the pad you're using: a held pad, else the last chord played, else 1
     const refDegree = held.length ? held[held.length - 1] : shown ? shown.degree : 0;
     const stickChords = Object.fromEntries(STICK_DIRS.map(d => [d,
-        resolveChord(selectedKey, { degree: refDegree, type: stickChordType(d, triadQuality(refDegree)), inversion, octave }).name.symbol,
+        resolveChord(selectedKey, { degree: refDegree, type: stickChordType(d, triadQuality(refDegree, scale)), inversion, octave, scale }).name.symbol,
     ])) as { [d in StickDir]: string };
 
     const instrumentLabel = INSTRUMENTS.find(i => i.id === instrument)?.label ?? '';
@@ -588,15 +605,15 @@ const App: React.FC = () => {
             idle: false,
             symbol: shown.chord.name.symbol,
             long: shown.chord.name.long,
-            numeral: romanNumeral(shown.degree),
+            numeral: romanNumeral(shown.degree, shown.scale),
             notes: shown.chord.notes,
             stick: shown.dir,
             inversionLabel: INVERSION_LABELS[Math.min(shown.inversion, shown.chord.midi.length - 1)],
-            status: [`${selectedKey} MAJOR`, `OCT ${octave}`, `${bpm} BPM`, `${playMode} · ${instrumentLabel}`],
+            status: [`${selectedKey} ${scaleLabel(scale).toUpperCase()}`, `OCT ${octave}`, `${bpm} BPM`, `${playMode} · ${instrumentLabel}`],
         }
         : {
             idle: true, symbol: '', long: '', numeral: '', notes: [], stick: 'C', inversionLabel: '',
-            status: [`${selectedKey} MAJOR`, `OCT ${octave}`, `${bpm} BPM`, `${playMode} · ${instrumentLabel}`],
+            status: [`${selectedKey} ${scaleLabel(scale).toUpperCase()}`, `OCT ${octave}`, `${bpm} BPM`, `${playMode} · ${instrumentLabel}`],
         };
 
     const sounding = shown && held.length > 0 ? shown.chord.midi : [];
@@ -604,12 +621,12 @@ const App: React.FC = () => {
         resolveChord(selectedKey, paramsFor(p.degree, stickDir)).midi.length - 1)));
 
     const labelOf = (id: InstrumentId) => INSTRUMENTS.find(i => i.id === id)?.label ?? id;
-    const soundText = (c: ClipSound) =>
+    const soundText = (c: ClipSound & { scale?: ScaleId }) =>
         [c.playMode === 'Arp' ? `Arp ${ARP_PATTERN_LABELS[c.arpPattern]} ${ARP_RATES.find(r => r.rate === c.arpRate)?.label ?? ''}` : null,
-            c.key !== selectedKey ? `${c.key} major` : null].filter(Boolean).join(' · ');
+            c.key !== selectedKey || (c.scale ?? 'major') !== scale ? `${c.key} ${scaleLabel(c.scale).toLowerCase()}` : null].filter(Boolean).join(' · ');
     const describe = (clip: Clip) =>
         isChordClip(clip)
-            ? { symbol: resolveChord(clip.chord.key, clip.chord).name.symbol, numeral: romanNumeral(clip.chord.degree), sound: soundText(clip.chord) }
+            ? { symbol: resolveChord(clip.chord.key, clip.chord).name.symbol, numeral: romanNumeral(clip.chord.degree, clip.chord.scale), sound: soundText(clip.chord) }
             : { symbol: 'Rest', numeral: '', sound: '' };
 
     const beatDot = metronomeOn ? metBeat : playing ? playhead % BEATS_PER_BAR : null;
@@ -636,6 +653,8 @@ const App: React.FC = () => {
                 beat={beatDot}
                 theme={theme}
                 onKeyChange={setSelectedKey}
+                scale={scale}
+                onScaleChange={setScale}
                 onOctaveChange={o => setOctave(Math.max(OCTAVE_MIN, Math.min(OCTAVE_MAX, o)))}
                 onBpmChange={b => setBpm(Math.max(BPM_MIN, Math.min(BPM_MAX, b)))}
                 onToggleMetronome={() => setMetronomeOn(m => !m)}
@@ -647,13 +666,15 @@ const App: React.FC = () => {
                 <Device
                     screen={screen}
                     sounding={sounding}
-                    scalePcs={scalePitchClasses(selectedKey)}
+                    scalePcs={scalePitchClasses(selectedKey, scale)}
                     octave={octave}
                     pads={pads}
                     stickDir={stickDir}
                     latchedDir={latchedDir}
                     stickChords={stickChords}
-                    stickFor={`${refDegree + 1} · ${romanNumeral(refDegree)}`}
+                    stickFor={`${refDegree + 1} · ${romanNumeral(refDegree, scale)}`}
+                    voiceLeading={voiceLeading}
+                    onVoiceLeading={setVoiceLeading}
                     inversion={inversion}
                     maxInversion={maxInv}
                     recording={recording}
