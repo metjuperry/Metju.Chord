@@ -41,6 +41,16 @@ A chord instrument modelled on pocket chord machines like the HiChord: seven cho
 
 Press the keyboard icon in the app for the full shortcut list.
 
+### On a phone
+
+Small screens (phones, narrow windows) show one mode at a time, switched from the top bar:
+
+- **Play**: the instrument fills the screen with nothing to scroll. Turn the phone sideways for the HiChord layout, stick on the left and pads on the right, so one thumb works the stick while the other plays. The bar has play and record, and the screen shows the step you're recording to.
+- **Seq**: the step sequencer and tracks.
+- **Sound**: instrument, chord/arp, effects, inversion and voice leading, click, theme and help.
+
+The stick is a thumb-stick: press and slide toward a direction, and let go to spring back to the centre. A quick tap locks a direction instead.
+
 ## Getting Started
 
 ### Prerequisites

@@ -44,7 +44,11 @@ interface DeviceProps {
     onPadDown: (degree: number) => void;
     onPadUp: (degree: number) => void;
     onStick: (dir: StickDir) => void;
+    /** The stick held by touch or mouse (null when let go). */
+    onStickHold: (dir: StickDir | null) => void;
     onInversion: (inversion: number) => void;
+    /** Phone layout: no keyboard strip or voicing row, slim screen. */
+    compact?: boolean;
 }
 
 // Staggered like the hardware: 2 4 6 above, 1 3 5 7 below
@@ -64,7 +68,7 @@ const Screen: React.FC<{ view: ScreenView; recording: boolean }> = ({ view, reco
     <div className="oled" role="status" aria-live="polite" aria-label={view.idle ? 'Ready' : `${view.long}, ${view.numeral}`}>
         <div className="oled-status">
             {view.status.map(s => <span key={s}>{s}</span>)}
-            <span className={`oled-flag ${recording ? 'rec' : ''}`}>{recording ? '● REC' : view.flag ?? ''}</span>
+            <span className={`oled-flag ${recording ? 'rec' : ''}`}>{view.flag ?? (recording ? '● REC' : '')}</span>
         </div>
         {view.idle ? (
             <div className="oled-main idle">
@@ -122,44 +126,108 @@ const ScaleKeys: React.FC<{ sounding: number[]; scalePcs: number[]; octave: numb
     );
 };
 
-const Stick: React.FC<{ dir: StickDir; latched: StickDir; chords: { [d in StickDir]: string }; forPad: string; onStick: (d: StickDir) => void }> =
-    ({ dir, latched, chords, forPad, onStick }) => {
-        const [vx, vy] = DIR_VECTOR[dir];
-        return (
-            <div className="stick-area">
-                <div className="stick" role="group" aria-label={`Chord stick, showing chords for pad ${forPad}`}>
-                    <div className="stick-well" />
-                    {RING.map(d => {
-                        const [x, y] = DIR_VECTOR[d];
-                        return (
-                            <button
-                                key={d}
-                                className={`stick-dir ${dir === d ? 'active' : ''}`}
-                                style={{ left: `calc(50% + ${x * 104}px)`, top: `calc(50% + ${y * 92}px)` }}
-                                aria-pressed={latched === d}
-                                aria-label={`${chords[d]}: ${STICK_LABELS[d]} (hold ${DIR_KEYS[d]})`}
-                                title={`${STICK_LABELS[d]} · hold ${DIR_KEYS[d]}`}
-                                onClick={() => onStick(latched === d ? 'C' : d)}
-                            >
-                                <span className="dir-name"><span className="led" />{chords[d]}</span>
-                                <span className="dir-rule">{STICK_LABELS[d]}</span>
-                            </button>
-                        );
-                    })}
-                    <button
-                        className={`stick-knob ${dir === 'C' ? 'active' : ''}`}
-                        style={{ transform: `translate(${vx * 10}px, ${vy * 10}px)` }}
-                        aria-label={`${chords.C}: centre the stick, plain triad`}
-                        onClick={() => onStick('C')}
-                    >
-                        <span className="knob-name">{chords.C}</span>
-                        <span className="knob-rule">Triad</span>
-                    </button>
-                </div>
-                <p className="stick-caption">Chords for pad <b>{forPad}</b></p>
-            </div>
-        );
+/** Which way a point is pushed from the stick's centre; inside the dead zone it's the centre. */
+function dirFromPoint(dx: number, dy: number, deadZone: number): StickDir {
+    if (Math.hypot(dx, dy) < deadZone) return 'C';
+    const angle = (Math.atan2(dy, dx) * 180) / Math.PI; // 0 = right, 90 = down
+    const sectors: StickDir[] = ['R', 'DR', 'D', 'DL', 'L', 'UL', 'U', 'UR'];
+    return sectors[Math.round(((angle + 360) % 360) / 45) % 8];
+}
+
+/** A tap shorter than this, without sliding, latches a direction instead of holding it. */
+const TAP_MS = 250;
+
+const Stick: React.FC<{
+    dir: StickDir;
+    latched: StickDir;
+    chords: { [d in StickDir]: string };
+    forPad: string;
+    showCaption: boolean;
+    onStick: (d: StickDir) => void;
+    onHold: (d: StickDir | null) => void;
+}> = ({ dir, latched, chords, forPad, showCaption, onStick, onHold }) => {
+    const [vx, vy] = DIR_VECTOR[dir];
+    const gesture = useRef<{ id: number; start: number; dir: StickDir; moved: boolean } | null>(null);
+
+    const pointDir = (e: React.PointerEvent<HTMLDivElement>) => {
+        const box = e.currentTarget.getBoundingClientRect();
+        const knob = e.currentTarget.querySelector('.stick-knob')?.getBoundingClientRect();
+        return dirFromPoint(e.clientX - (box.left + box.width / 2), e.clientY - (box.top + box.height / 2), knob ? knob.width / 2 : 30);
     };
+
+    // Thumb-stick: press anywhere on it and slide; the direction follows the angle from the centre,
+    // and letting go springs back. Works with one thumb here and the other on the pads.
+    const down = (e: React.PointerEvent<HTMLDivElement>) => {
+        if (gesture.current || e.button > 0) return;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        const d = pointDir(e);
+        gesture.current = { id: e.pointerId, start: performance.now(), dir: d, moved: false };
+        onHold(d);
+    };
+    const move = (e: React.PointerEvent<HTMLDivElement>) => {
+        const g = gesture.current;
+        if (!g || g.id !== e.pointerId) return;
+        const d = pointDir(e);
+        if (d !== g.dir) {
+            g.dir = d;
+            g.moved = true;
+            onHold(d);
+        }
+    };
+    const up = (e: React.PointerEvent<HTMLDivElement>) => {
+        const g = gesture.current;
+        if (!g || g.id !== e.pointerId) return;
+        gesture.current = null;
+        onHold(null);
+        // A quick tap without sliding latches that direction (or unlatches it / the centre clears it)
+        if (!g.moved && performance.now() - g.start < TAP_MS) onStick(g.dir === 'C' || latched === g.dir ? 'C' : g.dir);
+    };
+
+    return (
+        <div className="stick-area">
+            <div
+                className="stick"
+                role="group"
+                aria-label={`Chord stick, showing chords for pad ${forPad}`}
+                onPointerDown={down}
+                onPointerMove={move}
+                onPointerUp={up}
+                onPointerCancel={up}
+                onContextMenu={e => e.preventDefault()}
+            >
+                <div className="stick-well" />
+                {RING.map(d => {
+                    const [x, y] = DIR_VECTOR[d];
+                    return (
+                        <button
+                            key={d}
+                            className={`stick-dir ${dir === d ? 'active' : ''}`}
+                            style={{ left: `calc(50% + ${x} * var(--stick-rx))`, top: `calc(50% + ${y} * var(--stick-ry))` }}
+                            aria-pressed={latched === d}
+                            aria-label={`${chords[d]}: ${STICK_LABELS[d]} (hold ${DIR_KEYS[d]})`}
+                            title={`${STICK_LABELS[d]} · hold ${DIR_KEYS[d]}`}
+                            // pointer input is handled by the stick itself; this is for keyboard (Enter/Space)
+                            onClick={e => { if (e.detail === 0) onStick(latched === d ? 'C' : d); }}
+                        >
+                            <span className="dir-name"><span className="led" />{chords[d]}</span>
+                            <span className="dir-rule">{STICK_LABELS[d]}</span>
+                        </button>
+                    );
+                })}
+                <button
+                    className={`stick-knob ${dir === 'C' ? 'active' : ''}`}
+                    style={{ transform: `translate(${vx * 10}px, ${vy * 10}px)` }}
+                    aria-label={`${chords.C}: centre the stick, plain triad`}
+                    onClick={e => { if (e.detail === 0) onStick('C'); }}
+                >
+                    <span className="knob-name">{chords.C}</span>
+                    <span className="knob-rule">Triad</span>
+                </button>
+            </div>
+            {showCaption && <p className="stick-caption">Chords for pad <b>{forPad}</b></p>}
+        </div>
+    );
+};
 
 const Pad: React.FC<{ pad: PadView; onDown: (d: number) => void; onUp: (d: number) => void }> = ({ pad, onDown, onUp }) => {
     const holding = useRef(false);
@@ -194,24 +262,52 @@ const Pad: React.FC<{ pad: PadView; onDown: (d: number) => void; onUp: (d: numbe
     );
 };
 
+/** Inversion buttons and the voice-leading switch: on the device on wide screens, in Sound mode on phones. */
+export const VoicingControls: React.FC<{
+    inversion: number;
+    maxInversion: number;
+    voiceLeading: boolean;
+    onInversion: (inversion: number) => void;
+    onVoiceLeading: (on: boolean) => void;
+}> = ({ inversion, maxInversion, voiceLeading, onInversion, onVoiceLeading }) => (
+    <div className="inversion">
+        <span className="device-caption" id="inv-label">Inversion</span>
+        <div className="segmented dark" role="group" aria-labelledby="inv-label">
+            {INVERSIONS.map((label, i) => (
+                <button key={label} aria-pressed={!voiceLeading && inversion === i} disabled={voiceLeading || i > maxInversion} onClick={() => onInversion(i)}>
+                    {label}
+                </button>
+            ))}
+        </div>
+        <label className="vl-toggle" title="Pick each chord's inversion so it moves as little as possible from the last chord">
+            <button className="switch" role="switch" aria-checked={voiceLeading} onClick={() => onVoiceLeading(!voiceLeading)}>
+                <span />
+            </button>
+            <span>Voice leading{voiceLeading ? ' · auto' : ''}</span>
+        </label>
+    </div>
+);
+
 const Device: React.FC<DeviceProps> = ({
     screen, sounding, scalePcs, octave, pads, stickDir, latchedDir, stickChords, stickFor, inversion, maxInversion, recording,
-    voiceLeading, onVoiceLeading, onPadDown, onPadUp, onStick, onInversion,
+    voiceLeading, onVoiceLeading, onPadDown, onPadUp, onStick, onStickHold, onInversion, compact = false,
 }) => (
-    <section className="device" aria-label="Instrument">
-        <div className="device-top">
-            <span className="device-label">metju.chord</span>
-            <span className="device-leds" aria-hidden="true">
-                <span className={recording ? 'led-rec' : ''} />
-                <span className={pads.some(p => p.held) ? 'led-play' : ''} />
-            </span>
-        </div>
+    <section className={`device ${compact ? 'compact' : ''}`} aria-label="Instrument">
+        {!compact && (
+            <div className="device-top">
+                <span className="device-label">metju.chord</span>
+                <span className="device-leds" aria-hidden="true">
+                    <span className={recording ? 'led-rec' : ''} />
+                    <span className={pads.some(p => p.held) ? 'led-play' : ''} />
+                </span>
+            </div>
+        )}
 
         <Screen view={screen} recording={recording} />
-        <ScaleKeys sounding={sounding} scalePcs={scalePcs} octave={octave} />
+        {!compact && <ScaleKeys sounding={sounding} scalePcs={scalePcs} octave={octave} />}
 
         <div className="device-controls">
-            <Stick dir={stickDir} latched={latchedDir} chords={stickChords} forPad={stickFor} onStick={onStick} />
+            <Stick dir={stickDir} latched={latchedDir} chords={stickChords} forPad={stickFor} showCaption={!compact} onStick={onStick} onHold={onStickHold} />
             <div className="pads">
                 {[...TOP_ROW, ...BOTTOM_ROW].map(d => (
                     <Pad key={d} pad={pads[d]} onDown={onPadDown} onUp={onPadUp} />
@@ -219,27 +315,14 @@ const Device: React.FC<DeviceProps> = ({
             </div>
         </div>
 
-        <div className="device-foot">
-            <div className="inversion">
-                <span className="device-caption" id="inv-label">Inversion</span>
-                <div className="segmented dark" role="group" aria-labelledby="inv-label">
-                    {INVERSIONS.map((label, i) => (
-                        <button key={label} aria-pressed={!voiceLeading && inversion === i} disabled={voiceLeading || i > maxInversion} onClick={() => onInversion(i)}>
-                            {label}
-                        </button>
-                    ))}
-                </div>
-                <label className="vl-toggle" title="Pick each chord's inversion so it moves as little as possible from the last chord">
-                    <button className="switch" role="switch" aria-checked={voiceLeading} onClick={() => onVoiceLeading(!voiceLeading)}>
-                        <span />
-                    </button>
-                    <span>Voice leading{voiceLeading ? ' · auto' : ''}</span>
-                </label>
+        {!compact && (
+            <div className="device-foot">
+                <VoicingControls inversion={inversion} maxInversion={maxInversion} voiceLeading={voiceLeading} onInversion={onInversion} onVoiceLeading={onVoiceLeading} />
+                <p className="device-hint">
+                    Press and slide the stick, or tap a direction to lock it. Keys: hold <kbd>Q W E</kbd> <kbd>A D</kbd> <kbd>Z X C</kbd> while playing <kbd>1–7</kbd>.
+                </p>
             </div>
-            <p className="device-hint">
-                Click a stick direction to latch it, or hold <kbd>Q W E</kbd> <kbd>A D</kbd> <kbd>Z X C</kbd> while playing <kbd>1–7</kbd>.
-            </p>
-        </div>
+        )}
     </section>
 );
 

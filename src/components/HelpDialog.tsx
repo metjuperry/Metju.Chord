@@ -54,7 +54,8 @@ const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose }) => {
 
                 <p className="help-lead">
                     Each pad plays a chord from the selected key and scale: in C major <b>1</b> is I, <b>2</b> is ii, and so on up to <b>7</b> (vii°).
-                    Push the stick to change the chord type. The pads show what they will play with the stick where it is.
+                    Push the stick to change the chord type: press and slide toward a direction, and let go to spring back. A quick tap locks a
+                    direction. The pads show what they will play with the stick where it is.
                 </p>
 
                 <h3 className="eyebrow">The stick</h3>

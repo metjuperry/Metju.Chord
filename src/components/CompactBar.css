@@ -1,0 +1,116 @@
+.compact-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    padding: 6px 8px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+}
+
+.brand-mark.small {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    background: var(--accent);
+    color: var(--accent-ink);
+    flex: 0 0 auto;
+}
+
+.cb-group {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.compact-bar select {
+    height: 34px;
+    padding: 0 4px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.cb-group > button {
+    width: 30px;
+    height: 34px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--panel-2);
+    font-size: 14px;
+}
+
+.cb-group > button:disabled {
+    color: var(--faint);
+}
+
+.cb-value {
+    min-width: 30px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.cb-group > .cb-play {
+    width: 40px;
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+    display: grid;
+    place-items: center;
+}
+
+.cb-group > .cb-rec {
+    width: 40px;
+    display: grid;
+    place-items: center;
+}
+
+.cb-rec .rec-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--hot);
+}
+
+.cb-group > .cb-rec.on {
+    background: var(--hot);
+    border-color: var(--hot);
+}
+
+.cb-rec.on .rec-dot {
+    background: var(--accent-ink);
+}
+
+.cb-modes {
+    margin-left: auto;
+    padding: 2px;
+}
+
+.cb-modes > button {
+    min-height: 30px;
+    padding: 0 10px;
+}
+
+.cb-modes > button[aria-pressed='true'] {
+    background: var(--accent);
+    color: var(--accent-ink);
+}
+
+/* Narrow landscape phones (iPhone SE): drop the logo so the bar stays on one line */
+@media (max-width: 720px) {
+    .brand-mark.small {
+        display: none;
+    }
+
+    .compact-bar {
+        gap: 6px;
+    }
+}
