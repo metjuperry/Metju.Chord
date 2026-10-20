@@ -106,9 +106,9 @@ export function fitTo(clips: Clip[], total: number): Clip[] {
 /** The end of the last clip, in ticks (0 when empty). */
 export const lastEnd = (clips: Clip[]) => clips.reduce((m, c) => Math.max(m, clipEnd(c)), 0);
 
-/** Where playback wraps: the end of the last clip, rounded up to a whole bar. */
-export function loopEnd(clips: Clip[]): number {
-    return Math.max(TICKS_PER_BAR, Math.ceil(lastEnd(clips) / TICKS_PER_BAR) * TICKS_PER_BAR);
+/** Where playback wraps: the end of the last clip, rounded up to a whole bar of `barTicks`. */
+export function loopEnd(clips: Clip[], barTicks = TICKS_PER_BAR): number {
+    return Math.max(barTicks, Math.ceil(lastEnd(clips) / barTicks) * barTicks);
 }
 
 // ---- tracks ----------------------------------------------------------------------------
@@ -157,4 +157,4 @@ export function audibleTracks(tracks: Track[]): Track[] {
 export const songEnd = (tracks: Track[]) => Math.max(0, ...tracks.map(t => lastEnd(t.clips)));
 
 /** Where playback wraps for all tracks: the end of the last clip on any track, rounded up to a bar. */
-export const songLoopEnd = (tracks: Track[]) => loopEnd(tracks.flatMap(t => t.clips));
+export const songLoopEnd = (tracks: Track[], barTicks = TICKS_PER_BAR) => loopEnd(tracks.flatMap(t => t.clips), barTicks);

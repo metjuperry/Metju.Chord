@@ -259,7 +259,6 @@
 
 .lane-inner {
     position: relative;
-    min-width: 660px;
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -661,4 +660,20 @@
     .progression {
         padding: 16px;
     }
+}
+
+.tick.group {
+    border-left-color: var(--line-2);
+}
+
+.ts-select {
+    height: 34px;
+    padding: 0 6px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--panel-2);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
 }

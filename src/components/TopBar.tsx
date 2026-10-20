@@ -15,6 +15,8 @@ interface TopBarProps {
     metronomeOn: boolean;
     /** Beat 0-3 currently lit, or null when nothing is running. */
     beat: number | null;
+    /** Beats per bar, for the dots. */
+    beats: number;
     theme: 'dark' | 'light';
     onKeyChange: (key: MusicalKey) => void;
     onScaleChange: (scale: ScaleId) => void;
@@ -26,7 +28,7 @@ interface TopBarProps {
 }
 
 const TopBar: React.FC<TopBarProps> = ({
-    selectedKey, scale, octave, bpm, metronomeOn, beat, theme,
+    selectedKey, scale, octave, bpm, metronomeOn, beat, beats, theme,
     onKeyChange, onScaleChange, onOctaveChange, onBpmChange, onToggleMetronome, onToggleTheme, onOpenHelp,
 }) => (
     <header className="top-bar panel">
@@ -40,7 +42,7 @@ const TopBar: React.FC<TopBarProps> = ({
         </div>
 
         <div className="top-group">
-            <span className="eyebrow" id="key-label">Key</span>
+            <span className="visually-hidden" id="key-label">Key</span>
             <div className="key-strip" role="group" aria-labelledby="key-label">
                 {KEYS.map(key => (
                     <button
@@ -54,7 +56,7 @@ const TopBar: React.FC<TopBarProps> = ({
                 ))}
             </div>
             <select className="scale-select" aria-label="Scale" value={scale} onChange={e => onScaleChange(e.target.value as ScaleId)}>
-                {SCALES.map(sc => <option key={sc.id} value={sc.id}>{sc.label}</option>)}
+                {SCALES.map(sc => <option key={sc.id} value={sc.id} title={sc.label}>{sc.short}</option>)}
             </select>
         </div>
 
@@ -78,7 +80,7 @@ const TopBar: React.FC<TopBarProps> = ({
             </svg>
             <span>Click</span>
             <span className="beat-dots" aria-hidden="true">
-                {[0, 1, 2, 3].map(i => (
+                {Array.from({ length: beats }, (_, i) => i).map(i => (
                     <span key={i} className={`beat-dot ${beat === i ? (i === 0 ? 'down' : 'on') : ''}`} />
                 ))}
             </span>

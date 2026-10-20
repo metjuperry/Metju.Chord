@@ -6,7 +6,7 @@ import { Clip, PPQ, PlayMode, STEPS_PER_ROW, TRACK_COLORS, Track, newTrack } fro
 // ---- the song: everything undo/redo, saving and sharing cover ---------------------------
 
 export interface TimeSignature {
-    /** Beats per bar (2–7). */
+    /** Beats per bar (2–12). */
     beats: number;
     /** Note value of one beat, and of one sequencer step: 4 = quarter, 8 = eighth. */
     unit: 4 | 8;
@@ -15,6 +15,45 @@ export interface TimeSignature {
 /** One sequencer step is one beat of the time signature: a quarter (x/4) or an eighth (x/8). */
 export const ticksPerStep = (ts: TimeSignature) => (PPQ * 4) / ts.unit;
 export const ticksPerBar = (ts: TimeSignature) => ticksPerStep(ts) * ts.beats;
+
+/** Signatures offered in the picker. */
+export const TIME_SIGNATURES: TimeSignature[] = [
+    { beats: 2, unit: 4 }, { beats: 3, unit: 4 }, { beats: 4, unit: 4 }, { beats: 5, unit: 4 },
+    { beats: 6, unit: 8 }, { beats: 7, unit: 8 }, { beats: 9, unit: 8 }, { beats: 12, unit: 8 },
+];
+export const tsLabel = (ts: TimeSignature) => `${ts.beats}/${ts.unit}`;
+
+/** A sequencer row holds whole bars and is about 8 steps wide: 4/4 → 8, 3/4 → 9, 6/8 → 6. */
+export const stepsPerRow = (ts: TimeSignature) => ts.beats * Math.max(1, Math.round(8 / ts.beats));
+
+/** Compound meters (6/8, 9/8, 12/8) are felt in groups of three beats. */
+export const isCompound = (ts: TimeSignature) => ts.unit === 8 && ts.beats % 3 === 0;
+
+/** The Transport counts quarter notes; the song's BPM counts its own beats. */
+export const transportBpm = (bpm: number, ts: TimeSignature) => (bpm * 4) / ts.unit;
+
+/**
+ * Switch time signature. Every chord keeps its step position and length, so a chord on step 5
+ * stays on step 5; the song grows to a whole number of rows of the new size.
+ */
+export function changeTimeSignature(song: Song, next: TimeSignature): Song {
+    const from = song.timeSignature;
+    if (from.beats === next.beats && from.unit === next.unit) return song;
+    const scale = ticksPerStep(next) / ticksPerStep(from);
+    const row = stepsPerRow(next);
+    // about as long as before (nearest whole number of rows), but never cutting off a chord
+    const contentSteps = Math.max(0, ...song.tracks.flatMap(t => t.clips.map(c => (c.start + c.len) / ticksPerStep(from))));
+    const steps = Math.max(row, Math.round(song.steps / row) * row, Math.ceil(contentSteps / row) * row);
+    return {
+        ...song,
+        timeSignature: next,
+        steps,
+        tracks: song.tracks.map(t => ({
+            ...t,
+            clips: t.clips.map(c => ({ ...c, start: Math.round(c.start * scale), len: Math.max(1, Math.round(c.len * scale)) })),
+        })),
+    };
+}
 
 export interface Song {
     tracks: Track[];
@@ -53,7 +92,7 @@ export function newSong(): Song {
     const keys = newTrack([], 'epiano', 'Keys');
     return {
         tracks: [keys, newTrack([keys], 'warmpad', 'Pad')],
-        steps: STEPS_PER_ROW,
+        steps: stepsPerRow({ beats: 4, unit: 4 }),
         bpm: 100,
         timeSignature: { beats: 4, unit: 4 },
     };
@@ -129,7 +168,7 @@ function readTrack(v: unknown, index: number, maxTick: number): Track | null {
 export function readSong(v: unknown): Song | null {
     if (!isObj(v) || !Array.isArray(v.tracks)) return null;
     const ts = isObj(v.timeSignature) ? v.timeSignature : {};
-    const timeSignature: TimeSignature = { beats: int(ts.beats, 2, 7, 4), unit: oneOf<4 | 8>(ts.unit, [4, 8], 4) };
+    const timeSignature: TimeSignature = { beats: int(ts.beats, 2, 12, 4), unit: oneOf<4 | 8>(ts.unit, [4, 8], 4) };
     const steps = int(v.steps, 1, 512, STEPS_PER_ROW);
     const maxTick = steps * ticksPerStep(timeSignature);
     const tracks = v.tracks.slice(0, TRACK_COLORS.length)

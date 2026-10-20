@@ -9,15 +9,15 @@ export const FLAT_NAMES = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A�
 
 export type ScaleId = 'major' | 'minor' | 'harmonicMinor' | 'melodicMinor' | 'dorian' | 'phrygian' | 'lydian' | 'mixolydian';
 
-export const SCALES: { id: ScaleId; label: string; steps: number[] }[] = [
-    { id: 'major', label: 'Major', steps: [0, 2, 4, 5, 7, 9, 11] },
-    { id: 'minor', label: 'Minor', steps: [0, 2, 3, 5, 7, 8, 10] },
-    { id: 'harmonicMinor', label: 'Harmonic minor', steps: [0, 2, 3, 5, 7, 8, 11] },
-    { id: 'melodicMinor', label: 'Melodic minor', steps: [0, 2, 3, 5, 7, 9, 11] },
-    { id: 'dorian', label: 'Dorian', steps: [0, 2, 3, 5, 7, 9, 10] },
-    { id: 'phrygian', label: 'Phrygian', steps: [0, 1, 3, 5, 7, 8, 10] },
-    { id: 'lydian', label: 'Lydian', steps: [0, 2, 4, 6, 7, 9, 11] },
-    { id: 'mixolydian', label: 'Mixolydian', steps: [0, 2, 4, 5, 7, 9, 10] },
+export const SCALES: { id: ScaleId; label: string; short: string; steps: number[] }[] = [
+    { id: 'major', label: 'Major', short: 'Major', steps: [0, 2, 4, 5, 7, 9, 11] },
+    { id: 'minor', label: 'Minor', short: 'Minor', steps: [0, 2, 3, 5, 7, 8, 10] },
+    { id: 'harmonicMinor', label: 'Harmonic minor', short: 'Harm. min', steps: [0, 2, 3, 5, 7, 8, 11] },
+    { id: 'melodicMinor', label: 'Melodic minor', short: 'Mel. min', steps: [0, 2, 3, 5, 7, 9, 11] },
+    { id: 'dorian', label: 'Dorian', short: 'Dorian', steps: [0, 2, 3, 5, 7, 9, 10] },
+    { id: 'phrygian', label: 'Phrygian', short: 'Phrygian', steps: [0, 1, 3, 5, 7, 8, 10] },
+    { id: 'lydian', label: 'Lydian', short: 'Lydian', steps: [0, 2, 4, 6, 7, 9, 11] },
+    { id: 'mixolydian', label: 'Mixolydian', short: 'Mixolyd.', steps: [0, 2, 4, 5, 7, 9, 10] },
 ];
 
 export const SCALE_IDS = SCALES.map(sc => sc.id);

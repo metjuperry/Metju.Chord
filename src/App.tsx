@@ -17,10 +17,11 @@ import { ARP_RATES } from './components/SoundPanel';
 import { useHistory } from './useHistory';
 import SongMenu from './components/SongMenu';
 import {
-    STORAGE_KEY, SAVE_VERSION, SavedState, Song, decodeShare, defaultSettings, encodeShare, newSong, readSaved,
+    STORAGE_KEY, SAVE_VERSION, SavedState, Song, TimeSignature, changeTimeSignature, decodeShare, defaultSettings, encodeShare,
+    isCompound, newSong, readSaved, stepsPerRow, ticksPerBar, ticksPerStep, transportBpm,
 } from './song';
 import {
-    BEATS_PER_BAR, STEPS_PER_ROW, TICKS_PER_STEP as T, ChordClip, Clip, ClipSound, PlayMode, Track,
+    ChordClip, Clip, ClipSound, PlayMode, Track,
     audibleTracks, clipAt, fitTo, isChordClip, newTrack, place, remove, setLength, songEnd, songLoopEnd, split,
 } from './progression';
 import { SeqEvent, SeqOptions, SequencerPlayer, ticksToSeconds } from './audio/sequencer';
@@ -98,7 +99,11 @@ const App: React.FC = () => {
     const history = useHistory<Song>(() => saved?.song ?? newSong());
     const song = history.state;
     const editSong = history.commit;
-    const { tracks, steps: total, bpm } = song;
+    const { tracks, steps: total, bpm, timeSignature: ts } = song;
+    // One step is one beat of the time signature; rows hold whole bars
+    const T = ticksPerStep(ts);
+    const rowSteps = stepsPerRow(ts);
+    const barTicks = ticksPerBar(ts);
     const setTracks = (update: (ts: Track[]) => Track[], mergeKey?: string) =>
         editSong(sg => ({ ...sg, tracks: update(sg.tracks) }), mergeKey);
     const setBpm = (b: number) => editSong(sg => ({ ...sg, bpm: b }), 'bpm');
@@ -125,8 +130,8 @@ const App: React.FC = () => {
     const [metBeat, setMetBeat] = useState<number | null>(null);
 
     // Latest state for Transport callbacks and the global key handler
-    const live = useRef({ selectedKey, scale, voiceLeading, octave, inversion, stickDir, instrument, playMode, arpPattern, arpRate, noteLength, clips, tracks, total, selected, loop, recording });
-    live.current = { selectedKey, scale, voiceLeading, octave, inversion, stickDir, instrument, playMode, arpPattern, arpRate, noteLength, clips, tracks, total, selected, loop, recording };
+    const live = useRef({ stepTicks: T, barTicks, selectedKey, scale, voiceLeading, octave, inversion, stickDir, instrument, playMode, arpPattern, arpRate, noteLength, clips, tracks, total, selected, loop, recording });
+    live.current = { stepTicks: T, barTicks, selectedKey, scale, voiceLeading, octave, inversion, stickDir, instrument, playMode, arpPattern, arpRate, noteLength, clips, tracks, total, selected, loop, recording };
 
     useEffect(() => {
         document.documentElement.setAttribute('data-theme', theme);
@@ -138,15 +143,16 @@ const App: React.FC = () => {
         if (audioReady) return;
         await Tone.start();
         const engine = getEngine(); // built on first use, after the user gesture
-        engine.setBpm(bpm);
+        engine.setBpm(transportBpm(bpm, ts));
         tracks.forEach(t => engine.setTrack(t.id, { instrument: t.instrument, volume: t.volume }));
         engine.selectTrack(current.id);
         setAudioReady(true);
     };
 
     useEffect(() => {
-        if (audioReady) getEngine().setBpm(bpm);
-    }, [bpm, audioReady]);
+        if (audioReady) getEngine().setBpm(transportBpm(bpm, ts));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [bpm, ts.unit, audioReady]);
 
     // Keep the engine's per-track strips (instrument, volume) in step with the tracks
     const engineTracks = useRef(new Set<string>());
@@ -219,7 +225,7 @@ const App: React.FC = () => {
 
         const s = live.current;
         if (s.recording) {
-            setClips(place(s.clips, { start: s.selected * T, len: T, chord: { ...params, ...currentSound(s) } }));
+            setClips(place(s.clips, { start: s.selected * s.stepTicks, len: s.stepTicks, chord: { ...params, ...currentSound(s) } }));
             setSelected(Math.min(s.selected + 1, s.total - 1));
             setPlayhead(Math.min(s.selected + 1, s.total - 1));
         }
@@ -256,7 +262,7 @@ const App: React.FC = () => {
         events: audibleTracks(s.tracks).flatMap(t => t.clips.filter(isChordClip).map(clip => ({
             tick: clip.start, duration: clip.len, data: { clip, track: t.id },
         }))),
-        opts: { loop: s.loop, loopEnd: Math.min(songLoopEnd(s.tracks), s.total * T), end: songEnd(s.tracks) },
+        opts: { loop: s.loop, loopEnd: Math.min(songLoopEnd(s.tracks, s.barTicks), s.total * s.stepTicks), end: songEnd(s.tracks) },
     });
 
     // Each chord plays on its track's instrument, with the key and chord/arp settings it was recorded with.
@@ -304,7 +310,7 @@ const App: React.FC = () => {
         const draw = () => {
             const pos = player.current?.position();
             if (pos !== null && pos !== undefined) {
-                const step = Math.floor(pos / T);
+                const step = Math.floor(pos / live.current.stepTicks);
                 if (step !== last) {
                     last = step;
                     setPlayhead(step);
@@ -329,14 +335,18 @@ const App: React.FC = () => {
             envelope: { attack: 0.001, decay: 0.1, sustain: 0, release: 0.1 },
         }).connect(engine.master);
         click.volume.value = -8;
-        const quarter = Tone.Time('4n').toTicks();
+        const beatNote = `${ts.unit}n`;
+        const beatTicks = Tone.Time(beatNote).toTicks();
+        const compound = isCompound(ts);
         const metLoop = new Tone.Loop(time => {
             // Count beats from the Transport so the accent lands on the progression's bar lines
-            const beat = Math.round(Tone.getTransport().getTicksAtTime(time) / quarter) % BEATS_PER_BAR;
-            click.triggerAttackRelease(beat === 0 ? 'C5' : 'C4', '32n', time);
+            const beat = Math.round(Tone.getTransport().getTicksAtTime(time) / beatTicks) % ts.beats;
+            // Downbeat high; in 6/8, 9/8 and 12/8 every third beat gets a middle accent
+            const note = beat === 0 ? 'C5' : compound && beat % 3 === 0 ? 'G4' : 'C4';
+            click.triggerAttackRelease(note, '32n', time);
             Tone.getDraw().schedule(() => setMetBeat(beat), time);
-        }, '4n');
-        const startAt = engine.quantizedStart('4n');
+        }, beatNote);
+        const startAt = engine.quantizedStart(beatNote);
         engine.acquireTransport('metronome');
         metLoop.start(startAt);
         return () => {
@@ -346,7 +356,8 @@ const App: React.FC = () => {
             click.dispose();
             setMetBeat(null);
         };
-    }, [metronomeOn, audioReady]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [metronomeOn, audioReady, ts.beats, ts.unit]);
 
     // ---- progression editing -----------------------------------------------------------
 
@@ -392,13 +403,19 @@ const App: React.FC = () => {
             setSelected(0);
             setPlayhead(0);
         },
-        addRow: () => editSong(sg => ({ ...sg, steps: sg.steps + STEPS_PER_ROW })),
+        addRow: () => editSong(sg => ({ ...sg, steps: sg.steps + rowSteps })),
         removeRow: () => {
-            if (total <= STEPS_PER_ROW) return;
-            const next = total - STEPS_PER_ROW;
+            if (total <= rowSteps) return;
+            const next = total - rowSteps;
             editSong(sg => ({ ...sg, steps: next, tracks: sg.tracks.map(t => ({ ...t, clips: fitTo(t.clips, next * T) })) }));
             setSelected(Math.min(selected, next - 1));
             setPlayhead(Math.min(playhead, next - 1));
+        },
+        timeSignature: (next: TimeSignature) => {
+            const changed = changeTimeSignature(song, next);
+            editSong(() => changed);
+            setSelected(sel => Math.min(sel, changed.steps - 1));
+            setPlayhead(ph => Math.min(ph, changed.steps - 1));
         },
         first: () => select(0),
         prev: () => {
@@ -629,7 +646,7 @@ const App: React.FC = () => {
             ? { symbol: resolveChord(clip.chord.key, clip.chord).name.symbol, numeral: romanNumeral(clip.chord.degree, clip.chord.scale), sound: soundText(clip.chord) }
             : { symbol: 'Rest', numeral: '', sound: '' };
 
-    const beatDot = metronomeOn ? metBeat : playing ? playhead % BEATS_PER_BAR : null;
+    const beatDot = metronomeOn ? metBeat : playing ? playhead % ts.beats : null;
 
     if (!audioReady) {
         return (
@@ -651,6 +668,7 @@ const App: React.FC = () => {
                 bpm={bpm}
                 metronomeOn={metronomeOn}
                 beat={beatDot}
+                beats={ts.beats}
                 theme={theme}
                 onKeyChange={setSelectedKey}
                 scale={scale}
@@ -701,6 +719,9 @@ const App: React.FC = () => {
 
             <Progression
                 total={total}
+                stepsPerRow={rowSteps}
+                timeSignature={ts}
+                onTimeSignature={edit.timeSignature}
                 tracks={tracks.map(t => ({ ...t, clips: t.clips.map(c => ({ ...c, start: c.start / T, len: c.len / T })) }))}
                 selectedTrack={current.id}
                 onSelectTrack={id => setSelectedTrack(id)}
