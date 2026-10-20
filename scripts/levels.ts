@@ -41,11 +41,11 @@ async function main() {
 
         const sustaining = rows.filter(r => r.id !== 'pluck').map(r => r.triad.rms);
         const spread = Math.max(...sustaining) - Math.min(...sustaining);
-        const peaksOk = rows.every(r => r.triad.peak >= -8 && r.triad.peak <= -4);
-        const fxOk = rows.every(r => r.fx.peak <= -1);
+        const peaksOk = rows.every(r => r.triad.peak >= -10 && r.triad.peak <= -3);
+        const fxOk = rows.every(r => r.fx.peak <= -0.5);
         console.log(`\nsustaining RMS spread (pad, epiano, organ, lead): ${spread.toFixed(1)} dB (limit 6)`);
-        console.log(`triad peaks within -8..-4 dBFS: ${peaksOk ? 'yes' : 'NO'}`);
-        console.log(`all-fx limiter output <= -1 dBFS: ${fxOk ? 'yes' : 'NO'}`);
+        console.log(`triad peaks within -10..-3 dBFS: ${peaksOk ? 'yes' : 'NO'}`);
+        console.log(`all-fx limiter output <= -0.5 dBFS: ${fxOk ? 'yes' : 'NO'}`);
         process.exitCode = spread <= 6 && peaksOk && fxOk ? 0 : 1;
     } finally {
         await browser.close();

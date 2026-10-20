@@ -140,8 +140,6 @@ const CHORD_NAMES: { [pcs: string]: [string, string] } = {
     '0,2,4,7,11': ['maj9', 'Major 9th'],
     '0,2,3,7,10': ['m9', 'Minor 9th'],
     '0,2,4,7,10': ['9', 'Dominant 9th'],
-    '0,1,3,7,10': ['m7♭9', 'Minor 7♭9'],
-    '0,1,3,6,10': ['m7♭5♭9', 'Minor 7♭5♭9'],
 };
 
 /** Name a chord from its sounding notes; `rootPc` is the un-inverted root. */
