@@ -42,6 +42,8 @@ interface ProgressionProps {
     onDelete: () => void;
     onRestamp: () => void;
     onClearAll: () => void;
+    /** Undo/redo and the Song menu, shown in the header. */
+    songMenu?: React.ReactNode;
 }
 
 const steps = (n: number) => (n === 1 ? '1 step' : `${n} steps`);
@@ -245,6 +247,7 @@ const Progression: React.FC<ProgressionProps> = props => {
                         ? `Play a pad to write it on ${current.name}, step ${selected + 1}${props.currentSound ? ` (${props.currentSound})` : ''}; the cursor moves on.`
                         : `Pads play and record on the selected track (${current.name}). Select a step, press Record, then play pads.`}
                 </span>
+                {props.songMenu}
                 <div className="bars">
                     <span className="section-note">{total / BEATS_PER_BAR} bars · 4/4</span>
                     {rows > 1 && <button className="chip-button" onClick={props.onRemoveRow}>− Remove row</button>}

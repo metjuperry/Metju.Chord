@@ -129,12 +129,14 @@ export interface Track {
 export const TRACK_COLORS = ['#ffcc00', '#4fd1c5', '#7fb4ff', '#d38cff', '#ff7aa8', '#c8e06e'];
 export const MAX_TRACKS = TRACK_COLORS.length;
 
-let nextTrackId = 1;
+/** The next free id, so tracks loaded from a saved song never collide with new ones. */
+const nextTrackId = (existing: Track[]) =>
+    `t${existing.reduce((m, t) => Math.max(m, parseInt(t.id.replace(/\D/g, ''), 10) || 0), 0) + 1}`;
 
 export function newTrack(existing: Track[], instrument: InstrumentId, name?: string): Track {
     const used = new Set(existing.map(t => t.color));
     return {
-        id: `t${nextTrackId++}`,
+        id: nextTrackId(existing),
         name: name ?? `Track ${existing.length + 1}`,
         color: TRACK_COLORS.find(c => !used.has(c)) ?? TRACK_COLORS[existing.length % TRACK_COLORS.length],
         instrument,

@@ -13,6 +13,11 @@ import {
 import { ArpRate, getEngine } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
 import { ARP_RATES } from './components/SoundPanel';
+import { useHistory } from './useHistory';
+import SongMenu from './components/SongMenu';
+import {
+    STORAGE_KEY, SAVE_VERSION, SavedState, Song, decodeShare, defaultSettings, encodeShare, newSong, readSaved,
+} from './song';
 import {
     BEATS_PER_BAR, STEPS_PER_ROW, TICKS_PER_STEP as T, ChordClip, Clip, ClipSound, PlayMode, Track,
     audibleTracks, clipAt, fitTo, isChordClip, newTrack, place, remove, setLength, songEnd, songLoopEnd, split,
@@ -35,10 +40,15 @@ interface Scheduled {
     track: string;
 }
 
-const initialTracks = (): Track[] => {
-    const keys = newTrack([], 'epiano', 'Keys');
-    return [keys, newTrack([keys], 'warmpad', 'Pad')];
-};
+/** The song and settings saved in this browser, if any. */
+function loadSaved(): SavedState | null {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        return raw ? readSaved(JSON.parse(raw)) : null;
+    } catch {
+        return null;
+    }
+}
 
 /** What the screen shows: the last chord struck, by a pad or by the progression. */
 interface Shown {
@@ -56,15 +66,17 @@ interface Hold {
 const App: React.FC = () => {
     // ---- settings ---------------------------------------------------------------
     const [audioReady, setAudioReady] = useState(false);
-    const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-    const [selectedKey, setSelectedKey] = useState<MusicalKey>('C');
-    const [octave, setOctave] = useState(4);
-    const [bpm, setBpm] = useState(100);
-    const [playMode, setPlayMode] = useState<PlayMode>('Chord');
-    const [arpPattern, setArpPattern] = useState<ArpPattern>('up');
-    const [arpRate, setArpRate] = useState<ArpRate>('8n');
-    const [noteLength, setNoteLength] = useState(0.3);
-    const [inversion, setInversion] = useState(0);
+    const [saved] = useState(loadSaved);
+    const initial = saved?.settings ?? defaultSettings();
+    const [theme, setTheme] = useState<'dark' | 'light'>(initial.theme);
+    const [selectedKey, setSelectedKey] = useState<MusicalKey>(initial.key);
+    const [octave, setOctave] = useState(initial.octave);
+    const [playMode, setPlayMode] = useState<PlayMode>(initial.playMode);
+    const [arpPattern, setArpPattern] = useState<ArpPattern>(initial.arpPattern);
+    const [arpRate, setArpRate] = useState<ArpRate>(initial.arpRate);
+    const [noteLength, setNoteLength] = useState(initial.noteLength);
+    const [inversion, setInversion] = useState(initial.inversion);
+    const [notice, setNotice] = useState<string | null>(null);
     const [helpOpen, setHelpOpen] = useState(false);
 
     // ---- stick: a latched direction (mouse) and momentary ones (held keys) --------
@@ -78,20 +90,28 @@ const App: React.FC = () => {
     const [shown, setShown] = useState<Shown | null>(null);
 
     // ---- progression ----------------------------------------------------------------
-    const [total, setTotal] = useState(STEPS_PER_ROW);
-    const [tracks, setTracks] = useState<Track[]>(initialTracks);
+    // The song is everything undo/redo and saving cover: tracks, length, tempo, time signature
+    const history = useHistory<Song>(() => saved?.song ?? newSong());
+    const song = history.state;
+    const editSong = history.commit;
+    const { tracks, steps: total, bpm } = song;
+    const setTracks = (update: (ts: Track[]) => Track[], mergeKey?: string) =>
+        editSong(sg => ({ ...sg, tracks: update(sg.tracks) }), mergeKey);
+    const setBpm = (b: number) => editSong(sg => ({ ...sg, bpm: b }), 'bpm');
     const [selectedTrack, setSelectedTrack] = useState('');
     // The selected track: pads play through it and recordings land on it
     const current = tracks.find(t => t.id === selectedTrack) ?? tracks[0];
     const clips = current.clips;
     const instrument = current.instrument;
-    const updateTrack = (id: string, patch: Partial<Track>) => setTracks(ts => ts.map(t => (t.id === id ? { ...t, ...patch } : t)));
+    const updateTrack = (id: string, patch: Partial<Track>) =>
+        // dragging a volume slider is one undo step, not one per pixel
+        setTracks(ts => ts.map(t => (t.id === id ? { ...t, ...patch } : t)), 'volume' in patch ? `vol:${id}` : undefined);
     const setClips = (next: Clip[]) => updateTrack(current.id, { clips: next });
     const setInstrument = (id: InstrumentId) => updateTrack(current.id, { instrument: id });
     const [selected, setSelected] = useState(0);
     const [playhead, setPlayhead] = useState(0);
     const [playing, setPlaying] = useState(false);
-    const [loop, setLoop] = useState(true);
+    const [loop, setLoop] = useState(initial.loop);
     const [recording, setRecording] = useState(false);
     const [clipboard, setClipboard] = useState<Clip | null>(null);
     const player = useRef<SequencerPlayer<Scheduled> | null>(null);
@@ -328,13 +348,13 @@ const App: React.FC = () => {
             const used = new Set(tracks.map(t => t.instrument));
             const inst = NEW_TRACK_INSTRUMENTS.find(i => !used.has(i)) ?? 'epiano';
             const track = newTrack(tracks, inst);
-            setTracks([...tracks, track]);
+            setTracks(ts => [...ts, track]);
             setSelectedTrack(track.id);
         },
         remove: (id: string) => {
             if (tracks.length < 2) return;
             const rest = tracks.filter(t => t.id !== id);
-            setTracks(rest);
+            setTracks(ts => ts.filter(t => t.id !== id));
             if (id === current.id) setSelectedTrack(rest[0].id);
         },
     };
@@ -357,12 +377,11 @@ const App: React.FC = () => {
             setSelected(0);
             setPlayhead(0);
         },
-        addRow: () => setTotal(total + STEPS_PER_ROW),
+        addRow: () => editSong(sg => ({ ...sg, steps: sg.steps + STEPS_PER_ROW })),
         removeRow: () => {
             if (total <= STEPS_PER_ROW) return;
             const next = total - STEPS_PER_ROW;
-            setTotal(next);
-            setTracks(ts => ts.map(t => ({ ...t, clips: fitTo(t.clips, next * T) })));
+            editSong(sg => ({ ...sg, steps: next, tracks: sg.tracks.map(t => ({ ...t, clips: fitTo(t.clips, next * T) })) }));
             setSelected(Math.min(selected, next - 1));
             setPlayhead(Math.min(playhead, next - 1));
         },
@@ -377,18 +396,125 @@ const App: React.FC = () => {
         },
     };
 
+    // ---- saving, files, share links -----------------------------------------------------
+
+    const flash = (text: string) => setNotice(text);
+    useEffect(() => {
+        if (!notice) return;
+        const t = setTimeout(() => setNotice(null), 2600);
+        return () => clearTimeout(t);
+    }, [notice]);
+
+    const snapshot = (): SavedState => ({
+        version: SAVE_VERSION,
+        song,
+        settings: { key: selectedKey, octave, inversion, playMode, arpPattern, arpRate, noteLength, loop, theme },
+    });
+
+    // Autosave a moment after any change
+    useEffect(() => {
+        const t = setTimeout(() => {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot()));
+            } catch {
+                // storage full or blocked (private window): the song still works, it just isn't kept
+            }
+        }, 400);
+        return () => clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [song, selectedKey, octave, inversion, playMode, arpPattern, arpRate, noteLength, loop, theme]);
+
+    /** Replace the song (undoable) and take over its saved settings. */
+    const loadState = (state: SavedState, message: string) => {
+        stopPlayback();
+        editSong(() => state.song);
+        const st = state.settings;
+        setSelectedKey(st.key);
+        setOctave(st.octave);
+        setInversion(st.inversion);
+        setPlayMode(st.playMode);
+        setArpPattern(st.arpPattern);
+        setArpRate(st.arpRate);
+        setNoteLength(st.noteLength);
+        setLoop(st.loop);
+        setSelectedTrack('');
+        setSelected(0);
+        setPlayhead(0);
+        flash(message);
+    };
+
+    // Open a song shared as a link (#song=...), then tidy the address bar
+    useEffect(() => {
+        const match = window.location.hash.match(/^#song=([zp][A-Za-z0-9_-]+)$/);
+        if (!match) return;
+        decodeShare(match[1])
+            .then(data => {
+                const state = readSaved(data);
+                if (state) loadState(state, 'Opened the shared song. Undo to go back to yours.');
+                else flash('That link doesn’t contain a song this version can open.');
+            })
+            .catch(() => flash('That link is damaged and couldn’t be opened.'))
+            .finally(() => window.history.replaceState(null, '', window.location.pathname + window.location.search));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const songActions = {
+        new: () => {
+            stopPlayback();
+            editSong(() => newSong());
+            setSelectedTrack('');
+            setSelected(0);
+            setPlayhead(0);
+            flash('New song. Undo to get the old one back.');
+        },
+        save: () => {
+            const blob = new Blob([JSON.stringify(snapshot(), null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'metju-chord-song.json';
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        },
+        open: async (file: File) => {
+            try {
+                const state = readSaved(JSON.parse(await file.text()));
+                if (state) loadState(state, `Opened ${file.name}.`);
+                else flash('That file isn’t a Metju.Chord song.');
+            } catch {
+                flash('That file couldn’t be read.');
+            }
+        },
+        share: async () => {
+            const url = `${window.location.origin}${window.location.pathname}#song=${await encodeShare(snapshot())}`;
+            try {
+                await navigator.clipboard.writeText(url);
+                flash('Share link copied.');
+            } catch {
+                window.prompt('Copy this link:', url);
+            }
+        },
+    };
+
     // ---- keyboard -----------------------------------------------------------------------
 
-    const keyActions = useRef({ pressPad, releasePad, releaseAll, togglePlay, edit, helpOpen });
-    keyActions.current = { pressPad, releasePad, releaseAll, togglePlay, edit, helpOpen };
+    const keyActions = useRef({ pressPad, releasePad, releaseAll, togglePlay, edit, helpOpen, undo: history.undo, redo: history.redo });
+    keyActions.current = { pressPad, releasePad, releaseAll, togglePlay, edit, helpOpen, undo: history.undo, redo: history.redo };
 
     useEffect(() => {
         const isTyping = (t: EventTarget | null) =>
             t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement;
 
         const down = (e: KeyboardEvent) => {
-            if (e.ctrlKey || e.metaKey || e.altKey) return;
             const a = keyActions.current;
+            // Undo / redo: Ctrl or Cmd + Z, Shift + Ctrl/Cmd + Z, Ctrl + Y
+            if ((e.ctrlKey || e.metaKey) && !e.altKey && !a.helpOpen && (e.code === 'KeyZ' || e.code === 'KeyY')) {
+                e.preventDefault();
+                if (e.code === 'KeyY' || e.shiftKey) a.redo();
+                else a.undo();
+                return;
+            }
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
             if (e.code === 'Escape') {
                 setHelpOpen(false);
                 setLatchedDir('C');
@@ -586,9 +712,22 @@ const App: React.FC = () => {
                 onRestamp={edit.restamp}
                 currentSound={soundText(currentSound())}
                 onClearAll={edit.clearAll}
+                songMenu={(
+                    <SongMenu
+                        canUndo={history.canUndo}
+                        canRedo={history.canRedo}
+                        onUndo={history.undo}
+                        onRedo={history.redo}
+                        onNew={songActions.new}
+                        onOpenFile={songActions.open}
+                        onSaveFile={songActions.save}
+                        onShare={songActions.share}
+                    />
+                )}
             />
 
             <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+            {notice && <div className="toast" role="status">{notice}</div>}
         </div>
     );
 };
