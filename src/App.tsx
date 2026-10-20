@@ -1,639 +1,518 @@
-import React, { Component } from 'react';
-import './App.css';
-import NoteButton from './NoteButton';
-import ChordGrid from './ChordGrid';
-import { MusicalKey } from './ScalePicker';
-import ChordDisplay from './ChordDisplay';
-import SettingsPanel from './SettingsPanel';
-import Sequencer, { SequencerSlot, SlotCell, REST_SLOT, sameChord } from './Sequencer';
-import Metronome from './Metronome';
-import FeatureMenu from './FeatureMenu';
-import EffectsPanel from './EffectsPanel';
-import ScaleVisualizer from './ScaleVisualizer';
-import HelpPanel from './HelpPanel';
-import { ArpPattern, ChordParams, ChordType, maxInversion, resolveChord } from './theory';
-import { getEngine, ArpRate } from './audio/engine';
-import { InstrumentId } from './audio/instruments';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Tone from 'tone';
+import './App.css';
+import TopBar, { BPM_MAX, BPM_MIN, OCTAVE_MAX, OCTAVE_MIN } from './components/TopBar';
+import Device, { PadView, ScreenView } from './components/Device';
+import SoundPanel from './components/SoundPanel';
+import Progression from './components/Progression';
+import HelpDialog from './components/HelpDialog';
+import {
+    ArpPattern, ChordParams, MusicalKey, ResolvedChord, StickDir,
+    resolveChord, romanNumeral, scalePitchClasses, stickChordType, triadQuality,
+} from './theory';
+import { ArpRate, getEngine } from './audio/engine';
+import { INSTRUMENTS, InstrumentId } from './audio/instruments';
+import {
+    BEATS_PER_BAR, Clip, PlayMode, clipAt, clipEnd, fitTo, isChordClip, loopEnd, place, remove, setLength, split,
+} from './progression';
 
-type PlayMode = 'Chord' | 'Arp';
-
-// ChordGrid joystick positions -> chord types
-const POSITION_TYPE: { [position: string]: ChordType } = {
-    'neutral': 'triad',
-    'maj/min': 'flip',
-    'dim': 'dim',
-    'aug': 'aug',
-    '7': 'dom7',
-    'maj/min7': 'diatonic7',
-    'maj/min9': 'diatonic9',
-    'sus4': 'sus4',
-    'sus2/maj6': 'sus2',
+const DEGREE_KEYS: { [code: string]: number } = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5, Digit7: 6 };
+const STICK_KEYS: { [code: string]: StickDir } = {
+    KeyQ: 'UL', KeyW: 'U', KeyE: 'UR', KeyA: 'L', KeyS: 'C', KeyD: 'R', KeyZ: 'DL', KeyX: 'D', KeyC: 'DR',
 };
+const INVERSION_LABELS = ['ROOT POS', '1ST INV', '2ND INV', '3RD INV'];
+const MAX_INVERSION = 3;
 
-// Number keys 1-7 (by physical key, so layouts like AZERTY work) -> scale degrees
-const KEY_DEGREE: { [code: string]: number } = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5, Digit7: 6 };
-
-const EMPTY_ROW = (): SlotCell[] => Array(8).fill(null);
-
-interface AppState {
-    selectedKey: MusicalKey;
-    octave: number;
-    synthType: InstrumentId;
-    playMode: PlayMode;
+/** What the screen shows: the last chord struck, by a pad or by the progression. */
+interface Shown {
+    chord: ResolvedChord;
+    degree: number;
+    dir: StickDir;
     inversion: number;
-    joystickPosition: string;
-    lastPlayedChord: string;
-    lastPlayedNotes: string[];
-    sequencerSlots: SlotCell[];
-    recordingIndex: number | null;
-    playingIndex: number | null;
-    isSequencerPlaying: boolean;
-    loopMode: boolean;
-    arpPattern: ArpPattern;
-    arpRate: ArpRate;
-    noteLength: number;
-    bpm: number;
-    menuOpen: boolean;
-    showMetronome: boolean;
-    showSequencer: boolean;
-    showArpSettings: boolean;
-    showEffects: boolean;
-    showScaleViz: boolean;
-    showHelp: boolean;
-    theme: 'dark' | 'light';
-    isLoading: boolean;
-    audioReady: boolean;
 }
 
-class App extends Component<{}, AppState> {
-    /** Chords currently sounding from a pad or key, keyed by source, so release always matches the press. */
-    private holds = new Map<string, () => void>();
-    private seqLoop: Tone.Loop | null = null;
-    private seqCursor: number | null = null;
+interface Hold {
+    degree: number;
+    stop: () => void;
+}
 
-    constructor(props: {}) {
-        super(props);
-        this.state = {
-            selectedKey: 'C',
-            octave: 4,
-            synthType: 'epiano',
-            playMode: 'Chord',
-            inversion: 0,
-            joystickPosition: 'neutral',
-            lastPlayedChord: '',
-            lastPlayedNotes: [],
-            sequencerSlots: EMPTY_ROW(),
-            recordingIndex: null,
-            playingIndex: null,
-            isSequencerPlaying: false,
-            loopMode: false,
-            arpPattern: 'up',
-            arpRate: '8n',
-            noteLength: 0.5,
-            bpm: 120,
-            menuOpen: false,
-            showMetronome: false,
-            showSequencer: false,
-            showArpSettings: false,
-            showEffects: false,
-            showScaleViz: false,
-            showHelp: false,
-            theme: 'dark',
-            isLoading: true,
-            audioReady: false,
-        };
-    }
+const App: React.FC = () => {
+    // ---- settings ---------------------------------------------------------------
+    const [audioReady, setAudioReady] = useState(false);
+    const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+    const [selectedKey, setSelectedKey] = useState<MusicalKey>('C');
+    const [octave, setOctave] = useState(4);
+    const [bpm, setBpm] = useState(100);
+    const [instrument, setInstrument] = useState<InstrumentId>('epiano');
+    const [playMode, setPlayMode] = useState<PlayMode>('Chord');
+    const [arpPattern, setArpPattern] = useState<ArpPattern>('up');
+    const [arpRate, setArpRate] = useState<ArpRate>('8n');
+    const [noteLength, setNoteLength] = useState(0.3);
+    const [inversion, setInversion] = useState(0);
+    const [helpOpen, setHelpOpen] = useState(false);
 
-    componentDidMount() {
-        this.applyTheme(this.state.theme);
-        window.addEventListener('keydown', this.handleKeyDown);
-        window.addEventListener('keyup', this.handleKeyUp);
-        window.addEventListener('blur', this.releaseAllHolds);
+    // ---- stick: a latched direction (mouse) and momentary ones (held keys) --------
+    const [latchedDir, setLatchedDir] = useState<StickDir>('C');
+    const [keyDirs, setKeyDirs] = useState<StickDir[]>([]);
+    const stickDir: StickDir = keyDirs.length ? keyDirs[keyDirs.length - 1] : latchedDir;
 
-        this.setState({ isLoading: false });
-    }
+    // ---- playing ------------------------------------------------------------------
+    const holds = useRef(new Map<string, Hold>());
+    const [held, setHeld] = useState<number[]>([]);
+    const [shown, setShown] = useState<Shown | null>(null);
 
-    componentWillUnmount() {
-        this.stopSequencer();
-        this.releaseAllHolds();
-        window.removeEventListener('keydown', this.handleKeyDown);
-        window.removeEventListener('keyup', this.handleKeyUp);
-        window.removeEventListener('blur', this.releaseAllHolds);
-    }
+    // ---- progression ----------------------------------------------------------------
+    const [total, setTotal] = useState(16);
+    const [clips, setClips] = useState<Clip[]>([]);
+    const [selected, setSelected] = useState(0);
+    const [playhead, setPlayhead] = useState(0);
+    const [playing, setPlaying] = useState(false);
+    const [loop, setLoop] = useState(true);
+    const [recording, setRecording] = useState(false);
+    const [clipboard, setClipboard] = useState<Clip | null>(null);
+    const seqLoop = useRef<Tone.Loop | null>(null);
+    const seqBeat = useRef(0);
 
-    applyTheme = (theme: 'dark' | 'light') => {
+    // ---- metronome ------------------------------------------------------------------
+    const [metronomeOn, setMetronomeOn] = useState(false);
+    const [metBeat, setMetBeat] = useState<number | null>(null);
+
+    // Latest state for Transport callbacks and the global key handler
+    const live = useRef({ selectedKey, octave, inversion, stickDir, playMode, arpPattern, arpRate, noteLength, clips, total, selected, loop, recording });
+    live.current = { selectedKey, octave, inversion, stickDir, playMode, arpPattern, arpRate, noteLength, clips, total, selected, loop, recording };
+
+    useEffect(() => {
         document.documentElement.setAttribute('data-theme', theme);
+    }, [theme]);
+
+    // ---- audio start --------------------------------------------------------------
+
+    const startAudio = async () => {
+        if (audioReady) return;
+        await Tone.start();
+        const engine = getEngine(); // built on first use, after the user gesture
+        engine.setBpm(bpm);
+        engine.setInstrument(instrument);
+        setAudioReady(true);
     };
 
-    handleThemeToggle = () => {
-        this.setState(prevState => {
-            const newTheme = prevState.theme === 'dark' ? 'light' : 'dark';
-            this.applyTheme(newTheme);
-            return { theme: newTheme };
-        });
-    };
+    useEffect(() => {
+        if (audioReady) getEngine().setBpm(bpm);
+    }, [bpm, audioReady]);
 
-    // ---- chord resolution ----------------------------------------------------
+    useEffect(() => {
+        if (audioReady) getEngine().setInstrument(instrument);
+    }, [instrument, audioReady]);
 
-    chordType = (): ChordType => POSITION_TYPE[this.state.joystickPosition] ?? 'root';
+    // ---- chords -------------------------------------------------------------------
 
-    maxInversion = (): number => maxInversion(this.chordType());
-
-    chordParams = (degree: number): ChordParams => ({
+    const paramsFor = (degree: number, dir: StickDir, s = live.current): ChordParams => ({
         degree,
-        type: this.chordType(),
-        inversion: Math.min(this.state.inversion, this.maxInversion()),
-        octave: this.state.octave,
+        type: stickChordType(dir, triadQuality(degree)),
+        inversion: s.inversion,
+        octave: s.octave,
     });
 
-    describeSlot = (slot: SequencerSlot) => {
-        const chord = resolveChord(this.state.selectedKey, slot);
-        return { name: chord.name.symbol, notes: chord.notes };
-    };
-
-    // ---- pads and keyboard: one path ------------------------------------------
-
-    handleKeyDown = (event: KeyboardEvent) => {
-        if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
-        if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
-
-        const degree = KEY_DEGREE[event.code];
-        if (degree !== undefined) {
-            this.pressChord(`key:${event.code}`, degree);
-        }
-    };
-
-    handleKeyUp = (event: KeyboardEvent) => {
-        this.releaseChord(`key:${event.code}`);
-    };
-
-    pressChord = (id: string, degree: number) => {
-        if (!this.state.audioReady || this.holds.has(id)) return;
-
-        const { selectedKey, playMode, arpPattern, arpRate, noteLength, recordingIndex, sequencerSlots } = this.state;
-        const params = this.chordParams(degree);
-        const chord = resolveChord(selectedKey, params);
-
-        const update: Partial<AppState> = {
-            lastPlayedChord: chord.name.long,
-            lastPlayedNotes: chord.notes,
-        };
-        if (recordingIndex !== null) {
-            const newSlots = [...sequencerSlots];
-            newSlots[recordingIndex] = { ...params, playMode };
-            update.sequencerSlots = newSlots;
-            update.recordingIndex = null; // Stop recording after capturing one chord
-        }
-        this.setState(update as AppState);
-
-        if (playMode === 'Arp') {
-            this.holds.set(id, getEngine().startArp(chord.midi, { pattern: arpPattern, rate: arpRate, noteLength }));
+    /** Start a chord sounding; returns how to stop it. */
+    const sound = (degree: number) => {
+        const s = live.current;
+        const params = paramsFor(degree, s.stickDir, s);
+        const chord = resolveChord(s.selectedKey, params);
+        const engine = getEngine();
+        let stop: () => void;
+        if (s.playMode === 'Arp') {
+            stop = engine.startArp(chord.midi, { pattern: s.arpPattern, rate: s.arpRate, noteLength: s.noteLength });
         } else {
-            getEngine().attack(chord.midi);
-            this.holds.set(id, () => getEngine().release(chord.midi));
+            engine.attack(chord.midi);
+            stop = () => engine.release(chord.midi);
+        }
+        setShown({ chord, degree, dir: s.stickDir, inversion: s.inversion });
+        return { params, stop };
+    };
+
+    const syncHeld = () => setHeld(Array.from(holds.current.values()).map(h => h.degree));
+
+    const pressPad = (id: string, degree: number) => {
+        if (!audioReady || holds.current.has(id)) return;
+        const { params, stop } = sound(degree);
+        holds.current.set(id, { degree, stop });
+        syncHeld();
+
+        const s = live.current;
+        if (s.recording) {
+            setClips(place(s.clips, { start: s.selected, len: 1, chord: { ...params, playMode: s.playMode } }));
+            setSelected(Math.min(s.selected + 1, s.total - 1));
+            setPlayhead(Math.min(s.selected + 1, s.total - 1));
         }
     };
 
-    releaseChord = (id: string) => {
-        const stop = this.holds.get(id);
-        if (stop) {
-            this.holds.delete(id);
-            stop();
-        }
+    const releasePad = (id: string) => {
+        const hold = holds.current.get(id);
+        if (!hold) return;
+        holds.current.delete(id);
+        hold.stop();
+        syncHeld();
     };
 
-    releaseAllHolds = () => {
-        Array.from(this.holds.keys()).forEach(this.releaseChord);
+    const releaseAll = () => {
+        Array.from(holds.current.keys()).forEach(releasePad);
+        setKeyDirs([]);
     };
 
-    handlePadPress = (degree: number) => this.pressChord(`pad:${degree}`, degree);
-    handlePadRelease = (degree: number) => this.releaseChord(`pad:${degree}`);
-
-    ensureAudioReady = async () => {
-        if (!this.state.audioReady) {
-            await Tone.start();
-            // The engine is built on first use, after the user gesture
-            const engine = getEngine();
-            engine.setBpm(this.state.bpm);
-            engine.setInstrument(this.state.synthType);
-            this.setState({ audioReady: true });
-        }
-    };
-
-    // ---- settings ---------------------------------------------------------------
-
-    handleKeyChange = (key: MusicalKey) => {
-        this.setState({ selectedKey: key });
-    };
-
-    handleOctaveChange = (octave: number) => {
-        this.setState({ octave });
-    };
-
-    handleSynthChange = (synthType: InstrumentId) => {
-        this.setState({ synthType });
-        getEngine().setInstrument(synthType);
-    };
-
-    handlePlayModeChange = (playMode: PlayMode) => {
-        this.setState({ playMode });
-    };
-
-    handleInversionChange = (change: number) => {
-        this.setState((prevState) => ({
-            inversion: Math.max(0, Math.min(this.maxInversion(), prevState.inversion + change))
-        }));
-    };
-
-    handleArpPatternChange = (arpPattern: ArpPattern) => {
-        this.setState({ arpPattern });
-    };
-
-    handleArpRateChange = (arpRate: ArpRate) => {
-        this.setState({ arpRate });
-    };
-
-    handleNoteLengthChange = (noteLength: number) => {
-        this.setState({ noteLength });
-    };
-
-    handleBpmChange = (bpm: number) => {
-        getEngine().setBpm(bpm);
-        this.setState({ bpm });
-    };
-
-    handleMenuToggle = () => {
-        this.setState((prevState) => ({ menuOpen: !prevState.menuOpen }));
-    };
-
-    handleMetronomeToggle = (show: boolean) => {
-        this.setState({ showMetronome: show });
-    };
-
-    handleSequencerToggle = (show: boolean) => {
-        this.setState({ showSequencer: show });
-    };
-
-    handleArpSettingsToggle = (show: boolean) => {
-        this.setState({ showArpSettings: show });
-    };
-
-    handleEffectsToggle = (show: boolean) => {
-        this.setState({ showEffects: show });
-    };
-
-    handleScaleVizToggle = (show: boolean) => {
-        this.setState({ showScaleViz: show });
-    };
-
-    handleHelpToggle = () => {
-        this.setState(prevState => ({ showHelp: !prevState.showHelp }));
-    };
-
-    handleJoystickChange = (position: string) => {
-        const max = maxInversion(POSITION_TYPE[position] ?? 'root');
-        this.setState(prev => ({ joystickPosition: position, inversion: Math.min(prev.inversion, max) }));
-    };
-
-    // ---- sequencer editing --------------------------------------------------------
-
-    handleSequencerSlotClick = (index: number) => {
-        this.setState((prevState) => ({
-            // If clicking on the currently recording slot, cancel recording
-            recordingIndex: prevState.recordingIndex === index ? null : index
-        }));
-    };
-
-    handleClearSequencer = () => {
-        this.stopSequencer();
-        this.setState({
-            sequencerSlots: EMPTY_ROW(),
-            recordingIndex: null,
-            playingIndex: null,
+    // Moving the stick (or changing voicing) while a pad is held re-voices the held chord, like the hardware
+    useEffect(() => {
+        if (!audioReady || holds.current.size === 0) return;
+        holds.current.forEach((hold, id) => {
+            hold.stop();
+            holds.current.set(id, { degree: hold.degree, stop: sound(hold.degree).stop });
         });
-    };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [stickDir, inversion, octave, selectedKey, playMode, arpPattern, arpRate]);
 
-    handleAddRow = () => {
-        this.setState(prev => ({ sequencerSlots: [...prev.sequencerSlots, ...EMPTY_ROW()] }));
-    };
+    // ---- progression playback (Transport) --------------------------------------------
 
-    handleRemoveRow = () => {
-        const { sequencerSlots } = this.state;
-        if (sequencerSlots.length > 8) {
-            this.setState({
-                sequencerSlots: sequencerSlots.slice(0, -8),
-                recordingIndex: null,
-                playingIndex: null,
-            });
-        }
-    };
-
-    private setSlot = (index: number, slot: SlotCell) => {
-        const newSlots = [...this.state.sequencerSlots];
-        newSlots[index] = slot;
-        this.setState({ sequencerSlots: newSlots });
-    };
-
-    handleCopySlot = (targetIndex: number, copiedSlot: SequencerSlot) => {
-        this.setSlot(targetIndex, { ...copiedSlot });
-    };
-
-    handleDeleteSlot = (index: number) => {
-        this.setSlot(index, null);
-    };
-
-    handleSetRest = (index: number) => {
-        this.setSlot(index, { ...REST_SLOT });
-    };
-
-    handleToggleTie = (index: number) => {
-        const slot = this.state.sequencerSlots[index];
-        if (slot) this.setSlot(index, { ...slot, isTied: !slot.isTied });
-    };
-
-    // ---- sequencer playback (Tone.Transport) --------------------------------------
-
-    /** Plays one slot. With `time` (from a Transport callback) audio is scheduled on the audio clock and the UI follows via Draw. */
-    playSequencerSlot = (index: number, time?: number) => {
-        const { sequencerSlots, selectedKey, arpPattern, arpRate, noteLength } = this.state;
-        const slot = sequencerSlots[index];
-        if (!slot) return;
-
-        const chord = slot.isRest ? null : resolveChord(selectedKey, slot);
-        const showSlot = () => this.setState({
-            lastPlayedChord: chord ? chord.name.long : 'REST',
-            lastPlayedNotes: chord ? chord.notes : [],
-            playingIndex: index,
-        });
-        if (time === undefined) {
-            showSlot();
-        } else {
-            Tone.getDraw().schedule(showSlot, time);
-        }
-
-        if (!chord) return;
-
-        // A tied slot sustains the previous chord instead of retriggering
-        const prev = index > 0 ? sequencerSlots[index - 1] : null;
-        if (prev && prev.isTied && sameChord(prev, slot)) return;
-
-        // Length of the tie chain starting here, in steps
-        let steps = 1;
-        for (let i = index; sequencerSlots[i]?.isTied && sequencerSlots[i + 1] && sameChord(sequencerSlots[i]!, sequencerSlots[i + 1]!); i++) {
-            steps++;
-        }
-        const seconds = steps * Tone.Time('4n').toSeconds();
-        const when = time ?? Tone.now();
-
-        if (slot.playMode === 'Arp') {
-            getEngine().scheduleArp(chord.midi, { pattern: arpPattern, rate: arpRate, noteLength }, when, seconds);
-        } else {
-            getEngine().playChord(chord.midi, { duration: seconds, time: when });
-        }
-    };
-
-    /** Next filled slot after `from`, wrapping to the start when looping. */
-    private nextFilledSlot = (from: number | null, wrap: boolean): number | null => {
-        const { sequencerSlots } = this.state;
-        for (let i = (from ?? -1) + 1; i < sequencerSlots.length; i++) {
-            if (sequencerSlots[i]) return i;
-        }
-        return wrap ? sequencerSlots.findIndex(slot => slot) : null;
-    };
-
-    toggleSequencer = () => {
-        if (this.state.isSequencerPlaying) {
-            this.stopSequencer();
-        } else {
-            this.startSequencer();
-        }
-    };
-
-    startSequencer = async () => {
-        await this.ensureAudioReady();
-        if (this.seqLoop) return;
-
-        this.seqCursor = this.state.playingIndex;
-        this.seqLoop = new Tone.Loop(time => this.sequencerTick(time), '4n');
-
-        const startAt = getEngine().quantizedStart('4n');
-        getEngine().acquireTransport('sequencer');
-        this.seqLoop.start(startAt);
-        this.setState({ isSequencerPlaying: true });
-    };
-
-    private sequencerTick = (time: number) => {
-        const next = this.nextFilledSlot(this.seqCursor, this.state.loopMode);
-        if (next === null || next < 0) {
-            Tone.getDraw().schedule(this.stopSequencer, time);
-            return;
-        }
-        this.seqCursor = next;
-        this.playSequencerSlot(next, time);
-    };
-
-    stopSequencer = () => {
-        if (this.seqLoop) {
-            this.seqLoop.stop();
-            this.seqLoop.dispose();
-            this.seqLoop = null;
+    const stopPlayback = useCallback(() => {
+        if (seqLoop.current) {
+            seqLoop.current.stop();
+            seqLoop.current.dispose();
+            seqLoop.current = null;
             getEngine().releaseTransport('sequencer');
         }
-        if (this.state.isSequencerPlaying) {
-            this.setState({ isSequencerPlaying: false });
-        }
-    };
+        setPlaying(false);
+    }, []);
 
-    handleLoopToggle = () => {
-        this.setState(prev => ({ loopMode: !prev.loopMode }));
-    };
-
-    handleStepFirst = () => {
-        // Reset cursor to beginning (no slot selected)
-        this.setState({ playingIndex: null });
-    };
-
-    handleStepPrev = () => {
-        const { playingIndex, sequencerSlots } = this.state;
-        const from = playingIndex === null ? sequencerSlots.length : playingIndex;
-
-        // Previous filled slot, wrapping to the last one
-        for (let step = 1; step <= sequencerSlots.length; step++) {
-            const i = (((from - step) % sequencerSlots.length) + sequencerSlots.length) % sequencerSlots.length;
-            if (sequencerSlots[i]) {
-                this.playSequencerSlot(i);
+    const tick = (time: number) => {
+        const s = live.current;
+        const lastEnd = s.clips.reduce((m, c) => Math.max(m, clipEnd(c)), 0);
+        const end = s.loop ? Math.min(loopEnd(s.clips), s.total) : lastEnd;
+        let beat = seqBeat.current;
+        if (beat >= end) {
+            if (!s.loop || lastEnd === 0) {
+                Tone.getDraw().schedule(stopPlayback, time);
                 return;
             }
+            beat = 0;
         }
+        seqBeat.current = beat + 1;
+
+        const clip = s.clips.find(c => c.start === beat);
+        let strike: Shown | null = null;
+        if (isChordClip(clip)) {
+            const chord = resolveChord(s.selectedKey, clip.chord);
+            const seconds = clip.len * Tone.Time('4n').toSeconds();
+            const engine = getEngine();
+            if (clip.chord.playMode === 'Arp') {
+                engine.scheduleArp(chord.midi, { pattern: s.arpPattern, rate: s.arpRate, noteLength: s.noteLength }, time, seconds);
+            } else {
+                engine.playChord(chord.midi, { duration: seconds * 0.98, time });
+            }
+            strike = { chord, degree: clip.chord.degree, dir: dirForType(clip), inversion: clip.chord.inversion };
+        }
+        Tone.getDraw().schedule(() => {
+            setPlayhead(beat);
+            if (strike) setShown(strike);
+        }, time);
     };
 
-    handleStepNext = () => {
-        const { playingIndex } = this.state;
-        const next = this.nextFilledSlot(playingIndex, true);
-        if (next !== null && next >= 0) {
-            this.playSequencerSlot(next);
-        }
+    const startPlayback = async () => {
+        await startAudio();
+        if (seqLoop.current) return;
+        const s = live.current;
+        seqBeat.current = playhead >= (s.loop ? loopEnd(s.clips) : s.total) ? 0 : playhead;
+        const engine = getEngine();
+        seqLoop.current = new Tone.Loop(t => tickRef.current(t), '4n');
+        const startAt = engine.quantizedStart('4n');
+        engine.acquireTransport('sequencer');
+        seqLoop.current.start(startAt);
+        setPlaying(true);
+    };
+    const tickRef = useRef(tick);
+    tickRef.current = tick;
+
+    const togglePlay = () => (playing ? stopPlayback() : startPlayback());
+
+    useEffect(() => () => stopPlayback(), [stopPlayback]);
+
+    // ---- metronome ------------------------------------------------------------------
+
+    useEffect(() => {
+        if (!metronomeOn || !audioReady) return;
+        const engine = getEngine();
+        const click = new Tone.MembraneSynth({
+            pitchDecay: 0.008,
+            octaves: 2,
+            envelope: { attack: 0.001, decay: 0.1, sustain: 0, release: 0.1 },
+        }).connect(engine.master);
+        click.volume.value = -8;
+        const quarter = Tone.Time('4n').toTicks();
+        const metLoop = new Tone.Loop(time => {
+            // Count beats from the Transport so the accent lands on the progression's bar lines
+            const beat = Math.round(Tone.getTransport().getTicksAtTime(time) / quarter) % BEATS_PER_BAR;
+            click.triggerAttackRelease(beat === 0 ? 'C5' : 'C4', '32n', time);
+            Tone.getDraw().schedule(() => setMetBeat(beat), time);
+        }, '4n');
+        const startAt = engine.quantizedStart('4n');
+        engine.acquireTransport('metronome');
+        metLoop.start(startAt);
+        return () => {
+            metLoop.stop();
+            metLoop.dispose();
+            engine.releaseTransport('metronome');
+            click.dispose();
+            setMetBeat(null);
+        };
+    }, [metronomeOn, audioReady]);
+
+    // ---- progression editing -----------------------------------------------------------
+
+    const selClip = clipAt(clips, selected);
+    const select = (beat: number) => {
+        setSelected(beat);
+        if (!playing) setPlayhead(beat);
+    };
+    const starts = clips.map(c => c.start);
+    const edit = {
+        longer: () => selClip && setClips(setLength(clips, selClip, selClip.len + 1, total)),
+        shorter: () => selClip && setClips(setLength(clips, selClip, selClip.len - 1, total)),
+        split: () => selClip && setClips(split(clips, selClip, selected)),
+        copy: () => selClip && setClipboard(selClip),
+        paste: () => clipboard && setClips(place(clips, { ...clipboard, start: selected, len: Math.min(clipboard.len, total - selected) })),
+        rest: () => {
+            const base = selClip ?? { start: selected, len: 1 };
+            setClips(place(selClip ? remove(clips, selClip) : clips, { start: base.start, len: base.len, rest: true }));
+        },
+        del: () => selClip && setClips(remove(clips, selClip)),
+        clearAll: () => {
+            stopPlayback();
+            setClips([]);
+            setSelected(0);
+            setPlayhead(0);
+        },
+        addBar: () => setTotal(total + BEATS_PER_BAR),
+        removeBar: () => {
+            if (total <= BEATS_PER_BAR) return;
+            const next = total - BEATS_PER_BAR;
+            setTotal(next);
+            setClips(fitTo(clips, next));
+            setSelected(Math.min(selected, next - 1));
+            setPlayhead(Math.min(playhead, next - 1));
+        },
+        first: () => select(0),
+        prev: () => {
+            const t = starts.filter(x => x < selected).pop();
+            select(t ?? 0);
+        },
+        next: () => {
+            const t = starts.find(x => x > selected);
+            if (t !== undefined) select(t);
+        },
     };
 
-    renderPad = (degree: number, label: string) => (
-        <NoteButton label={label} degree={degree} onPress={this.handlePadPress} onRelease={this.handlePadRelease} />
-    );
+    // ---- keyboard -----------------------------------------------------------------------
 
-    handleStartAudio = async () => {
-        await this.ensureAudioReady();
-    };
+    const keyActions = useRef({ pressPad, releasePad, releaseAll, togglePlay, edit, helpOpen });
+    keyActions.current = { pressPad, releasePad, releaseAll, togglePlay, edit, helpOpen };
 
-    render() {
-        const { selectedKey, octave, synthType, playMode, inversion, joystickPosition, lastPlayedChord, lastPlayedNotes, sequencerSlots, recordingIndex, playingIndex, arpPattern, arpRate, noteLength, bpm, isSequencerPlaying, loopMode, menuOpen, showMetronome, showSequencer, showArpSettings, showEffects, showScaleViz, showHelp, isLoading, audioReady } = this.state;
+    useEffect(() => {
+        const isTyping = (t: EventTarget | null) =>
+            t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement;
 
-        if (isLoading) {
-            return (
-                <div className="App loading">
-                    <div className="loading-screen">
-                        <div className="loading-spinner"></div>
-                        <h2>Loading Audio Engine...</h2>
-                        <p>Initializing Tone.js</p>
-                    </div>
-                </div>
-            );
+        const down = (e: KeyboardEvent) => {
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            const a = keyActions.current;
+            if (e.code === 'Escape') {
+                setHelpOpen(false);
+                setLatchedDir('C');
+                return;
+            }
+            if (a.helpOpen || isTyping(e.target)) return;
+
+            if (e.code in DEGREE_KEYS) {
+                if (!e.repeat) a.pressPad(`key:${e.code}`, DEGREE_KEYS[e.code]);
+                return;
+            }
+            if (e.code in STICK_KEYS) {
+                if (!e.repeat) {
+                    const dir = STICK_KEYS[e.code];
+                    setKeyDirs(d => [...d.filter(x => x !== dir), dir]);
+                }
+                return;
+            }
+            const handled = () => e.preventDefault();
+            switch (e.code) {
+                case 'ArrowLeft': handled(); setInversion(i => Math.max(0, i - 1)); break;
+                case 'ArrowRight': handled(); setInversion(i => Math.min(MAX_INVERSION, i + 1)); break;
+                case 'ArrowUp': handled(); setOctave(o => Math.min(OCTAVE_MAX, o + 1)); break;
+                case 'ArrowDown': handled(); setOctave(o => Math.max(OCTAVE_MIN, o - 1)); break;
+                case 'Space': handled(); if (!e.repeat) a.togglePlay(); break;
+                case 'KeyR': if (!e.repeat) setRecording(r => !r); break;
+                case 'BracketLeft': a.edit.shorter(); break;
+                case 'BracketRight': a.edit.longer(); break;
+                case 'Slash': handled(); a.edit.split(); break;
+                case 'Period': a.edit.rest(); break;
+                case 'Backspace':
+                case 'Delete': handled(); a.edit.del(); break;
+            }
+        };
+        const up = (e: KeyboardEvent) => {
+            if (e.code in DEGREE_KEYS) keyActions.current.releasePad(`key:${e.code}`);
+            if (e.code in STICK_KEYS) {
+                const dir = STICK_KEYS[e.code];
+                setKeyDirs(d => d.filter(x => x !== dir));
+            }
+        };
+        const blur = () => keyActions.current.releaseAll();
+        window.addEventListener('keydown', down);
+        window.addEventListener('keyup', up);
+        window.addEventListener('blur', blur);
+        return () => {
+            window.removeEventListener('keydown', down);
+            window.removeEventListener('keyup', up);
+            window.removeEventListener('blur', blur);
+        };
+    }, []);
+
+    // ---- views ------------------------------------------------------------------------
+
+    const pads: PadView[] = useMemo(() => [0, 1, 2, 3, 4, 5, 6].map(degree => ({
+        degree,
+        numeral: romanNumeral(degree),
+        symbol: resolveChord(selectedKey, { degree, type: stickChordType(stickDir, triadQuality(degree)), inversion, octave }).name.symbol,
+        held: held.includes(degree),
+    })), [selectedKey, stickDir, inversion, octave, held]);
+
+    const instrumentLabel = INSTRUMENTS.find(i => i.id === instrument)?.label ?? '';
+    const playingClip = playing ? clipAt(clips, playhead) : undefined;
+    const screen: ScreenView = shown
+        ? {
+            idle: false,
+            symbol: shown.chord.name.symbol,
+            long: shown.chord.name.long,
+            numeral: romanNumeral(shown.degree),
+            notes: shown.chord.notes,
+            stick: shown.dir,
+            inversionLabel: INVERSION_LABELS[Math.min(shown.inversion, shown.chord.midi.length - 1)],
+            status: [`${selectedKey} MAJOR`, `OCT ${octave}`, `${bpm} BPM`, `${playMode} · ${instrumentLabel}`],
+            flag: playing
+                ? `BEAT ${playhead + 1}${playingClip && playingClip.len > 1 && playhead > playingClip.start ? ` · HELD ${playhead - playingClip.start + 1}/${playingClip.len}` : ''}`
+                : undefined,
         }
+        : {
+            idle: true, symbol: '', long: '', numeral: '', notes: [], stick: 'C', inversionLabel: '',
+            status: [`${selectedKey} MAJOR`, `OCT ${octave}`, `${bpm} BPM`, `${playMode} · ${instrumentLabel}`],
+        };
 
-        if (!audioReady) {
-            return (
-                <div className="App">
-                    <div className="audio-start-overlay" onClick={this.handleStartAudio}>
-                        <div className="audio-start-content">
-                            <h1>Metju.Chord</h1>
-                            <button className="audio-start-button">
-                                Click to Start
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            );
-        }
+    const sounding = shown && (held.length > 0 || playing) ? shown.chord.midi : [];
+    const maxInv = Math.min(MAX_INVERSION, Math.max(...pads.map(p =>
+        resolveChord(selectedKey, paramsFor(p.degree, stickDir)).midi.length - 1)));
 
+    const describe = (clip: Clip) =>
+        isChordClip(clip)
+            ? { symbol: resolveChord(selectedKey, clip.chord).name.symbol, numeral: romanNumeral(clip.chord.degree) }
+            : { symbol: 'Rest', numeral: '' };
+
+    const beatDot = metronomeOn ? metBeat : playing ? playhead % BEATS_PER_BAR : null;
+
+    if (!audioReady) {
         return (
-            <div className="App">
-                <FeatureMenu
-                    isOpen={menuOpen}
-                    onToggle={this.handleMenuToggle}
-                    showMetronome={showMetronome}
-                    showSequencer={showSequencer}
-                    showArpSettings={showArpSettings}
-                    showEffects={showEffects}
-                    showScaleViz={showScaleViz}
-                    theme={this.state.theme}
-                    onMetronomeToggle={this.handleMetronomeToggle}
-                    onSequencerToggle={this.handleSequencerToggle}
-                    onArpSettingsToggle={this.handleArpSettingsToggle}
-                    onEffectsToggle={this.handleEffectsToggle}
-                    onScaleVizToggle={this.handleScaleVizToggle}
-                    onThemeToggle={this.handleThemeToggle}
-                    onHelpToggle={this.handleHelpToggle}
-                />
-
-                <HelpPanel
-                    isOpen={showHelp}
-                    onClose={this.handleHelpToggle}
-                />
-
-                <header className="App-header">
-                    <h1>Metju.Chord</h1>
-
-                    <div className="top-row">
-                        <SettingsPanel
-                            selectedKey={selectedKey}
-                            octave={octave}
-                            synthType={synthType}
-                            playMode={playMode}
-                            inversion={inversion}
-                            maxInversion={this.maxInversion()}
-                            arpPattern={arpPattern}
-                            arpRate={arpRate}
-                            noteLength={noteLength}
-                            showArpSettings={showArpSettings}
-                            onKeyChange={this.handleKeyChange}
-                            onOctaveChange={this.handleOctaveChange}
-                            onSynthChange={this.handleSynthChange}
-                            onPlayModeChange={this.handlePlayModeChange}
-                            onInversionChange={this.handleInversionChange}
-                            onArpPatternChange={this.handleArpPatternChange}
-                            onArpRateChange={this.handleArpRateChange}
-                            onNoteLengthChange={this.handleNoteLengthChange}
-                        />
-                        <ChordDisplay chordName={lastPlayedChord} notes={lastPlayedNotes} />
-                    </div>
-
-                    {showScaleViz && (
-                        <ScaleVisualizer
-                            selectedKey={selectedKey}
-                            lastPlayedNotes={lastPlayedNotes}
-                        />
-                    )}
-
-                    <div className="middle-row">
-                        <ChordGrid onChordChange={this.handleJoystickChange} />
-                        <div className="button-container">
-                            <h3 className="button-container-title">SCALE DEGREES</h3>
-                            <div className="button-row button-row-top">
-                                {this.renderPad(1, 'ii')}
-                                {this.renderPad(3, 'IV')}
-                                {this.renderPad(5, 'vi')}
-                            </div>
-                            <div className="button-row button-row-bottom">
-                                {this.renderPad(0, 'I')}
-                                {this.renderPad(2, 'iii')}
-                                {this.renderPad(4, 'V')}
-                                {this.renderPad(6, 'vii')}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="bottom-row">
-                        {showSequencer && (
-                            <Sequencer
-                                slots={sequencerSlots}
-                                recordingIndex={recordingIndex}
-                                playingIndex={playingIndex}
-                                isPlaying={isSequencerPlaying}
-                                loopMode={loopMode}
-                                bpm={bpm}
-                                describeSlot={this.describeSlot}
-                                onSlotClick={this.handleSequencerSlotClick}
-                                onClear={this.handleClearSequencer}
-                                onStepFirst={this.handleStepFirst}
-                                onStepPrev={this.handleStepPrev}
-                                onStepNext={this.handleStepNext}
-                                onTogglePlay={this.toggleSequencer}
-                                onToggleLoop={this.handleLoopToggle}
-                                onAddRow={this.handleAddRow}
-                                onRemoveRow={this.handleRemoveRow}
-                                onCopySlot={this.handleCopySlot}
-                                onDeleteSlot={this.handleDeleteSlot}
-                                onSetRest={this.handleSetRest}
-                                onToggleTie={this.handleToggleTie}
-                                onBpmChange={this.handleBpmChange}
-                            />
-                        )}
-
-                        {(showMetronome || showEffects) && (
-                            <div className={`side-panel-column ${showSequencer && showMetronome && showEffects ? 'stacked' : ''}`}>
-                                {showMetronome && (
-                                    <Metronome bpm={bpm} onBpmChange={this.handleBpmChange} />
-                                )}
-
-                                {showEffects && (
-                                    <EffectsPanel />
-                                )}
-                            </div>
-                        )}
-                    </div>
-                </header>
+            <div className="start-screen">
+                <button className="start-card" onClick={startAudio}>
+                    <span className="start-logo">metju<span>.</span>chord</span>
+                    <span className="start-cta">Click to start</span>
+                    <span className="start-note">Your browser needs a click before it can play sound.</span>
+                </button>
             </div>
         );
     }
+
+    return (
+        <div className="app">
+            <TopBar
+                selectedKey={selectedKey}
+                octave={octave}
+                bpm={bpm}
+                metronomeOn={metronomeOn}
+                beat={beatDot}
+                theme={theme}
+                onKeyChange={setSelectedKey}
+                onOctaveChange={o => setOctave(Math.max(OCTAVE_MIN, Math.min(OCTAVE_MAX, o)))}
+                onBpmChange={b => setBpm(Math.max(BPM_MIN, Math.min(BPM_MAX, b)))}
+                onToggleMetronome={() => setMetronomeOn(m => !m)}
+                onToggleTheme={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}
+                onOpenHelp={() => setHelpOpen(true)}
+            />
+
+            <main className="main-row">
+                <Device
+                    screen={screen}
+                    sounding={sounding}
+                    scalePcs={scalePitchClasses(selectedKey)}
+                    octave={octave}
+                    pads={pads}
+                    stickDir={stickDir}
+                    latchedDir={latchedDir}
+                    inversion={inversion}
+                    maxInversion={maxInv}
+                    recording={recording}
+                    onPadDown={d => pressPad(`pad:${d}`, d)}
+                    onPadUp={d => releasePad(`pad:${d}`)}
+                    onStick={setLatchedDir}
+                    onInversion={setInversion}
+                />
+                <SoundPanel
+                    instrument={instrument}
+                    playMode={playMode}
+                    arpPattern={arpPattern}
+                    arpRate={arpRate}
+                    noteLength={noteLength}
+                    onInstrument={setInstrument}
+                    onPlayMode={setPlayMode}
+                    onArpPattern={setArpPattern}
+                    onArpRate={setArpRate}
+                    onNoteLength={setNoteLength}
+                />
+            </main>
+
+            <Progression
+                total={total}
+                clips={clips}
+                selected={selected}
+                playhead={playhead}
+                playing={playing}
+                loop={loop}
+                recording={recording}
+                canPaste={!!clipboard}
+                describe={describe}
+                onSelect={select}
+                onTogglePlay={togglePlay}
+                onFirst={edit.first}
+                onPrev={edit.prev}
+                onNext={edit.next}
+                onToggleLoop={() => setLoop(l => !l)}
+                onToggleRecord={() => setRecording(r => !r)}
+                onAddBar={edit.addBar}
+                onRemoveBar={edit.removeBar}
+                onLonger={edit.longer}
+                onShorter={edit.shorter}
+                onSplit={edit.split}
+                onCopy={edit.copy}
+                onPaste={edit.paste}
+                onRest={edit.rest}
+                onDelete={edit.del}
+                onClearAll={edit.clearAll}
+            />
+
+            <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+        </div>
+    );
+};
+
+/** The stick direction a recorded chord type came from, for the screen's stick readout. */
+function dirForType(clip: Clip): StickDir {
+    if (!isChordClip(clip)) return 'C';
+    const quality = triadQuality(clip.chord.degree);
+    const dirs: StickDir[] = ['C', 'U', 'UR', 'R', 'DR', 'D', 'DL', 'L', 'UL'];
+    return dirs.find(d => stickChordType(d, quality) === clip.chord.type) ?? 'C';
 }
 
 export default App;

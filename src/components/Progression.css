@@ -1,0 +1,418 @@
+.progression {
+    padding: 18px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.prog-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 20px;
+}
+
+.transport {
+    display: flex;
+    gap: 4px;
+}
+
+.play-button {
+    width: 56px;
+    height: 40px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    display: grid;
+    place-items: center;
+}
+
+.rec-button {
+    height: 40px;
+    padding: 0 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.rec-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--hot);
+}
+
+.rec-button.on {
+    background: var(--hot);
+    border-color: var(--hot);
+    color: var(--accent-ink);
+}
+
+.rec-button.on .rec-dot {
+    background: var(--accent-ink);
+}
+
+.rec-button.on .kbd {
+    color: var(--accent-ink);
+}
+
+.prog-hint {
+    flex: 1 1 220px;
+}
+
+.bars {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-left: auto;
+}
+
+/* ---- lane ---------------------------------------------------------------- */
+
+.lane-scroll {
+    overflow-x: auto;
+    padding-bottom: 4px;
+}
+
+.lane-inner {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.ruler,
+.lane {
+    display: grid;
+    column-gap: 4px;
+}
+
+.tick {
+    height: 24px;
+    display: flex;
+    align-items: flex-end;
+    padding: 0 0 4px 6px;
+    border-left: 1px solid var(--line);
+    font-size: 10px;
+    color: var(--muted);
+}
+
+.tick.down {
+    border-left-color: var(--faint);
+    color: var(--text);
+}
+
+.tick.shade {
+    background: var(--panel-2);
+}
+
+.tick.head {
+    color: var(--hot-text);
+}
+
+.cell {
+    width: 100%;
+    height: 96px;
+    border-radius: 8px;
+}
+
+.cell.empty {
+    border: 1px dashed var(--line-2);
+    background: transparent;
+    color: var(--muted);
+    font-size: 18px;
+}
+
+.cell.selected {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+.clip-wrap {
+    position: relative;
+    min-width: 0;
+}
+
+.clip {
+    position: relative;
+    display: block;
+    padding: 0;
+    overflow: hidden;
+    text-align: left;
+    border: 1px solid var(--line-2);
+    background: var(--panel-2);
+}
+
+.clip.here {
+    border-color: var(--hot);
+}
+
+.clip.rest {
+    background: repeating-linear-gradient(135deg, var(--panel) 0 6px, var(--panel-2) 6px 12px);
+    color: var(--muted);
+}
+
+.clip .onset {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: var(--accent);
+}
+
+/* per-beat columns inside a clip, lined up with the lane's columns */
+.clip .beats,
+.clip .envelope {
+    position: absolute;
+    left: 0;
+    right: 0;
+    display: flex;
+    gap: 4px;
+}
+
+.clip .beats {
+    top: 0;
+    bottom: 0;
+}
+
+.clip .beats .beat {
+    flex: 1;
+}
+
+.clip .beats .beat:not(.first) {
+    border-left: 1px dashed var(--line-2);
+}
+
+.clip .beats .beat.now {
+    background: color-mix(in srgb, var(--hot) 12%, transparent);
+}
+
+.clip-top {
+    position: absolute;
+    left: 12px;
+    right: 10px;
+    top: 9px;
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    font-size: 10px;
+}
+
+.clip-top .len {
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+.clip-top .len.held {
+    color: var(--accent);
+}
+
+[data-theme='light'] .clip-top .len.held {
+    color: var(--hot-text);
+}
+
+.clip-name {
+    position: absolute;
+    left: 12px;
+    right: 10px;
+    top: 30px;
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.clip .envelope {
+    bottom: 12px;
+    height: 10px;
+}
+
+.clip .env {
+    flex: 1;
+    position: relative;
+}
+
+.clip:not(.rest) .env::before {
+    content: '';
+    position: absolute;
+    top: 3px;
+    height: 4px;
+    left: -4px;
+    right: 0;
+    background: #8f8a6a;
+}
+
+.clip:not(.rest) .env.first::before {
+    left: 12px;
+}
+
+.clip:not(.rest) .env.last::before {
+    right: 10px;
+    border-radius: 0 2px 2px 0;
+}
+
+.clip .env.passed::before {
+    background: var(--hot);
+}
+
+.clip .strike {
+    position: absolute;
+    left: 8px;
+    top: 0;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    z-index: 1;
+}
+
+.clip .env.passed .strike {
+    background: var(--hot);
+}
+
+.grip {
+    position: absolute;
+    right: -3px;
+    top: 24px;
+    width: 18px;
+    height: 48px;
+    border: 0;
+    border-radius: 5px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    display: grid;
+    place-items: center;
+    padding: 0;
+    z-index: 2;
+}
+
+.playhead {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--hot);
+    pointer-events: none;
+}
+
+.playhead::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: -4px;
+    border: 5px solid transparent;
+    border-top: 7px solid var(--hot);
+}
+
+/* ---- legend + toolbar ---------------------------------------------------- */
+
+.legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    font-size: 11px;
+    color: var(--muted);
+}
+
+.legend span {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.legend i {
+    display: inline-block;
+}
+
+.lg-strike {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+}
+
+.lg-sustain,
+.lg-passed {
+    width: 28px;
+    height: 4px;
+    border-radius: 2px;
+    background: #8f8a6a;
+}
+
+.lg-passed {
+    background: var(--hot);
+}
+
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+}
+
+.sel-label {
+    font-size: 12px;
+    margin-right: 6px;
+}
+
+.length {
+    display: flex;
+    align-items: center;
+    height: 34px;
+    border: 1px solid var(--line-2);
+    border-radius: 6px;
+    overflow: hidden;
+    font-size: 11px;
+}
+
+.length > span {
+    color: var(--muted);
+    padding: 0 8px;
+}
+
+.length > button {
+    width: 34px;
+    height: 34px;
+    border: 0;
+    border-left: 1px solid var(--line-2);
+    background: var(--panel-2);
+}
+
+.length > button:disabled {
+    color: var(--faint);
+}
+
+.length > b {
+    min-width: 66px;
+    text-align: center;
+    font-size: 12px;
+}
+
+.length > .kbd {
+    padding: 0 8px;
+    border-left: 1px solid var(--line-2);
+    line-height: 34px;
+}
+
+.chip-button.danger {
+    margin-left: auto;
+    background: transparent;
+    border-color: color-mix(in srgb, var(--hot) 40%, var(--line));
+    color: var(--hot-text);
+}
+
+.chip-button.danger:disabled {
+    color: var(--faint);
+    border-color: var(--line);
+}

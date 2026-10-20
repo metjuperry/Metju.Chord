@@ -1,11 +1,13 @@
-import type { MusicalKey } from './ScalePicker';
+export type MusicalKey = 'C' | 'C#' | 'D' | 'D#' | 'E' | 'F' | 'F#' | 'G' | 'G#' | 'A' | 'A#' | 'B';
+
+export const KEYS: MusicalKey[] = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 export const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 const MAJOR = [0, 2, 4, 5, 7, 9, 11];
 
 export type ChordType =
-    | 'root' | 'triad' | 'flip' | 'dim' | 'aug'
+    | 'root' | 'triad' | 'flip' | 'minor' | 'dim' | 'aug' | 'six'
     | 'dom7' | 'diatonic7' | 'diatonic9' | 'sus2' | 'sus4';
 
 export type ArpPattern = 'up' | 'down' | 'upDown' | 'random';
@@ -42,6 +44,10 @@ export function buildChordMidi(keyPc: number, degree: number, type: ChordType, o
             const [, third, fifth] = [root, diatonic(1), diatonic(2)];
             return fifth - root === 7 ? [root, root + (third - root === 4 ? 3 : 4), fifth] : [root, third, fifth];
         }
+        case 'minor':
+            return [root, root + 3, root + 7];
+        case 'six':
+            return [root, root + 4, root + 7, root + 9];
         case 'dim':
             return [root, root + 3, root + 6];
         case 'aug':
@@ -140,6 +146,7 @@ const CHORD_NAMES: { [pcs: string]: [string, string] } = {
     '0,2,4,7,11': ['maj9', 'Major 9th'],
     '0,2,3,7,10': ['m9', 'Minor 9th'],
     '0,2,4,7,10': ['9', 'Dominant 9th'],
+    '0,4,7,9': ['6', 'Major 6th'],
 };
 
 /** Name a chord from its sounding notes; `rootPc` is the un-inverted root. */
@@ -155,4 +162,64 @@ export function nameChord(midi: number[], rootPc: number): { symbol: string; lon
         return { symbol: `${root}?`, long: `${root}?` };
     }
     return { symbol: `${root}${entry[0]}`, long: `${root} ${entry[1]}` };
+}
+
+// ---- 8-way stick (HiChord-style default mapping) ------------------------------
+
+export type StickDir = 'C' | 'U' | 'UR' | 'R' | 'DR' | 'D' | 'DL' | 'L' | 'UL';
+
+export const STICK_DIRS: StickDir[] = ['UL', 'U', 'UR', 'L', 'C', 'R', 'DL', 'D', 'DR'];
+
+export type TriadQuality = 'major' | 'minor' | 'dim' | 'aug';
+
+/** Quality of the plain diatonic triad on a degree (the same for every key). */
+export function triadQuality(degree: number): TriadQuality {
+    const [root, third, fifth] = buildChordMidi(0, degree, 'triad', 4);
+    if (fifth - root === 6) return 'dim';
+    if (fifth - root === 8) return 'aug';
+    return third - root === 4 ? 'major' : 'minor';
+}
+
+/**
+ * What the stick does to the chord on a degree. Centre is the plain triad; diminished
+ * chords ignore the directions that would not make sense for them (as on the HiChord).
+ */
+export function stickChordType(dir: StickDir, quality: TriadQuality): ChordType {
+    const dim = quality === 'dim';
+    switch (dir) {
+        case 'U': return 'flip';
+        case 'UR': return 'dom7';
+        case 'R': return 'diatonic7';
+        case 'DR': return dim ? 'diatonic7' : 'diatonic9';
+        case 'D': return dim ? 'triad' : 'sus4';
+        case 'DL': return quality === 'major' ? 'six' : quality === 'minor' ? 'sus2' : 'triad';
+        case 'L': return dim ? 'minor' : 'dim';
+        case 'UL': return 'aug';
+        case 'C':
+        default: return 'triad';
+    }
+}
+
+/** Short label for what a stick direction does, for the stick itself and help. */
+export const STICK_LABELS: { [dir in StickDir]: string } = {
+    C: 'Triad', U: 'Flip 3rd', UR: 'Dom 7', R: '7th', DR: '9th',
+    D: 'Sus4', DL: '6 / sus2', L: 'Dim', UL: 'Aug',
+};
+
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+
+/** Roman numeral of a degree's diatonic triad: upper case major, lower case minor, ° diminished. */
+export function romanNumeral(degree: number): string {
+    const q = triadQuality(degree);
+    const r = ROMAN[degree];
+    if (q === 'minor') return r.toLowerCase();
+    if (q === 'dim') return `${r.toLowerCase()}°`;
+    if (q === 'aug') return `${r}+`;
+    return r;
+}
+
+/** Pitch classes of the major scale on `key`. */
+export function scalePitchClasses(key: MusicalKey): number[] {
+    const k = keyPitchClass(key);
+    return MAJOR.map(m => (k + m) % 12);
 }

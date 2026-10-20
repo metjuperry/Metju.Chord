@@ -4,51 +4,30 @@ An interactive musical chord and scale visualization tool built with React, Type
 
 ## Features
 
-### 🎹 Interactive Chord Grid
+A chord instrument modelled on pocket chord machines like the HiChord: seven chord pads, an 8-way stick that changes the chord type, and a screen that shows what you're playing.
 
-- 12-note chromatic grid with customizable key and octave
-- Visual chord display showing chord names and intervals
-- Support for major, minor, diminished, and augmented chords
-- Chord inversions (up to one fewer than the number of notes in the chord)
+### Pads and stick
 
-### 🎵 Synthesis & Playback
+- Seven pads play the diatonic chords of the selected major key: **1** = I, **2** = ii … **7** = vii°. They are laid out like the hardware: 2 4 6 above, 1 3 5 7 below.
+- Each pad shows the chord it will play with the stick where it is now.
+- The stick changes the chord type: centre = triad, ↑ flip 3rd, ↗ dominant 7, → 7th, ↘ 9th, ↓ sus4, ↙ 6 (major) / sus2 (minor), ← diminished, ↖ augmented.
+- Click a stick direction to latch it, or hold **Q W E / A D / Z X C** while playing **1–7**. Moving the stick while holding a pad re-voices the held chord.
+- Inversions (root to 3rd), octave C2–C6, all 12 keys.
 
-- Multiple synthesizer types:
-  - Pad, E-Piano, Organ, Pluck, Lead/Bass
-- Two play modes: Chord and Arpeggiator
-- Arpeggiator patterns: Up, Down, Up-Down, Random
-- Tempo-synced arpeggiator rate (1/4 to 1/32, triplets) and adjustable note length
+### Sound
 
-### 🎚️ Audio Effects
+- Five instruments: Pad, E-Piano, Organ, Pluck, Lead/Bass, level-matched (`npm run levels`).
+- Play chords, or arpeggiate them (up, down, up-down, random; 1/4 to 1/32 with triplets).
+- Effects in signal order: distortion → chorus → delay → reverb, then a master limiter.
 
-- Reverb with adjustable decay time
-- Delay with feedback and delay time controls
-- Real-time effect parameter adjustment
+### Progression
 
-### 📊 Scale Visualization
+- A 4/4 beat timeline. A chord held across several beats is one block, with a strike dot and a sustain bar.
+- Press **R** (or Record), pick a beat, and play pads to write chords; the cursor moves on.
+- Lengthen with the edge grip or **[ ]**, split with **/**, rest with **.**, copy and paste, add or remove bars, loop.
+- Metronome click in the top bar, on the same clock as the progression.
 
-- Visual representation of musical scales on the note grid
-- Highlights scale degrees and tonic notes
-- Helps understand scale patterns and relationships
-
-### 🎼 Sequencer
-
-- Record and playback chord sequences
-- 8+ programmable slots
-- Loop playback functionality
-- Visual sequence editing
-
-### ⏱️ Metronome
-
-- Adjustable BPM (30-240)
-- Visual and audio tempo guide
-- Start/stop controls
-
-### 🎨 Customization
-
-- Dark and light theme support
-- Adjustable octave range
-- Key selection (all 12 keys with major/minor modes)
+Press the keyboard icon in the app for the full shortcut list.
 
 ## Getting Started
 
