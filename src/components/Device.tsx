@@ -32,6 +32,10 @@ interface DeviceProps {
     pads: PadView[];
     stickDir: StickDir;
     latchedDir: StickDir;
+    /** Chord each stick direction gives on the reference pad. */
+    stickChords: { [d in StickDir]: string };
+    /** Which pad the stick labels are for, e.g. "6 · vi". */
+    stickFor: string;
     inversion: number;
     maxInversion: number;
     recording: boolean;
@@ -116,38 +120,44 @@ const ScaleKeys: React.FC<{ sounding: number[]; scalePcs: number[]; octave: numb
     );
 };
 
-const Stick: React.FC<{ dir: StickDir; latched: StickDir; onStick: (d: StickDir) => void }> = ({ dir, latched, onStick }) => {
-    const [vx, vy] = DIR_VECTOR[dir];
-    return (
-        <div className="stick" role="group" aria-label="Chord stick">
-            <div className="stick-well" />
-            {RING.map(d => {
-                const [x, y] = DIR_VECTOR[d];
-                return (
+const Stick: React.FC<{ dir: StickDir; latched: StickDir; chords: { [d in StickDir]: string }; forPad: string; onStick: (d: StickDir) => void }> =
+    ({ dir, latched, chords, forPad, onStick }) => {
+        const [vx, vy] = DIR_VECTOR[dir];
+        return (
+            <div className="stick-area">
+                <div className="stick" role="group" aria-label={`Chord stick, showing chords for pad ${forPad}`}>
+                    <div className="stick-well" />
+                    {RING.map(d => {
+                        const [x, y] = DIR_VECTOR[d];
+                        return (
+                            <button
+                                key={d}
+                                className={`stick-dir ${dir === d ? 'active' : ''}`}
+                                style={{ left: `calc(50% + ${x * 104}px)`, top: `calc(50% + ${y * 92}px)` }}
+                                aria-pressed={latched === d}
+                                aria-label={`${chords[d]}: ${STICK_LABELS[d]} (hold ${DIR_KEYS[d]})`}
+                                title={`${STICK_LABELS[d]} · hold ${DIR_KEYS[d]}`}
+                                onClick={() => onStick(latched === d ? 'C' : d)}
+                            >
+                                <span className="dir-name"><span className="led" />{chords[d]}</span>
+                                <span className="dir-rule">{STICK_LABELS[d]}</span>
+                            </button>
+                        );
+                    })}
                     <button
-                        key={d}
-                        className={`stick-dir ${dir === d ? 'active' : ''}`}
-                        style={{ left: `calc(50% + ${x * 70}px - 22px)`, top: `calc(50% + ${y * 70}px - 22px)` }}
-                        aria-pressed={latched === d}
-                        aria-label={`${STICK_LABELS[d]} (${DIR_KEYS[d]})`}
-                        title={`${STICK_LABELS[d]} · hold ${DIR_KEYS[d]}`}
-                        onClick={() => onStick(latched === d ? 'C' : d)}
+                        className={`stick-knob ${dir === 'C' ? 'active' : ''}`}
+                        style={{ transform: `translate(${vx * 10}px, ${vy * 10}px)` }}
+                        aria-label={`${chords.C}: centre the stick, plain triad`}
+                        onClick={() => onStick('C')}
                     >
-                        <span className="led" />
+                        <span className="knob-name">{chords.C}</span>
+                        <span className="knob-rule">Triad</span>
                     </button>
-                );
-            })}
-            <button
-                className="stick-knob"
-                style={{ transform: `translate(${vx * 14}px, ${vy * 14}px)` }}
-                aria-label="Centre the stick (plain triad)"
-                onClick={() => onStick('C')}
-            >
-                <StickGlyph dir={dir} size={14} />
-            </button>
-        </div>
-    );
-};
+                </div>
+                <p className="stick-caption">Chords for pad <b>{forPad}</b></p>
+            </div>
+        );
+    };
 
 const Pad: React.FC<{ pad: PadView; onDown: (d: number) => void; onUp: (d: number) => void }> = ({ pad, onDown, onUp }) => {
     const holding = useRef(false);
@@ -183,7 +193,7 @@ const Pad: React.FC<{ pad: PadView; onDown: (d: number) => void; onUp: (d: numbe
 };
 
 const Device: React.FC<DeviceProps> = ({
-    screen, sounding, scalePcs, octave, pads, stickDir, latchedDir, inversion, maxInversion, recording,
+    screen, sounding, scalePcs, octave, pads, stickDir, latchedDir, stickChords, stickFor, inversion, maxInversion, recording,
     onPadDown, onPadUp, onStick, onInversion,
 }) => (
     <section className="device" aria-label="Instrument">
@@ -199,7 +209,7 @@ const Device: React.FC<DeviceProps> = ({
         <ScaleKeys sounding={sounding} scalePcs={scalePcs} octave={octave} />
 
         <div className="device-controls">
-            <Stick dir={stickDir} latched={latchedDir} onStick={onStick} />
+            <Stick dir={stickDir} latched={latchedDir} chords={stickChords} forPad={stickFor} onStick={onStick} />
             <div className="pads">
                 {[...TOP_ROW, ...BOTTOM_ROW].map(d => (
                     <Pad key={d} pad={pads[d]} onDown={onPadDown} onUp={onPadUp} />

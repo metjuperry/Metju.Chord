@@ -8,7 +8,7 @@ import Progression from './components/Progression';
 import HelpDialog from './components/HelpDialog';
 import {
     ArpPattern, ChordParams, MusicalKey, ResolvedChord, StickDir,
-    resolveChord, romanNumeral, scalePitchClasses, stickChordType, triadQuality,
+    STICK_DIRS, resolveChord, romanNumeral, scalePitchClasses, stickChordType, triadQuality,
 } from './theory';
 import { ArpRate, getEngine } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
@@ -381,6 +381,12 @@ const App: React.FC = () => {
         held: held.includes(degree),
     })), [selectedKey, stickDir, inversion, octave, held]);
 
+    // The stick labels follow the pad you're using: a held pad, else the last chord played, else 1
+    const refDegree = held.length ? held[held.length - 1] : shown ? shown.degree : 0;
+    const stickChords = Object.fromEntries(STICK_DIRS.map(d => [d,
+        resolveChord(selectedKey, { degree: refDegree, type: stickChordType(d, triadQuality(refDegree)), inversion, octave }).name.symbol,
+    ])) as { [d in StickDir]: string };
+
     const instrumentLabel = INSTRUMENTS.find(i => i.id === instrument)?.label ?? '';
     const playingClip = playing ? clipAt(clips, playhead) : undefined;
     const screen: ScreenView = shown
@@ -451,6 +457,8 @@ const App: React.FC = () => {
                     pads={pads}
                     stickDir={stickDir}
                     latchedDir={latchedDir}
+                    stickChords={stickChords}
+                    stickFor={`${refDegree + 1} · ${romanNumeral(refDegree)}`}
                     inversion={inversion}
                     maxInversion={maxInv}
                     recording={recording}
