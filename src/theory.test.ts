@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildChordMidi, invert, nameChord, resolveChord, toToneNotes, arpOrder, ChordType, maxInversion } from './theory';
 
-const TYPES: ChordType[] = ['root', 'triad', 'dim', 'aug', 'dom7', 'diatonic7', 'diatonic9', 'sus2', 'sus4'];
+const TYPES: ChordType[] = ['root', 'triad', 'flip', 'dim', 'aug', 'dom7', 'diatonic7', 'diatonic9', 'sus2', 'sus4'];
 const intervals = (m: number[]) => m.map(n => n - m[0]);
 
 describe('buildChordMidi', () => {
@@ -78,9 +78,38 @@ describe('nameChord', () => {
         expect(name(0, 6, 'triad')).toBe('B°');
         expect(name(0, 0, 'diatonic7')).toBe('Cmaj7');
         expect(name(0, 4, 'diatonic9')).toBe('G9');
-        expect(name(0, 2, 'diatonic9')).toBe('Em7♭9');
+        expect(name(0, 2, 'diatonic9')).toBe('Em9');
         expect(name(0, 1, 'sus4')).toBe('Dsus4');
         expect(name(9, 0, 'aug')).toBe('A+');
+    });
+
+    it('dom7 is always a secondary dominant', () => {
+        expect(name(0, 1, 'dom7')).toBe('D7');
+        expect(name(0, 5, 'dom7')).toBe('A7');
+        expect(name(0, 4, 'dom7')).toBe('G7');
+        for (let degree = 0; degree < 7; degree++) {
+            expect(intervals(buildChordMidi(0, degree, 'dom7', 4))).toEqual([0, 4, 7, 10]);
+        }
+    });
+
+    it('diatonic9 always stacks a major 9th', () => {
+        expect(name(0, 2, 'diatonic9')).toBe('Em9');
+        expect(name(0, 6, 'diatonic9')).toBe('Bm9♭5');
+        for (let degree = 0; degree < 7; degree++) {
+            const notes = buildChordMidi(0, degree, 'diatonic9', 4);
+            expect(notes[4] - notes[0]).toBe(14);
+        }
+    });
+
+    it('flip swaps the 3rd of the diatonic triad, leaving dim triads alone', () => {
+        expect(name(0, 0, 'flip')).toBe('Cm');
+        expect(name(0, 1, 'flip')).toBe('D');
+        expect(name(0, 6, 'flip')).toBe('B°');
+        expect(name(0, 3, 'flip')).toBe('Fm');
+        expect(name(0, 5, 'flip')).toBe('A');
+        for (let degree = 0; degree < 7; degree++) {
+            expect(buildChordMidi(0, degree, 'flip', 4)[2] - buildChordMidi(0, degree, 'flip', 4)[0]).toBe(degree === 6 ? 6 : 7);
+        }
     });
 
     it('is independent of inversion', () => {

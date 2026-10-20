@@ -5,7 +5,7 @@ export const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A',
 const MAJOR = [0, 2, 4, 5, 7, 9, 11];
 
 export type ChordType =
-    | 'root' | 'triad' | 'dim' | 'aug'
+    | 'root' | 'triad' | 'flip' | 'dim' | 'aug'
     | 'dom7' | 'diatonic7' | 'diatonic9' | 'sus2' | 'sus4';
 
 export type ArpPattern = 'up' | 'down' | 'upDown' | 'random';
@@ -37,16 +37,21 @@ export function buildChordMidi(keyPc: number, degree: number, type: ChordType, o
     switch (type) {
         case 'triad':
             return [root, diatonic(1), diatonic(2)];
+        case 'flip': {
+            // Diatonic triad with its 3rd flipped (major <-> minor); dim/aug triads are left alone
+            const [, third, fifth] = [root, diatonic(1), diatonic(2)];
+            return fifth - root === 7 ? [root, root + (third - root === 4 ? 3 : 4), fifth] : [root, third, fifth];
+        }
         case 'dim':
             return [root, root + 3, root + 6];
         case 'aug':
             return [root, root + 4, root + 8];
         case 'dom7':
-            return [root, diatonic(1), diatonic(2), root + 10];
+            return [root, root + 4, root + 7, root + 10]; // always a secondary dominant
         case 'diatonic7':
             return [root, diatonic(1), diatonic(2), diatonic(3)];
         case 'diatonic9':
-            return [root, diatonic(1), diatonic(2), diatonic(3), diatonic(4)];
+            return [root, diatonic(1), diatonic(2), diatonic(3), root + 14];
         case 'sus2':
             return [root, root + 2, root + 7];
         case 'sus4':
@@ -131,6 +136,7 @@ const CHORD_NAMES: { [pcs: string]: [string, string] } = {
     '0,3,7,10': ['m7', 'Minor 7th'],
     '0,3,6,10': ['m7♭5', 'Minor 7♭5'],
     '0,3,6,9': ['°7', 'Diminished 7th'],
+    '0,2,3,6,10': ['m9♭5', 'Minor 9♭5'],
     '0,2,4,7,11': ['maj9', 'Major 9th'],
     '0,2,3,7,10': ['m9', 'Minor 9th'],
     '0,2,4,7,10': ['9', 'Dominant 9th'],

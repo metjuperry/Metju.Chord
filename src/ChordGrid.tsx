@@ -15,12 +15,12 @@ class ChordGrid extends Component<ChordGridProps, ChordGridState> {
     private chordButtons: { label: string; position: JoystickPosition }[][] = [
         [
             { label: 'sus4', position: 'sus4' },
-            { label: 'min/maj', position: 'maj/min' },
+            { label: 'Flip 3rd', position: 'maj/min' },
             { label: 'add9', position: 'maj/min9' }
         ],
         [
             { label: '7th', position: '7' },
-            { label: 'neutral', position: 'neutral' },
+            { label: 'Triad', position: 'neutral' },
             { label: 'maj7', position: 'maj/min7' }
         ],
         [

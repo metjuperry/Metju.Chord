@@ -12,7 +12,7 @@ import EffectsPanel from './EffectsPanel';
 import ScaleVisualizer from './ScaleVisualizer';
 import HelpPanel from './HelpPanel';
 import { ArpPattern, ChordParams, ChordType, maxInversion, resolveChord } from './theory';
-import { engine, ArpRate } from './audio/engine';
+import { getEngine, ArpRate } from './audio/engine';
 import { InstrumentId } from './audio/instruments';
 import * as Tone from 'tone';
 
@@ -20,8 +20,8 @@ type PlayMode = 'Chord' | 'Arp';
 
 // ChordGrid joystick positions -> chord types
 const POSITION_TYPE: { [position: string]: ChordType } = {
-    'neutral': 'root',
-    'maj/min': 'triad',
+    'neutral': 'triad',
+    'maj/min': 'flip',
     'dim': 'dim',
     'aug': 'aug',
     '7': 'dom7',
@@ -31,8 +31,8 @@ const POSITION_TYPE: { [position: string]: ChordType } = {
     'sus2/maj6': 'sus2',
 };
 
-// Number keys 1-7 -> scale degrees
-const KEY_DEGREE: { [key: string]: number } = { '1': 0, '2': 1, '3': 2, '4': 3, '5': 4, '6': 5, '7': 6 };
+// Number keys 1-7 (by physical key, so layouts like AZERTY work) -> scale degrees
+const KEY_DEGREE: { [code: string]: number } = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5, Digit7: 6 };
 
 const EMPTY_ROW = (): SlotCell[] => Array(8).fill(null);
 
@@ -111,9 +111,6 @@ class App extends Component<{}, AppState> {
         window.addEventListener('keyup', this.handleKeyUp);
         window.addEventListener('blur', this.releaseAllHolds);
 
-        // Building nodes does not start the AudioContext; that waits for a user gesture.
-        engine.setBpm(this.state.bpm);
-        engine.setInstrument(this.state.synthType);
         this.setState({ isLoading: false });
     }
 
@@ -161,14 +158,14 @@ class App extends Component<{}, AppState> {
         if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
         if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
 
-        const degree = KEY_DEGREE[event.key];
+        const degree = KEY_DEGREE[event.code];
         if (degree !== undefined) {
-            this.pressChord(`key:${event.key}`, degree);
+            this.pressChord(`key:${event.code}`, degree);
         }
     };
 
     handleKeyUp = (event: KeyboardEvent) => {
-        this.releaseChord(`key:${event.key}`);
+        this.releaseChord(`key:${event.code}`);
     };
 
     pressChord = (id: string, degree: number) => {
@@ -191,10 +188,10 @@ class App extends Component<{}, AppState> {
         this.setState(update as AppState);
 
         if (playMode === 'Arp') {
-            this.holds.set(id, engine.startArp(chord.midi, { pattern: arpPattern, rate: arpRate, noteLength }));
+            this.holds.set(id, getEngine().startArp(chord.midi, { pattern: arpPattern, rate: arpRate, noteLength }));
         } else {
-            engine.attack(chord.midi);
-            this.holds.set(id, () => engine.release(chord.midi));
+            getEngine().attack(chord.midi);
+            this.holds.set(id, () => getEngine().release(chord.midi));
         }
     };
 
@@ -216,6 +213,10 @@ class App extends Component<{}, AppState> {
     ensureAudioReady = async () => {
         if (!this.state.audioReady) {
             await Tone.start();
+            // The engine is built on first use, after the user gesture
+            const engine = getEngine();
+            engine.setBpm(this.state.bpm);
+            engine.setInstrument(this.state.synthType);
             this.setState({ audioReady: true });
         }
     };
@@ -232,7 +233,7 @@ class App extends Component<{}, AppState> {
 
     handleSynthChange = (synthType: InstrumentId) => {
         this.setState({ synthType });
-        engine.setInstrument(synthType);
+        getEngine().setInstrument(synthType);
     };
 
     handlePlayModeChange = (playMode: PlayMode) => {
@@ -258,7 +259,7 @@ class App extends Component<{}, AppState> {
     };
 
     handleBpmChange = (bpm: number) => {
-        engine.setBpm(bpm);
+        getEngine().setBpm(bpm);
         this.setState({ bpm });
     };
 
@@ -386,9 +387,9 @@ class App extends Component<{}, AppState> {
         const when = time ?? Tone.now();
 
         if (slot.playMode === 'Arp') {
-            engine.scheduleArp(chord.midi, { pattern: arpPattern, rate: arpRate, noteLength }, when, seconds);
+            getEngine().scheduleArp(chord.midi, { pattern: arpPattern, rate: arpRate, noteLength }, when, seconds);
         } else {
-            engine.playChord(chord.midi, { duration: seconds, time: when });
+            getEngine().playChord(chord.midi, { duration: seconds, time: when });
         }
     };
 
@@ -416,8 +417,8 @@ class App extends Component<{}, AppState> {
         this.seqCursor = this.state.playingIndex;
         this.seqLoop = new Tone.Loop(time => this.sequencerTick(time), '4n');
 
-        const startAt = engine.quantizedStart('4n');
-        engine.acquireTransport('sequencer');
+        const startAt = getEngine().quantizedStart('4n');
+        getEngine().acquireTransport('sequencer');
         this.seqLoop.start(startAt);
         this.setState({ isSequencerPlaying: true });
     };
@@ -437,7 +438,7 @@ class App extends Component<{}, AppState> {
             this.seqLoop.stop();
             this.seqLoop.dispose();
             this.seqLoop = null;
-            engine.releaseTransport('sequencer');
+            getEngine().releaseTransport('sequencer');
         }
         if (this.state.isSequencerPlaying) {
             this.setState({ isSequencerPlaying: false });

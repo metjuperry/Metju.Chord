@@ -27,7 +27,7 @@ const velocityFor = (voices: number) => 1 / Math.sqrt(Math.max(1, voices));
  *   instrument -> fxIn -> distortion -> chorus -> delay -> reverb -> fxOut -> master -> limiter -> destination
  * The effects chain is created once and never rewired; "disabled" just means wet = 0.
  */
-class Engine {
+export class Engine {
     readonly master = new Tone.Gain(0.8);
     readonly limiter = new Tone.Limiter(-1);
     readonly meter = new Tone.Meter();
@@ -57,6 +57,11 @@ class Engine {
         this.applyFx('delay');
         this.applyFx('chorus');
         this.applyFx('distortion');
+    }
+
+    /** Resolves once the reverb impulse response is rendered. */
+    ready(): Promise<void> {
+        return this.reverb.ready;
     }
 
     // ---- instruments -------------------------------------------------------
@@ -219,4 +224,9 @@ class Engine {
     }
 }
 
-export const engine = new Engine();
+let instance: Engine | null = null;
+
+/** The shared engine, built on first use so importing this module creates no audio nodes. */
+export function getEngine(): Engine {
+    return instance ?? (instance = new Engine());
+}

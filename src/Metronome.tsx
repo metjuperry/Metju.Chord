@@ -1,7 +1,7 @@
 import React, { Component } from 'react';
 import * as Tone from 'tone';
 import './Metronome.css';
-import { engine } from './audio/engine';
+import { getEngine } from './audio/engine';
 
 interface MetronomeProps {
     bpm: number;
@@ -38,7 +38,7 @@ class Metronome extends Component<MetronomeProps, MetronomeState> {
                 sustain: 0,
                 release: 0.1
             }
-        }).connect(engine.master);
+        }).connect(getEngine().master);
     }
 
     componentWillUnmount() {
@@ -70,8 +70,8 @@ class Metronome extends Component<MetronomeProps, MetronomeState> {
             beat++;
         }, '4n');
 
-        const startAt = engine.quantizedStart('4n');
-        engine.acquireTransport('metronome');
+        const startAt = getEngine().quantizedStart('4n');
+        getEngine().acquireTransport('metronome');
         this.metronomeLoop.start(startAt);
 
         this.setState({ isPlaying: true, currentBeat: 0 });
@@ -87,7 +87,7 @@ class Metronome extends Component<MetronomeProps, MetronomeState> {
 
     stop = () => {
         this.disposeLoop();
-        engine.releaseTransport('metronome');
+        getEngine().releaseTransport('metronome');
         this.setState({ isPlaying: false, currentBeat: 0 });
     };
 

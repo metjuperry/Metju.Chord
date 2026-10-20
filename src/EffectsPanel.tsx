@@ -1,6 +1,6 @@
 import React, { Component } from 'react';
 import './EffectsPanel.css';
-import { engine, FxName, FxState } from './audio/engine';
+import { getEngine, FxName, FxState } from './audio/engine';
 
 type EffectsPanelState = FxState;
 
@@ -8,12 +8,12 @@ type EffectsPanelState = FxState;
 class EffectsPanel extends Component<{}, EffectsPanelState> {
     constructor(props: {}) {
         super(props);
-        this.state = engine.fx.get();
+        this.state = getEngine().fx.get();
     }
 
     private update = <N extends FxName>(name: N, params: Partial<FxState[N]>) => {
-        engine.fx.set(name, params);
-        this.setState(engine.fx.get());
+        getEngine().fx.set(name, params);
+        this.setState(getEngine().fx.get());
     };
 
     handleReverbToggle = (enabled: boolean) => this.update('reverb', { enabled });
