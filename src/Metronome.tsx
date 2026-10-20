@@ -1,6 +1,7 @@
 import React, { Component } from 'react';
 import * as Tone from 'tone';
 import './Metronome.css';
+import { engine } from './audio/engine';
 
 interface MetronomeProps {
     bpm: number;
@@ -37,7 +38,7 @@ class Metronome extends Component<MetronomeProps, MetronomeState> {
                 sustain: 0,
                 release: 0.1
             }
-        }).toDestination();
+        }).connect(engine.master);
     }
 
     componentWillUnmount() {
@@ -50,12 +51,9 @@ class Metronome extends Component<MetronomeProps, MetronomeState> {
     start = async () => {
         await Tone.start();
 
-        const { bpm } = this.props;
         const { beatsPerMeasure } = this.state;
 
-        if (this.metronomeLoop) {
-            this.metronomeLoop.dispose();
-        }
+        this.disposeLoop();
 
         let beat = 0;
 
@@ -70,21 +68,26 @@ class Metronome extends Component<MetronomeProps, MetronomeState> {
             }, time);
 
             beat++;
-        }, '4n').start(0);
+        }, '4n');
 
-        Tone.getTransport().bpm.value = bpm;
-        Tone.getTransport().start();
+        const startAt = engine.quantizedStart('4n');
+        engine.acquireTransport('metronome');
+        this.metronomeLoop.start(startAt);
 
         this.setState({ isPlaying: true, currentBeat: 0 });
     };
 
-    stop = () => {
+    private disposeLoop = () => {
         if (this.metronomeLoop) {
             this.metronomeLoop.stop();
             this.metronomeLoop.dispose();
             this.metronomeLoop = null;
         }
-        Tone.getTransport().stop();
+    };
+
+    stop = () => {
+        this.disposeLoop();
+        engine.releaseTransport('metronome');
         this.setState({ isPlaying: false, currentBeat: 0 });
     };
 
@@ -99,10 +102,6 @@ class Metronome extends Component<MetronomeProps, MetronomeState> {
     adjustBpm = (delta: number) => {
         const newBpm = Math.max(40, Math.min(240, this.props.bpm + delta));
         this.props.onBpmChange(newBpm);
-
-        if (this.state.isPlaying) {
-            Tone.getTransport().bpm.value = newBpm;
-        }
     };
 
     changeTimeSignature = (beats: number) => {

@@ -49,9 +49,9 @@ class HelpPanel extends Component<HelpPanelProps> {
                             <ul>
                                 <li><strong>Key</strong> - Select the musical key (C, D, E, F, G, A, B)</li>
                                 <li><strong>Octave</strong> - Adjust pitch range (1-7)</li>
-                                <li><strong>Synth Type</strong> - Choose different synthesizer sounds</li>
+                                <li><strong>Synth Type</strong> - Choose an instrument: Pad, E-Piano, Organ, Pluck or Lead/Bass</li>
                                 <li><strong>Play Mode</strong> - Switch between Chord and Arp (arpeggio)</li>
-                                <li><strong>Inversion</strong> - Rearrange chord notes (0-2)</li>
+                                <li><strong>Inversion</strong> - Rearrange chord notes (up to one fewer than the number of notes in the chord)</li>
                             </ul>
                         </section>
 

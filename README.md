@@ -9,19 +9,15 @@ An interactive musical chord and scale visualization tool built with React, Type
 - 12-note chromatic grid with customizable key and octave
 - Visual chord display showing chord names and intervals
 - Support for major, minor, diminished, and augmented chords
-- Chord inversions (root, 1st, 2nd inversion)
+- Chord inversions (up to one fewer than the number of notes in the chord)
 
 ### 🎵 Synthesis & Playback
 
 - Multiple synthesizer types:
-  - Synth (basic oscillator)
-  - AMSynth (amplitude modulation)
-  - FMSynth (frequency modulation)
-  - MonoSynth (monophonic lead synth)
-  - MembraneSynth (percussion-like tones)
+  - Pad, E-Piano, Organ, Pluck, Lead/Bass
 - Two play modes: Chord and Arpeggiator
 - Arpeggiator patterns: Up, Down, Up-Down, Random
-- Adjustable arpeggiator speed and note length
+- Tempo-synced arpeggiator rate (1/4 to 1/32, triplets) and adjustable note length
 
 ### 🎚️ Audio Effects
 
@@ -135,7 +131,9 @@ Metju.Chord/
 │   ├── ScaleVisualizer.tsx # Scale visualization overlay
 │   ├── ScalePicker.tsx     # Key and scale selection
 │   ├── FeatureMenu.tsx     # Feature toggle menu
-│   ├── chordUtils.ts       # Music theory utilities
+│   ├── theory.ts           # Chord voicing (MIDI), naming, arp ordering
+│   ├── audio/engine.ts     # Master bus, limiter, effects chain, Transport helpers
+│   ├── audio/instruments.ts # Instrument presets
 │   └── index.css           # Global styles
 ├── public/
 │   └── index.html          # HTML template

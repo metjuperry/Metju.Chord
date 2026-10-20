@@ -1,25 +1,42 @@
 import React, { Component } from 'react';
 import './Sequencer.css';
 
+import { ChordType } from './theory';
+
+/** What a slot stores is chord parameters, never note strings: MIDI is computed at play time. */
 export interface SequencerSlot {
-    chordName: string;
-    notes: string[];
-    octave?: number;
-    playMode?: 'Chord' | 'Arp';
+    degree: number;
+    type: ChordType;
+    inversion: number;
+    octave: number;
+    playMode: 'Chord' | 'Arp';
     isRest?: boolean;
     isTied?: boolean;
 }
 
+export type SlotCell = SequencerSlot | null;
+
+export const REST_SLOT: SequencerSlot = { degree: 0, type: 'root', inversion: 0, octave: 4, playMode: 'Chord', isRest: true };
+
+export const sameChord = (a: SequencerSlot, b: SequencerSlot) =>
+    a.degree === b.degree && a.type === b.type && a.inversion === b.inversion &&
+    a.octave === b.octave && a.playMode === b.playMode;
+
 interface SequencerProps {
-    slots: SequencerSlot[];
+    slots: SlotCell[];
     recordingIndex: number | null;
     playingIndex: number | null;
+    isPlaying: boolean;
+    loopMode: boolean;
     bpm: number;
+    describeSlot: (slot: SequencerSlot) => { name: string; notes: string[] };
     onSlotClick: (index: number) => void;
     onClear: () => void;
     onStepFirst: () => void;
     onStepPrev: () => void;
     onStepNext: () => void;
+    onTogglePlay: () => void;
+    onToggleLoop: () => void;
     onAddRow: () => void;
     onRemoveRow: () => void;
     onCopySlot: (targetIndex: number, copiedSlot: SequencerSlot) => void;
@@ -30,110 +47,20 @@ interface SequencerProps {
 }
 
 interface SequencerState {
-    isPlaying: boolean;
-    loopMode: boolean;
     copiedSlot: SequencerSlot | null;
 }
 
 class Sequencer extends Component<SequencerProps, SequencerState> {
-    private playInterval: NodeJS.Timeout | null = null;
-
     constructor(props: SequencerProps) {
         super(props);
         this.state = {
-            isPlaying: false,
-            loopMode: false,
             copiedSlot: null,
         };
     }
 
-    componentWillUnmount() {
-        this.stopPlayback();
-    }
-
-    startPlayback = () => {
-        const { onStepNext, bpm } = this.props;
-
-        this.setState({ isPlaying: true });
-
-        // Start from first slot or current position
-        if (this.props.playingIndex === null) {
-            // Start from beginning - play first slot immediately
-            onStepNext();
-        }
-
-        // Set up interval based on tempo (BPM to milliseconds)
-        const interval = (60 / bpm) * 1000;
-        this.playInterval = setInterval(() => {
-            const { loopMode } = this.state;
-            const { playingIndex, slots } = this.props;
-
-            // Check if we should continue
-            if (playingIndex !== null) {
-                const hasNextSlot = slots.slice(playingIndex + 1).some(s => s.chordName);
-                const hasAnySlot = slots.some(s => s.chordName);
-
-                if (hasNextSlot || (loopMode && hasAnySlot)) {
-                    onStepNext();
-                } else if (!loopMode) {
-                    this.stopPlayback();
-                }
-            }
-        }, interval);
-    };
-
-    stopPlayback = () => {
-        if (this.playInterval) {
-            clearInterval(this.playInterval);
-            this.playInterval = null;
-        }
-        this.setState({ isPlaying: false });
-    };
-
-    togglePlayback = () => {
-        if (this.state.isPlaying) {
-            this.stopPlayback();
-        } else {
-            this.startPlayback();
-        }
-    };
-
-    toggleLoop = () => {
-        this.setState(prev => ({ loopMode: !prev.loopMode }));
-    };
-
     adjustTempo = (delta: number) => {
         const { bpm, onBpmChange } = this.props;
-        const newTempo = Math.max(40, Math.min(240, bpm + delta));
-        onBpmChange(newTempo);
-
-        this.setState(prev => {
-
-            // Restart playback with new tempo if currently playing
-            if (prev.isPlaying) {
-                if (this.playInterval) {
-                    clearInterval(this.playInterval);
-                }
-                const interval = (60 / newTempo) * 1000;
-                this.playInterval = setInterval(() => {
-                    const { loopMode } = this.state;
-                    const { playingIndex, slots, onStepNext } = this.props;
-
-                    if (playingIndex !== null) {
-                        const hasNextSlot = slots.slice(playingIndex + 1).some(s => s.chordName);
-                        const hasAnySlot = slots.some(s => s.chordName);
-
-                        if (hasNextSlot || (loopMode && hasAnySlot)) {
-                            onStepNext();
-                        } else if (!loopMode) {
-                            this.stopPlayback();
-                        }
-                    }
-                }, interval);
-            }
-
-            return prev;
-        });
+        onBpmChange(Math.max(40, Math.min(240, bpm + delta)));
     };
 
     handleCopySlot = (index: number, e: React.MouseEvent) => {
@@ -141,7 +68,7 @@ class Sequencer extends Component<SequencerProps, SequencerState> {
         const { slots } = this.props;
         const slot = slots[index];
 
-        if (slot.chordName) {
+        if (slot) {
             this.setState({ copiedSlot: { ...slot } });
         }
     };
@@ -173,9 +100,9 @@ class Sequencer extends Component<SequencerProps, SequencerState> {
     };
 
     // Group slots into rows of 8
-    getSlotRows = (): SequencerSlot[][] => {
+    getSlotRows = (): SlotCell[][] => {
         const { slots } = this.props;
-        const rows: SequencerSlot[][] = [];
+        const rows: SlotCell[][] = [];
 
         for (let i = 0; i < slots.length; i += 8) {
             rows.push(slots.slice(i, i + 8));
@@ -185,8 +112,8 @@ class Sequencer extends Component<SequencerProps, SequencerState> {
     };
 
     render() {
-        const { slots, recordingIndex, playingIndex, onSlotClick, onClear, onStepFirst, onStepPrev, onStepNext, onAddRow, onRemoveRow } = this.props;
-        const { isPlaying, loopMode, copiedSlot } = this.state;
+        const { slots, recordingIndex, playingIndex, isPlaying, loopMode, describeSlot, onSlotClick, onClear, onStepFirst, onStepPrev, onStepNext, onTogglePlay, onToggleLoop, onAddRow, onRemoveRow } = this.props;
+        const { copiedSlot } = this.state;
         const { bpm } = this.props;
         const slotRows = this.getSlotRows();
 
@@ -214,19 +141,20 @@ class Sequencer extends Component<SequencerProps, SequencerState> {
                                     const index = rowIndex * 8 + colIndex;
                                     const nextSlot = slots[index + 1];
                                     // Can tie only if next slot exists and has same chord
-                                    const canTie = slot.chordName && !slot.isRest &&
-                                        nextSlot && nextSlot.chordName === slot.chordName && !nextSlot.isRest;
+                                    const canTie = slot && !slot.isRest &&
+                                        nextSlot && !nextSlot.isRest && sameChord(slot, nextSlot);
+                                    const info = slot && !slot.isRest ? describeSlot(slot) : null;
                                     return (
                                         <div
                                             key={index}
-                                            className={`sequencer-slot ${recordingIndex === index ? 'recording' : ''} ${playingIndex === index ? 'playing' : ''} ${slot.chordName ? 'filled' : ''} ${slot.isRest ? 'rest' : ''} ${slot.isTied ? 'tied' : ''}`}
+                                            className={`sequencer-slot ${recordingIndex === index ? 'recording' : ''} ${playingIndex === index ? 'playing' : ''} ${slot ? 'filled' : ''} ${slot?.isRest ? 'rest' : ''} ${slot?.isTied ? 'tied' : ''}`}
                                             onClick={() => onSlotClick(index)}
                                         >
                                             <div className="slot-number">{index + 1}</div>
                                             {recordingIndex === index && (
                                                 <div className="recording-indicator">●</div>
                                             )}
-                                            {slot.isRest ? (
+                                            {slot?.isRest ? (
                                                 <>
                                                     <div className="rest-indicator">𝄽</div>
                                                     <div className="slot-actions">
@@ -239,11 +167,11 @@ class Sequencer extends Component<SequencerProps, SequencerState> {
                                                         </button>
                                                     </div>
                                                 </>
-                                            ) : slot.chordName ? (
+                                            ) : slot && info ? (
                                                 <>
                                                     <div className="slot-content">
-                                                        <div className="slot-chord">{slot.chordName}</div>
-                                                        <div className="slot-notes">{slot.notes.join(' ')}</div>
+                                                        <div className="slot-chord">{info.name}</div>
+                                                        <div className="slot-notes">{info.notes.join(' ')}</div>
                                                     </div>
                                                     {slot.isTied && <div className="tie-line"></div>}
                                                     <div className="slot-actions">
@@ -320,14 +248,14 @@ class Sequencer extends Component<SequencerProps, SequencerState> {
                         <button className="control-button" onClick={onStepPrev} title="Previous">◀</button>
                         <button
                             className={`control-button play-button ${isPlaying ? 'active' : ''}`}
-                            onClick={this.togglePlayback}
+                            onClick={onTogglePlay}
                         >
                             {isPlaying ? '■' : '▶'}
                         </button>
                         <button className="control-button" onClick={onStepNext} title="Next">▶</button>
                         <button
                             className={`control-button loop-button ${loopMode ? 'active' : ''}`}
-                            onClick={this.toggleLoop}
+                            onClick={onToggleLoop}
                             title="Loop Mode"
                         >
                             ↻
