@@ -27,12 +27,12 @@
 
 .instrument-grid {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 4px;
 }
 
 .instrument-grid button {
-    height: 58px;
+    height: 54px;
     border: 1px solid var(--line);
     border-radius: 8px;
     background: var(--panel-2);

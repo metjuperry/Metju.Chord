@@ -27,6 +27,13 @@ const WAVES: { [id in InstrumentId]: string } = {
     organ: 'M1 6 Q3 1 5 6 T9 6 Q11 3 13 6 T17 6 Q19 1 21 6 T25 6',
     pluck: 'M1 6 Q3 -2 5 6 Q7 11 9 6 Q11 3 13 6 Q16 8 19 6 L25 6',
     lead: 'M1 10 V2 H7 V10 H13 V2 H19 V10 H25',
+    strings: 'M1 9 L5 3 L9 9 L13 3 L17 9 L21 3 L25 9',
+    warmpad: 'M1 6 C5 0 9 0 13 6 S21 12 25 6',
+    brass: 'M1 10 L4 2 L4 10 L9 2 L9 10 L14 2 L14 10 L19 2 L19 10 L25 4',
+    drawbar: 'M3 11 V5 M7 11 V2 M11 11 V4 M15 11 V7 M19 11 V5 M23 11 V8',
+    bells: 'M13 2 C8 2 7 6 6 9 H20 C19 6 18 2 13 2 M11 11 H15',
+    mallets: 'M1 6 L5 1 L7 9 L9 4 L11 7 L14 5.5 L25 6',
+    chip: 'M1 10 V2 H4 V10 H10 V2 H13 V10 H19 V2 H22 V10 H25',
 };
 
 interface SoundPanelProps {

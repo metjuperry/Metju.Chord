@@ -16,7 +16,7 @@ A chord instrument modelled on pocket chord machines like the HiChord: seven cho
 
 ### Sound
 
-- Five instruments: Pad, E-Piano, Organ, Pluck, Lead/Bass, level-matched (`npm run levels`).
+- Twelve instruments built from Tone.js synths: E-Piano, Pad, Warm Pad, Strings, Organ, Drawbar, Brass, Lead/Bass, Chiptune, Pluck, Mallets, Bells. They are level-matched (`npm run levels`).
 - Play chords, or arpeggiate them (up, down, up-down, random; 1/4 to 1/32 with triplets).
 - Effects in signal order: distortion → chorus → delay → reverb, then a master limiter.
 
