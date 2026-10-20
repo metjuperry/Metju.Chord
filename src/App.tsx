@@ -14,8 +14,10 @@ import { ArpRate, getEngine } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
 import { ARP_RATES } from './components/SoundPanel';
 import {
-    BEATS_PER_BAR, STEPS_PER_ROW, Clip, ClipSound, PlayMode, clipAt, clipEnd, fitTo, isChordClip, loopEnd, place, remove, setLength, split,
+    BEATS_PER_BAR, STEPS_PER_ROW, TICKS_PER_STEP as T, Clip, ClipSound, PlayMode,
+    clipAt, fitTo, isChordClip, lastEnd, loopEnd, place, remove, setLength, split,
 } from './progression';
+import { SeqEvent, SeqOptions, SequencerPlayer, ticksToSeconds } from './audio/sequencer';
 
 const DEGREE_KEYS: { [code: string]: number } = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5, Digit7: 6 };
 const STICK_KEYS: { [code: string]: StickDir } = {
@@ -72,8 +74,7 @@ const App: React.FC = () => {
     const [loop, setLoop] = useState(true);
     const [recording, setRecording] = useState(false);
     const [clipboard, setClipboard] = useState<Clip | null>(null);
-    const seqLoop = useRef<Tone.Loop | null>(null);
-    const seqBeat = useRef(0);
+    const player = useRef<SequencerPlayer<Clip> | null>(null);
 
     // ---- metronome ------------------------------------------------------------------
     const [metronomeOn, setMetronomeOn] = useState(false);
@@ -151,7 +152,7 @@ const App: React.FC = () => {
 
         const s = live.current;
         if (s.recording) {
-            setClips(place(s.clips, { start: s.selected, len: 1, chord: { ...params, ...currentSound(s) } }));
+            setClips(place(s.clips, { start: s.selected * T, len: T, chord: { ...params, ...currentSound(s) } }));
             setSelected(Math.min(s.selected + 1, s.total - 1));
             setPlayhead(Math.min(s.selected + 1, s.total - 1));
         }
@@ -182,65 +183,70 @@ const App: React.FC = () => {
 
     // ---- progression playback (Transport) --------------------------------------------
 
-    const stopPlayback = useCallback(() => {
-        if (seqLoop.current) {
-            seqLoop.current.stop();
-            seqLoop.current.dispose();
-            seqLoop.current = null;
-            getEngine().releaseTransport('sequencer');
+    /** The progression as timed events, and how it loops (the grid is in steps, the events in ticks). */
+    const schedule = (s = live.current): { events: SeqEvent<Clip>[]; opts: SeqOptions } => ({
+        events: s.clips.filter(isChordClip).map(c => ({ tick: c.start, duration: c.len, data: c })),
+        opts: { loop: s.loop, loopEnd: Math.min(loopEnd(s.clips), s.total * T), end: lastEnd(s.clips) },
+    });
+
+    // Each clip plays with the key, instrument and settings it was recorded with.
+    // The screen, stick and keyboard strip belong to live playing only, so nothing here touches them.
+    const playEvent = (event: SeqEvent<Clip>, time: number) => {
+        if (!isChordClip(event.data)) return;
+        const c = event.data.chord;
+        const chord = resolveChord(c.key, c);
+        const seconds = ticksToSeconds(event.duration);
+        const engine = getEngine();
+        if (c.playMode === 'Arp') {
+            engine.scheduleArp(chord.midi, { pattern: c.arpPattern, rate: c.arpRate, noteLength: c.noteLength }, time, seconds, c.instrument);
+        } else {
+            engine.playChord(chord.midi, { duration: seconds * 0.98, time, instrument: c.instrument });
         }
+    };
+    const playEventRef = useRef(playEvent);
+    playEventRef.current = playEvent;
+
+    const stopPlayback = useCallback(() => {
+        player.current?.stop();
         setPlaying(false);
     }, []);
 
-    const tick = (time: number) => {
-        const s = live.current;
-        const lastEnd = s.clips.reduce((m, c) => Math.max(m, clipEnd(c)), 0);
-        const end = s.loop ? Math.min(loopEnd(s.clips), s.total) : lastEnd;
-        let beat = seqBeat.current;
-        if (beat >= end) {
-            if (!s.loop || lastEnd === 0) {
-                Tone.getDraw().schedule(stopPlayback, time);
-                return;
-            }
-            beat = 0;
-        }
-        seqBeat.current = beat + 1;
-
-        // Each clip plays with the key, instrument and settings it was recorded with.
-        // The screen, stick and keyboard strip belong to live playing only, so nothing here touches them.
-        const clip = s.clips.find(c => c.start === beat);
-        if (isChordClip(clip)) {
-            const c = clip.chord;
-            const chord = resolveChord(c.key, c);
-            const seconds = clip.len * Tone.Time('4n').toSeconds();
-            const engine = getEngine();
-            if (c.playMode === 'Arp') {
-                engine.scheduleArp(chord.midi, { pattern: c.arpPattern, rate: c.arpRate, noteLength: c.noteLength }, time, seconds, c.instrument);
-            } else {
-                engine.playChord(chord.midi, { duration: seconds * 0.98, time, instrument: c.instrument });
-            }
-        }
-        Tone.getDraw().schedule(() => setPlayhead(beat), time);
-    };
-
     const startPlayback = async () => {
         await startAudio();
-        if (seqLoop.current) return;
-        const s = live.current;
-        seqBeat.current = playhead >= (s.loop ? loopEnd(s.clips) : s.total) ? 0 : playhead;
-        const engine = getEngine();
-        seqLoop.current = new Tone.Loop(t => tickRef.current(t), '4n');
-        const startAt = engine.quantizedStart('4n');
-        engine.acquireTransport('sequencer');
-        seqLoop.current.start(startAt);
+        if (player.current?.playing) return;
+        const { opts } = schedule();
+        if (!opts.loop && opts.end === 0) return;
+        const limit = opts.loop ? opts.loopEnd : opts.end;
+        const from = playhead * T < limit ? playhead * T : 0;
+        // The player reads the latest clips on every pass, so edits while playing need no extra wiring
+        player.current = new SequencerPlayer<Clip>(() => schedule(), (e, t) => playEventRef.current(e, t), stopPlayback);
+        player.current.start(from);
         setPlaying(true);
     };
-    const tickRef = useRef(tick);
-    tickRef.current = tick;
 
     const togglePlay = () => (playing ? stopPlayback() : startPlayback());
 
-    useEffect(() => () => stopPlayback(), [stopPlayback]);
+    // The playhead follows the Transport position, read once per frame
+    useEffect(() => {
+        if (!playing) return;
+        let frame = 0;
+        let last = -1;
+        const draw = () => {
+            const pos = player.current?.position();
+            if (pos !== null && pos !== undefined) {
+                const step = Math.floor(pos / T);
+                if (step !== last) {
+                    last = step;
+                    setPlayhead(step);
+                }
+            }
+            frame = requestAnimationFrame(draw);
+        };
+        frame = requestAnimationFrame(draw);
+        return () => cancelAnimationFrame(frame);
+    }, [playing]);
+
+    useEffect(() => () => player.current?.stop(), []);
 
     // ---- metronome ------------------------------------------------------------------
 
@@ -274,20 +280,22 @@ const App: React.FC = () => {
 
     // ---- progression editing -----------------------------------------------------------
 
-    const selClip = clipAt(clips, selected);
-    const select = (beat: number) => {
-        setSelected(beat);
-        if (!playing) setPlayhead(beat);
+    const totalTicks = total * T;
+    const selTick = selected * T;
+    const selClip = clipAt(clips, selTick);
+    const select = (step: number) => {
+        setSelected(step);
+        if (!playing) setPlayhead(step);
     };
-    const starts = clips.map(c => c.start);
+    const starts = clips.map(c => c.start / T);
     const edit = {
-        longer: () => selClip && setClips(setLength(clips, selClip, selClip.len + 1, total)),
-        shorter: () => selClip && setClips(setLength(clips, selClip, selClip.len - 1, total)),
-        split: () => selClip && setClips(split(clips, selClip, selected)),
+        longer: () => selClip && setClips(setLength(clips, selClip, selClip.len + T, totalTicks)),
+        shorter: () => selClip && setClips(setLength(clips, selClip, selClip.len - T, totalTicks)),
+        split: () => selClip && setClips(split(clips, selClip, selTick)),
         copy: () => selClip && setClipboard(selClip),
-        paste: () => clipboard && setClips(place(clips, { ...clipboard, start: selected, len: Math.min(clipboard.len, total - selected) })),
+        paste: () => clipboard && setClips(place(clips, { ...clipboard, start: selTick, len: Math.min(clipboard.len, totalTicks - selTick) })),
         rest: () => {
-            const base = selClip ?? { start: selected, len: 1 };
+            const base = selClip ?? { start: selTick, len: T };
             setClips(place(selClip ? remove(clips, selClip) : clips, { start: base.start, len: base.len, rest: true }));
         },
         del: () => selClip && setClips(remove(clips, selClip)),
@@ -303,7 +311,7 @@ const App: React.FC = () => {
             if (total <= STEPS_PER_ROW) return;
             const next = total - STEPS_PER_ROW;
             setTotal(next);
-            setClips(fitTo(clips, next));
+            setClips(fitTo(clips, next * T));
             setSelected(Math.min(selected, next - 1));
             setPlayhead(Math.min(playhead, next - 1));
         },
@@ -493,7 +501,7 @@ const App: React.FC = () => {
 
             <Progression
                 total={total}
-                clips={clips}
+                clips={clips.map(c => ({ ...c, start: c.start / T, len: c.len / T }))}
                 selected={selected}
                 playhead={playhead}
                 playing={playing}
