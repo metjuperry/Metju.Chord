@@ -76,3 +76,78 @@
         padding: 32px 24px;
     }
 }
+
+/* ---- compact layout (phones, small windows): one mode at a time ---------------------- */
+
+.app.compact {
+    max-width: none;
+    padding: 8px;
+    gap: 8px;
+}
+
+/* Play mode fills the screen exactly: no scrolling while jamming */
+.app.compact.mode-play {
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+}
+
+.app.compact.mode-play > .device {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.sound-mode {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 8px;
+    align-items: start;
+}
+
+.sound-mode .sound-panel {
+    display: contents;
+}
+
+.voicing-card .inversion {
+    flex-wrap: wrap;
+}
+
+.voicing-card .device-caption,
+.voicing-card .vl-toggle {
+    color: var(--muted);
+}
+
+.voicing-card .segmented.dark {
+    background: var(--bg);
+    border-color: var(--line);
+}
+
+.voicing-card .segmented.dark > button {
+    color: var(--text);
+}
+
+.voicing-card .segmented.dark > button[aria-pressed='true'] {
+    background: var(--text);
+    color: var(--bg);
+}
+
+.voicing-card .segmented.dark > button:disabled {
+    color: var(--faint);
+}
+
+.app-card-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+/* Sequencer on a phone: drop the explanations, keep the grid in view */
+.app.compact .prog-hint,
+.app.compact .legend {
+    display: none;
+}
+
+.app.compact .progression {
+    padding: 10px 12px;
+    gap: 10px;
+}

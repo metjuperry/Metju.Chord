@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as Tone from 'tone';
 import './App.css';
 import TopBar, { BPM_MAX, BPM_MIN, OCTAVE_MAX, OCTAVE_MIN } from './components/TopBar';
-import Device, { PadView, ScreenView } from './components/Device';
+import Device, { PadView, ScreenView, VoicingControls } from './components/Device';
+import CompactBar, { AppMode } from './components/CompactBar';
+import { useMedia } from './useMedia';
 import SoundPanel from './components/SoundPanel';
 import Progression from './components/Progression';
 import HelpDialog from './components/HelpDialog';
@@ -87,7 +89,13 @@ const App: React.FC = () => {
     // ---- stick: a latched direction (mouse) and momentary ones (held keys) --------
     const [latchedDir, setLatchedDir] = useState<StickDir>('C');
     const [keyDirs, setKeyDirs] = useState<StickDir[]>([]);
-    const stickDir: StickDir = keyDirs.length ? keyDirs[keyDirs.length - 1] : latchedDir;
+    // Touch/mouse hold on the stick; keys win over touch, both win over a latched direction
+    const [touchDir, setTouchDir] = useState<StickDir | null>(null);
+    const stickDir: StickDir = keyDirs.length ? keyDirs[keyDirs.length - 1] : touchDir ?? latchedDir;
+
+    // Phones and small windows get one mode at a time: Play, Sequencer or Sound
+    const compact = useMedia('(max-width: 1023px), (max-height: 560px)');
+    const [mode, setMode] = useState<AppMode>('play');
 
     // ---- playing ------------------------------------------------------------------
     const holds = useRef(new Map<string, Hold>());
@@ -616,6 +624,9 @@ const App: React.FC = () => {
         resolveChord(selectedKey, { degree: refDegree, type: stickChordType(d, triadQuality(refDegree, scale)), inversion, octave, scale }).name.symbol,
     ])) as { [d in StickDir]: string };
 
+    // While recording, the screen says where the next chord goes, so you can record from Play mode.
+    // (Nothing about playback goes on the screen: it only follows what you play.)
+    const screenFlag = recording ? `● REC · ${current.name.toUpperCase()} STEP ${selected + 1}` : undefined;
     const instrumentLabel = INSTRUMENTS.find(i => i.id === instrument)?.label ?? '';
     const screen: ScreenView = shown
         ? {
@@ -627,10 +638,12 @@ const App: React.FC = () => {
             stick: shown.dir,
             inversionLabel: INVERSION_LABELS[Math.min(shown.inversion, shown.chord.midi.length - 1)],
             status: [`${selectedKey} ${scaleLabel(scale).toUpperCase()}`, `OCT ${octave}`, `${bpm} BPM`, `${playMode} · ${instrumentLabel}`],
+            flag: screenFlag,
         }
         : {
             idle: true, symbol: '', long: '', numeral: '', notes: [], stick: 'C', inversionLabel: '',
             status: [`${selectedKey} ${scaleLabel(scale).toUpperCase()}`, `OCT ${octave}`, `${bpm} BPM`, `${playMode} · ${instrumentLabel}`],
+            flag: screenFlag,
         };
 
     const sounding = shown && held.length > 0 ? shown.chord.midi : [];
@@ -660,63 +673,47 @@ const App: React.FC = () => {
         );
     }
 
-    return (
-        <div className="app">
-            <TopBar
-                selectedKey={selectedKey}
+    const deviceEl = (
+        <Device
+                screen={screen}
+                sounding={sounding}
+                scalePcs={scalePitchClasses(selectedKey, scale)}
                 octave={octave}
-                bpm={bpm}
-                metronomeOn={metronomeOn}
-                beat={beatDot}
-                beats={ts.beats}
-                theme={theme}
-                onKeyChange={setSelectedKey}
-                scale={scale}
-                onScaleChange={setScale}
-                onOctaveChange={o => setOctave(Math.max(OCTAVE_MIN, Math.min(OCTAVE_MAX, o)))}
-                onBpmChange={b => setBpm(Math.max(BPM_MIN, Math.min(BPM_MAX, b)))}
-                onToggleMetronome={() => setMetronomeOn(m => !m)}
-                onToggleTheme={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}
-                onOpenHelp={() => setHelpOpen(true)}
+                pads={pads}
+                stickDir={stickDir}
+                latchedDir={latchedDir}
+                stickChords={stickChords}
+                stickFor={`${refDegree + 1} · ${romanNumeral(refDegree, scale)}`}
+                voiceLeading={voiceLeading}
+                onVoiceLeading={setVoiceLeading}
+                inversion={inversion}
+                maxInversion={maxInv}
+                recording={recording}
+                onPadDown={d => pressPad(`pad:${d}`, d)}
+                onPadUp={d => releasePad(`pad:${d}`)}
+                onStick={setLatchedDir}
+                onStickHold={setTouchDir}
+                compact={compact}
+                onInversion={setInversion}
             />
-
-            <main className="main-row">
-                <Device
-                    screen={screen}
-                    sounding={sounding}
-                    scalePcs={scalePitchClasses(selectedKey, scale)}
-                    octave={octave}
-                    pads={pads}
-                    stickDir={stickDir}
-                    latchedDir={latchedDir}
-                    stickChords={stickChords}
-                    stickFor={`${refDegree + 1} · ${romanNumeral(refDegree, scale)}`}
-                    voiceLeading={voiceLeading}
-                    onVoiceLeading={setVoiceLeading}
-                    inversion={inversion}
-                    maxInversion={maxInv}
-                    recording={recording}
-                    onPadDown={d => pressPad(`pad:${d}`, d)}
-                    onPadUp={d => releasePad(`pad:${d}`)}
-                    onStick={setLatchedDir}
-                    onInversion={setInversion}
-                />
-                <SoundPanel
-                    trackName={current.name}
-                    trackColor={current.color}
-                    instrument={instrument}
-                    playMode={playMode}
-                    arpPattern={arpPattern}
-                    arpRate={arpRate}
-                    noteLength={noteLength}
-                    onInstrument={setInstrument}
-                    onPlayMode={setPlayMode}
-                    onArpPattern={setArpPattern}
-                    onArpRate={setArpRate}
-                    onNoteLength={setNoteLength}
-                />
-            </main>
-
+    );
+    const soundEl = (
+        <SoundPanel
+                trackName={current.name}
+                trackColor={current.color}
+                instrument={instrument}
+                playMode={playMode}
+                arpPattern={arpPattern}
+                arpRate={arpRate}
+                noteLength={noteLength}
+                onInstrument={setInstrument}
+                onPlayMode={setPlayMode}
+                onArpPattern={setArpPattern}
+                onArpRate={setArpRate}
+                onNoteLength={setNoteLength}
+            />
+    );
+    const progressionEl = (
             <Progression
                 total={total}
                 stepsPerRow={rowSteps}
@@ -767,6 +764,86 @@ const App: React.FC = () => {
                     />
                 )}
             />
+    );
+    const voicingEl = (
+        <VoicingControls inversion={inversion} maxInversion={maxInv} voiceLeading={voiceLeading} onInversion={setInversion} onVoiceLeading={setVoiceLeading} />
+    );
+
+    // Phones and small windows: one mode at a time under a compact bar, so playing never needs scrolling
+    if (compact) {
+        return (
+            <div className={`app compact mode-${mode}`}>
+                <CompactBar
+                    mode={mode}
+                    selectedKey={selectedKey}
+                    scale={scale}
+                    octave={octave}
+                    bpm={bpm}
+                    playing={playing}
+                    recording={recording}
+                    onMode={setMode}
+                    onKeyChange={setSelectedKey}
+                    onScaleChange={setScale}
+                    onOctaveChange={o => setOctave(Math.max(OCTAVE_MIN, Math.min(OCTAVE_MAX, o)))}
+                    onBpmChange={b => setBpm(Math.max(BPM_MIN, Math.min(BPM_MAX, b)))}
+                    onTogglePlay={togglePlay}
+                    onToggleRecord={() => setRecording(r => !r)}
+                />
+                {mode === 'play' && deviceEl}
+                {mode === 'seq' && progressionEl}
+                {mode === 'sound' && (
+                    <div className="sound-mode">
+                        <section className="panel sound-section voicing-card" aria-label="Voicing">
+                            <h2 className="eyebrow">Voicing</h2>
+                            {voicingEl}
+                        </section>
+                        {soundEl}
+                        <section className="panel sound-section app-card" aria-label="App">
+                            <h2 className="eyebrow">App</h2>
+                            <div className="app-card-row">
+                                <button className="chip-button" aria-pressed={metronomeOn} onClick={() => setMetronomeOn(m => !m)}>
+                                    Click {metronomeOn ? 'on' : 'off'} · {ts.beats}/{ts.unit}
+                                </button>
+                                <button className="chip-button" onClick={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}>
+                                    {theme === 'dark' ? 'Light' : 'Dark'} theme
+                                </button>
+                                <button className="chip-button" onClick={() => setHelpOpen(true)}>How to play</button>
+                            </div>
+                        </section>
+                    </div>
+                )}
+                <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+            {notice && <div className="toast" role="status">{notice}</div>}
+            </div>
+        );
+    }
+
+    return (
+        <div className="app">
+            <TopBar
+                selectedKey={selectedKey}
+                octave={octave}
+                bpm={bpm}
+                metronomeOn={metronomeOn}
+                beat={beatDot}
+                beats={ts.beats}
+                theme={theme}
+                onKeyChange={setSelectedKey}
+                scale={scale}
+                onScaleChange={setScale}
+                onOctaveChange={o => setOctave(Math.max(OCTAVE_MIN, Math.min(OCTAVE_MAX, o)))}
+                onBpmChange={b => setBpm(Math.max(BPM_MIN, Math.min(BPM_MAX, b)))}
+                onToggleMetronome={() => setMetronomeOn(m => !m)}
+                onToggleTheme={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}
+                onOpenHelp={() => setHelpOpen(true)}
+            />
+
+            <main className="main-row">
+                {deviceEl}
+                {soundEl}
+            </main>
+
+            {progressionEl}
 
             <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
             {notice && <div className="toast" role="status">{notice}</div>}

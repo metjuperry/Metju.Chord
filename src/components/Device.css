@@ -191,17 +191,30 @@
 }
 
 .stick {
+    /* ring radius: labels sit this far from the centre */
+    --stick-rx: 104px;
+    --stick-ry: 92px;
+    --well: 124px;
+    --knob: 76px;
     position: relative;
-    width: 292px;
-    height: 236px;
+    width: calc(2 * var(--stick-rx) + 84px);
+    height: calc(2 * var(--stick-ry) + 52px);
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: grab;
+}
+
+.stick:active {
+    cursor: grabbing;
 }
 
 .stick-well {
     position: absolute;
-    left: calc(50% - 62px);
-    top: calc(50% - 62px);
-    width: 124px;
-    height: 124px;
+    left: calc(50% - var(--well) / 2);
+    top: calc(50% - var(--well) / 2);
+    width: var(--well);
+    height: var(--well);
     border-radius: 50%;
     background: radial-gradient(circle at 50% 40%, #121215, #0a0a0c);
     box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.6);
@@ -277,10 +290,10 @@
 
 .stick-knob {
     position: absolute;
-    left: calc(50% - 38px);
-    top: calc(50% - 38px);
-    width: 76px;
-    height: 76px;
+    left: calc(50% - var(--knob) / 2);
+    top: calc(50% - var(--knob) / 2);
+    width: var(--knob);
+    height: var(--knob);
     border-radius: 50%;
     border: 1px solid #4a4a52;
     background: radial-gradient(circle at 40% 35%, #5a5a63, #2a2a30 70%);
@@ -511,3 +524,155 @@
 /* On the cream body, in-scale keys need to be whiter than the case to stand out */
 [data-theme='light'] .scale-keys .white.in { background: #ffffff; }
 [data-theme='light'] .scale-keys .white.out { background: #c9c1ad; }
+
+/* ---- compact device (phones) ----------------------------------------------------------- */
+
+.device.compact {
+    padding: 10px;
+    border-radius: 18px;
+    gap: 8px;
+}
+
+/* the screen and stick keep their size; only the controls area gives way */
+.device.compact > * {
+    flex-shrink: 0;
+}
+
+.device.compact > .device-controls {
+    flex-shrink: 1;
+}
+
+.device.compact .oled-main.idle .oled-symbol {
+    font-size: 36px;
+}
+
+.device.compact .oled {
+    min-height: 0;
+    padding: 6px 12px 8px;
+    gap: 2px;
+}
+
+/* key, scale, octave and tempo are already in the bar; the screen keeps only the recording flag */
+.device.compact .oled-status span:not(.oled-flag) {
+    display: none;
+}
+
+.device.compact .oled-status {
+    font-size: 15px;
+    min-height: 15px;
+}
+
+.device.compact .oled-symbol {
+    font-size: 56px;
+}
+
+.device.compact .oled-main {
+    padding: 0;
+}
+
+.device.compact .oled-numeral {
+    font-size: 22px;
+}
+
+.device.compact .oled-stick,
+.device.compact .oled-foot {
+    font-size: 16px;
+}
+
+.device.compact .device-controls {
+    justify-content: center;
+}
+
+.device.compact .pads {
+    flex-basis: 100%;
+}
+
+/* Landscape phone: the HiChord layout. Stick on the left, pads on the right, one slim line of screen. */
+@media (orientation: landscape) and (max-height: 560px) {
+    .device.compact {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .device.compact .oled {
+        flex-direction: row;
+        align-items: center;
+        gap: 14px;
+        padding: 4px 14px;
+    }
+
+    .device.compact .oled-main {
+        order: 1;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .device.compact .oled-symbol {
+        font-size: 44px;
+    }
+
+    .device.compact .oled-side {
+        flex-direction: row;
+        align-items: center;
+        gap: 10px;
+        padding: 0;
+    }
+
+    .device.compact .oled-numeral {
+        font-size: 20px;
+    }
+
+    .device.compact .oled-foot {
+        order: 2;
+        flex: 1;
+        min-width: 0;
+        flex-wrap: nowrap;
+        white-space: nowrap;
+        overflow: hidden;
+    }
+
+    .device.compact .oled-status {
+        order: 3;
+        min-height: 0;
+    }
+
+    .device.compact .oled-main.idle .oled-symbol {
+        font-size: 32px;
+    }
+
+    .device.compact .device-controls {
+        flex: 1 1 auto;
+        min-height: 0;
+        flex-wrap: nowrap;
+        align-items: stretch;
+        gap: 12px;
+    }
+
+    .device.compact .stick-area {
+        margin: 0;
+        justify-content: center;
+    }
+
+    .device.compact .stick {
+        --stick-rx: 86px;
+        --stick-ry: 64px;
+        --well: 96px;
+        --knob: 60px;
+    }
+
+    .device.compact .pads {
+        flex: 1 1 auto;
+        grid-template-rows: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .device.compact .pad {
+        height: auto;
+        min-height: 64px;
+        padding: 8px 10px;
+    }
+
+    .device.compact .pad-number {
+        font-size: 26px;
+    }
+}

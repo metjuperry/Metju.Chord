@@ -77,6 +77,7 @@ export interface Settings {
     noteLength: number;
     loop: boolean;
     theme: 'dark' | 'light';
+    /** Vibrate on pad presses and stick moves (phones). */
 }
 
 export interface SavedState {
