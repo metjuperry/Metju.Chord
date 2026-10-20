@@ -14,7 +14,7 @@ import { ArpRate, getEngine } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
 import { ARP_RATES } from './components/SoundPanel';
 import {
-    BEATS_PER_BAR, Clip, ClipSound, PlayMode, clipAt, clipEnd, fitTo, isChordClip, loopEnd, place, remove, setLength, split,
+    BEATS_PER_BAR, STEPS_PER_ROW, Clip, ClipSound, PlayMode, clipAt, clipEnd, fitTo, isChordClip, loopEnd, place, remove, setLength, split,
 } from './progression';
 
 const DEGREE_KEYS: { [code: string]: number } = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5, Digit7: 6 };
@@ -64,7 +64,7 @@ const App: React.FC = () => {
     const [shown, setShown] = useState<Shown | null>(null);
 
     // ---- progression ----------------------------------------------------------------
-    const [total, setTotal] = useState(16);
+    const [total, setTotal] = useState(STEPS_PER_ROW);
     const [clips, setClips] = useState<Clip[]>([]);
     const [selected, setSelected] = useState(0);
     const [playhead, setPlayhead] = useState(0);
@@ -298,10 +298,10 @@ const App: React.FC = () => {
             setSelected(0);
             setPlayhead(0);
         },
-        addBar: () => setTotal(total + BEATS_PER_BAR),
-        removeBar: () => {
-            if (total <= BEATS_PER_BAR) return;
-            const next = total - BEATS_PER_BAR;
+        addRow: () => setTotal(total + STEPS_PER_ROW),
+        removeRow: () => {
+            if (total <= STEPS_PER_ROW) return;
+            const next = total - STEPS_PER_ROW;
             setTotal(next);
             setClips(fitTo(clips, next));
             setSelected(Math.min(selected, next - 1));
@@ -508,8 +508,8 @@ const App: React.FC = () => {
                 onNext={edit.next}
                 onToggleLoop={() => setLoop(l => !l)}
                 onToggleRecord={() => setRecording(r => !r)}
-                onAddBar={edit.addBar}
-                onRemoveBar={edit.removeBar}
+                onAddRow={edit.addRow}
+                onRemoveRow={edit.removeRow}
                 onLonger={edit.longer}
                 onShorter={edit.shorter}
                 onSplit={edit.split}

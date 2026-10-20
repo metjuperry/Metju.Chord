@@ -16,6 +16,9 @@ export interface ClipSound {
 
 export const BEATS_PER_BAR = 4;
 
+/** The sequencer grows a row of 8 steps (two bars) at a time: SEQ-8, SEQ-16, ... */
+export const STEPS_PER_ROW = 8;
+
 /** A chord that starts on `start` and is held for `len` beats. */
 export interface ChordClip {
     start: number;

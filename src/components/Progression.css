@@ -75,16 +75,71 @@
 
 /* ---- lane ---------------------------------------------------------------- */
 
+.seq-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0.08em;
+}
+
+[data-theme='light'] .seq-title {
+    color: var(--hot-text);
+}
+
+.seq-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.seq-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+}
+
+.row-label {
+    flex: 0 0 44px;
+    padding-top: 6px;
+    font-size: 10px;
+    color: var(--muted);
+}
+
 .lane-scroll {
+    flex: 1 1 auto;
+    min-width: 0;
     overflow-x: auto;
-    padding-bottom: 4px;
+    padding-bottom: 2px;
 }
 
 .lane-inner {
     position: relative;
+    min-width: 560px;
     display: flex;
     flex-direction: column;
     gap: 6px;
+}
+
+/* a held chord that runs over a row break: squared-off join, sustain bar runs to the edge */
+.clip.continues {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    border-right-style: dashed;
+}
+
+.clip.continued {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    border-left-style: dashed;
+}
+
+.clip.continued .clip-name {
+    opacity: 0.6;
+}
+
+.clip:not(.rest) .env.edge::before {
+    left: 0;
 }
 
 .ruler,
