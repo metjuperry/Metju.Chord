@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildChordMidi, invert, nameChord, resolveChord, toToneNotes, arpOrder, ChordType, maxInversion, stickChordType, triadQuality, romanNumeral, STICK_DIRS } from './theory';
+import { buildChordMidi, invert, nameChord, resolveChord, toToneNotes, arpOrder, ChordType, maxInversion, stickChordType, triadQuality, romanNumeral, STICK_DIRS, SCALES, KEYS, scalePitchClasses, noteNames, voiceLead } from './theory';
 
 const TYPES: ChordType[] = ['root', 'triad', 'flip', 'minor', 'dim', 'aug', 'six', 'dom7', 'diatonic7', 'diatonic9', 'sus2', 'sus4'];
 const intervals = (m: number[]) => m.map(n => n - m[0]);
@@ -149,8 +149,8 @@ describe('stick mapping (HiChord default)', () => {
         resolveChord('C', { degree, type: stickChordType(dir, triadQuality(degree)), inversion: 0, octave: 4 }).name.symbol;
 
     it('knows the diatonic triad qualities', () => {
-        expect([0, 1, 2, 3, 4, 5, 6].map(triadQuality)).toEqual(['major', 'minor', 'minor', 'major', 'major', 'minor', 'dim']);
-        expect([0, 1, 2, 3, 4, 5, 6].map(romanNumeral)).toEqual(['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°']);
+        expect([0, 1, 2, 3, 4, 5, 6].map(d => triadQuality(d))).toEqual(['major', 'minor', 'minor', 'major', 'major', 'minor', 'dim']);
+        expect([0, 1, 2, 3, 4, 5, 6].map(d => romanNumeral(d))).toEqual(['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°']);
     });
 
     it('plays the plain triad in the centre', () => {
@@ -176,5 +176,77 @@ describe('stick mapping (HiChord default)', () => {
                 }
             }
         }
+    });
+});
+
+describe('scales', () => {
+    const name = (key: any, scale: any, degree: number, type: ChordType = 'triad') =>
+        resolveChord(key, { degree, type, inversion: 0, octave: 4, scale }).name.symbol;
+
+    it('builds the diatonic chords of natural and harmonic minor', () => {
+        expect([0, 1, 2, 3, 4, 5, 6].map(d => name('A', 'minor', d))).toEqual(['Am', 'B°', 'C', 'Dm', 'Em', 'F', 'G']);
+        expect([0, 1, 2, 3, 4, 5, 6].map(d => romanNumeral(d, 'minor'))).toEqual(['i', 'ii°', 'III', 'iv', 'v', 'VI', 'VII']);
+        expect(name('A', 'harmonicMinor', 4, 'diatonic7')).toBe('E7');
+        expect(romanNumeral(2, 'harmonicMinor')).toBe('III+');
+    });
+
+    it('has the modes in the right places', () => {
+        expect(name('D', 'dorian', 3)).toBe('G');          // major IV
+        expect(name('G', 'mixolydian', 6)).toBe('F');      // ♭VII
+        expect(name('F', 'lydian', 1)).toBe('G');          // major II
+        expect(name('E', 'phrygian', 1)).toBe('F');        // ♭II
+        expect(scalePitchClasses('C', 'lydian')).toContain(6);
+    });
+
+    it('spells with flats in flat keys and scales', () => {
+        expect(name('C', 'minor', 2)).toBe('E♭');
+        expect(resolveChord('C', { degree: 0, type: 'triad', inversion: 0, octave: 4, scale: 'minor' }).notes).toEqual(['C4', 'E♭4', 'G4']);
+        expect(name('F', 'major', 3)).toBe('B♭');
+        expect(name('E', 'major', 2)).toBe('G#m');
+        expect(noteNames('D', 'dorian')[1]).toBe('C#'); // D dorian = C major: no flats
+    });
+
+    it('names every stick chord on every degree of every scale in every key', () => {
+        for (const sc of SCALES) for (const key of KEYS) for (let degree = 0; degree < 7; degree++) for (const dir of STICK_DIRS) {
+            const chord = resolveChord(key, { degree, type: stickChordType(dir, triadQuality(degree, sc.id)), inversion: 0, octave: 4, scale: sc.id });
+            expect(chord.name.symbol, `${key} ${sc.id} ${degree} ${dir}`).not.toContain('?');
+        }
+    });
+
+    it('treats songs saved before scales existed as major', () => {
+        expect(resolveChord('C', { degree: 5, type: 'triad', inversion: 0, octave: 4 }).name.symbol).toBe('Am');
+    });
+});
+
+describe('voice leading', () => {
+    const base = (degree: number) => buildChordMidi(0, degree, 'triad', 4);
+    const travel = (a: number[], b: number[]) => a.reduce((s, n) => s + Math.min(...b.map(p => Math.abs(n - p))), 0);
+
+    it('leaves the first chord alone', () => {
+        expect(voiceLead(base(0), null)).toEqual({ midi: base(0), inversion: 0, octaveShift: 0 });
+    });
+
+    it('moves C to F with a common tone instead of jumping', () => {
+        const c = base(0);                      // C4 E4 G4
+        const f = voiceLead(base(3), c);        // F: C stays, E→F, G→A  => C4 F4 A4 (2nd inversion)
+        expect(f.midi).toEqual([60, 65, 69]);
+        expect(f.inversion).toBe(2);
+        expect(travel(f.midi, c)).toBeLessThan(travel(base(3), c));
+    });
+
+    it('keeps I–vi–IV–V close together and in range', () => {
+        let prev = base(0);
+        for (const d of [5, 3, 4, 0]) {
+            const v = voiceLead(base(d), prev);
+            expect(Math.max(...v.midi.map((n, i) => Math.abs(n - [...prev].sort((a, b) => a - b)[Math.min(i, prev.length - 1)])))).toBeLessThanOrEqual(5);
+            expect(v.midi[0]).toBeGreaterThanOrEqual(40);
+            expect(v.midi[0]).toBeLessThanOrEqual(76);
+            prev = v.midi;
+        }
+    });
+
+    it('is reproducible from the inversion and octave it reports', () => {
+        const v = voiceLead(buildChordMidi(0, 4, 'dom7', 4), base(0));
+        expect(invert(buildChordMidi(0, 4, 'dom7', 4 + v.octaveShift), v.inversion)).toEqual(v.midi);
     });
 });

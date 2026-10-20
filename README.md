@@ -12,7 +12,8 @@ A chord instrument modelled on pocket chord machines like the HiChord: seven cho
 - Each pad shows the chord it will play with the stick where it is now.
 - The stick changes the chord type: centre = triad, ↑ flip 3rd, ↗ dominant 7, → 7th, ↘ 9th, ↓ sus4, ↙ 6 (major) / sus2 (minor), ← diminished, ↖ augmented.
 - Click a stick direction to latch it, or hold **Q W E / A D / Z X C** while playing **1–7**. Moving the stick while holding a pad re-voices the held chord.
-- Inversions (root to 3rd), octave C2–C6, all 12 keys.
+- All 12 keys in eight scales: major, minor, harmonic and melodic minor, Dorian, Phrygian, Lydian, Mixolydian. Note names use flats in flat keys.
+- Inversions (root to 3rd), octave C2–C6, or **voice leading**: each chord takes the inversion that moves least from the last one, and that voicing is what gets recorded.
 
 ### Sound
 
@@ -29,7 +30,14 @@ A chord instrument modelled on pocket chord machines like the HiChord: seven cho
 - Playback doesn't touch the screen or the stick; they only follow what you play live.
 - Press **R** (or Record), pick a step, and play pads to write chords; the cursor moves on.
 - Lengthen with the edge grip or **[ ]**, split with **/**, rest with **.**, copy and paste, add or remove rows, loop.
+- Time signatures 2/4, 3/4, 4/4, 5/4, 6/8, 7/8, 9/8, 12/8. One step is one beat, BPM counts beats of the signature, rows hold whole bars, and the click accents the downbeat (plus every third beat in 6/8, 9/8, 12/8).
 - Metronome click in the top bar, on the same clock as the progression.
+
+### Saving
+
+- The song and settings autosave in your browser.
+- Undo/redo every song edit (Ctrl/⌘ Z, Shift Ctrl/⌘ Z or Ctrl Y).
+- Song menu: new song, open/save a song file (JSON), and copy a share link that carries the whole song in the URL.
 
 Press the keyboard icon in the app for the full shortcut list.
 

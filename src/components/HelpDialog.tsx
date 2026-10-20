@@ -30,6 +30,8 @@ const SHORTCUTS: [string, string][] = [
     ['/', 'Split the selected chord at the cursor'],
     ['.', 'Make the selected beat a rest'],
     ['⌫', 'Delete the selected chord'],
+    ['Ctrl/⌘ Z', 'Undo'],
+    ['Shift Ctrl/⌘ Z  ·  Ctrl Y', 'Redo'],
     ['Esc', 'Centre the stick, close this panel'],
 ];
 
@@ -51,7 +53,7 @@ const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose }) => {
                 </div>
 
                 <p className="help-lead">
-                    Each pad plays a chord from the selected key: <b>1</b> is I, <b>2</b> is ii, and so on up to <b>7</b> (vii°).
+                    Each pad plays a chord from the selected key and scale: in C major <b>1</b> is I, <b>2</b> is ii, and so on up to <b>7</b> (vii°).
                     Push the stick to change the chord type. The pads show what they will play with the stick where it is.
                 </p>
 

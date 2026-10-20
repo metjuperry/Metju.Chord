@@ -1,0 +1,68 @@
+.song-menu {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.song-menu .icon-button:disabled {
+    color: var(--faint);
+}
+
+.song-button {
+    height: 40px;
+    font-weight: 700;
+}
+
+.song-popover {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 5;
+    min-width: 230px;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+
+.song-popover button {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    min-height: 38px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    font-size: 12px;
+    text-align: left;
+}
+
+.song-popover button:hover,
+.song-popover button:focus-visible {
+    background: var(--panel-2);
+}
+
+.song-note {
+    margin: 4px 10px 6px;
+    font-size: 11px;
+    color: var(--muted);
+}
+
+.toast {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    z-index: 20;
+    padding: 10px 16px;
+    border-radius: 8px;
+    background: var(--text);
+    color: var(--bg);
+    font-size: 12px;
+    font-weight: 700;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3);
+}

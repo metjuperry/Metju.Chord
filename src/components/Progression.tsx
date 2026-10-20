@@ -1,6 +1,7 @@
 import React from 'react';
 import './Progression.css';
-import { BEATS_PER_BAR, MAX_TRACKS, STEPS_PER_ROW, Clip, Track, clipAt, clipEnd } from '../progression';
+import { MAX_TRACKS, Clip, Track, clipAt, clipEnd } from '../progression';
+import { TIME_SIGNATURES, TimeSignature, isCompound, tsLabel } from '../song';
 import { INSTRUMENTS, InstrumentId } from '../audio/instruments';
 
 /** A track as the grid shows it: clip positions and lengths in steps. */
@@ -8,6 +9,10 @@ export type TrackView = Track;
 
 interface ProgressionProps {
     total: number;
+    /** Steps per row: whole bars, about 8 wide. */
+    stepsPerRow: number;
+    timeSignature: TimeSignature;
+    onTimeSignature: (ts: TimeSignature) => void;
     tracks: TrackView[];
     selectedTrack: string;
     selected: number;
@@ -42,6 +47,8 @@ interface ProgressionProps {
     onDelete: () => void;
     onRestamp: () => void;
     onClearAll: () => void;
+    /** Undo/redo and the Song menu, shown in the header. */
+    songMenu?: React.ReactNode;
 }
 
 const steps = (n: number) => (n === 1 ? '1 step' : `${n} steps`);
@@ -93,6 +100,9 @@ const Progression: React.FC<ProgressionProps> = props => {
     const current = tracks.find(t => t.id === selectedTrack) ?? tracks[0];
     const selClip = clipAt(current.clips, selected);
     const selInfo = selClip && !selClip.rest ? describe(selClip) : null;
+    const STEPS_PER_ROW = props.stepsPerRow;
+    const beatsPerBar = props.timeSignature.beats;
+    const compound = isCompound(props.timeSignature);
     const rows = Math.ceil(total / STEPS_PER_ROW);
     const cols = { gridTemplateColumns: `repeat(${STEPS_PER_ROW}, minmax(0, 1fr))` };
     const anySolo = tracks.some(t => t.solo);
@@ -198,15 +208,15 @@ const Progression: React.FC<ProgressionProps> = props => {
         return (
             <div key={row} className="seq-row">
                 <div className="lane-scroll">
-                    <div className="lane-inner">
+                    <div className="lane-inner" style={{ minWidth: `${100 + STEPS_PER_ROW * 70}px` }}>
                         <div className="lane-row ruler-row">
                             <span className="lane-label static">{rowStart + 1}–{rowEnd}</span>
                             <div className="ruler" style={cols} aria-hidden="true">
                                 {Array.from({ length: STEPS_PER_ROW }, (_, j) => {
                                     const i = rowStart + j;
                                     return (
-                                        <div key={i} className={`tick ${i % BEATS_PER_BAR === 0 ? 'down' : ''} ${Math.floor(i / BEATS_PER_BAR) % 2 === 0 ? 'shade' : ''} ${i === playhead ? 'head' : ''}`}>
-                                            {i % BEATS_PER_BAR === 0 ? <b>{i + 1}</b> : <span>{i + 1}</span>}
+                                        <div key={i} className={`tick ${i % beatsPerBar === 0 ? 'down' : compound && (i % beatsPerBar) % 3 === 0 ? 'group' : ''} ${Math.floor(i / beatsPerBar) % 2 === 0 ? 'shade' : ''} ${i === playhead ? 'head' : ''}`}>
+                                            {i % beatsPerBar === 0 ? <b>{i + 1}</b> : <span>{i + 1}</span>}
                                         </div>
                                     );
                                 })}
@@ -245,8 +255,17 @@ const Progression: React.FC<ProgressionProps> = props => {
                         ? `Play a pad to write it on ${current.name}, step ${selected + 1}${props.currentSound ? ` (${props.currentSound})` : ''}; the cursor moves on.`
                         : `Pads play and record on the selected track (${current.name}). Select a step, press Record, then play pads.`}
                 </span>
+                {props.songMenu}
                 <div className="bars">
-                    <span className="section-note">{total / BEATS_PER_BAR} bars · 4/4</span>
+                    <span className="section-note">{Math.round((total / beatsPerBar) * 10) / 10} bars</span>
+                    <select
+                        className="ts-select"
+                        aria-label="Time signature"
+                        value={tsLabel(props.timeSignature)}
+                        onChange={e => props.onTimeSignature(TIME_SIGNATURES.find(t => tsLabel(t) === e.target.value)!)}
+                    >
+                        {TIME_SIGNATURES.map(t => <option key={tsLabel(t)} value={tsLabel(t)}>{tsLabel(t)}</option>)}
+                    </select>
                     {rows > 1 && <button className="chip-button" onClick={props.onRemoveRow}>− Remove row</button>}
                     <button className="chip-button" onClick={props.onAddRow}>+ Add row</button>
                 </div>

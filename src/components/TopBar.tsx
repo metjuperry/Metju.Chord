@@ -1,6 +1,6 @@
 import React from 'react';
 import './TopBar.css';
-import { KEYS, MusicalKey } from '../theory';
+import { KEYS, MusicalKey, SCALES, ScaleId } from '../theory';
 
 export const OCTAVE_MIN = 2;
 export const OCTAVE_MAX = 6;
@@ -9,13 +9,17 @@ export const BPM_MAX = 240;
 
 interface TopBarProps {
     selectedKey: MusicalKey;
+    scale: ScaleId;
     octave: number;
     bpm: number;
     metronomeOn: boolean;
     /** Beat 0-3 currently lit, or null when nothing is running. */
     beat: number | null;
+    /** Beats per bar, for the dots. */
+    beats: number;
     theme: 'dark' | 'light';
     onKeyChange: (key: MusicalKey) => void;
+    onScaleChange: (scale: ScaleId) => void;
     onOctaveChange: (octave: number) => void;
     onBpmChange: (bpm: number) => void;
     onToggleMetronome: () => void;
@@ -24,8 +28,8 @@ interface TopBarProps {
 }
 
 const TopBar: React.FC<TopBarProps> = ({
-    selectedKey, octave, bpm, metronomeOn, beat, theme,
-    onKeyChange, onOctaveChange, onBpmChange, onToggleMetronome, onToggleTheme, onOpenHelp,
+    selectedKey, scale, octave, bpm, metronomeOn, beat, beats, theme,
+    onKeyChange, onScaleChange, onOctaveChange, onBpmChange, onToggleMetronome, onToggleTheme, onOpenHelp,
 }) => (
     <header className="top-bar panel">
         <div className="brand">
@@ -38,7 +42,7 @@ const TopBar: React.FC<TopBarProps> = ({
         </div>
 
         <div className="top-group">
-            <span className="eyebrow" id="key-label">Key</span>
+            <span className="visually-hidden" id="key-label">Key</span>
             <div className="key-strip" role="group" aria-labelledby="key-label">
                 {KEYS.map(key => (
                     <button
@@ -51,7 +55,9 @@ const TopBar: React.FC<TopBarProps> = ({
                     </button>
                 ))}
             </div>
-            <span className="scale-chip">Major</span>
+            <select className="scale-select" aria-label="Scale" value={scale} onChange={e => onScaleChange(e.target.value as ScaleId)}>
+                {SCALES.map(sc => <option key={sc.id} value={sc.id} title={sc.label}>{sc.short}</option>)}
+            </select>
         </div>
 
         <div className="top-group">
@@ -74,7 +80,7 @@ const TopBar: React.FC<TopBarProps> = ({
             </svg>
             <span>Click</span>
             <span className="beat-dots" aria-hidden="true">
-                {[0, 1, 2, 3].map(i => (
+                {Array.from({ length: beats }, (_, i) => i).map(i => (
                     <span key={i} className={`beat-dot ${beat === i ? (i === 0 ? 'down' : 'on') : ''}`} />
                 ))}
             </span>
