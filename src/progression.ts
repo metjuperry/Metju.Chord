@@ -1,6 +1,18 @@
-import { ChordParams } from './theory';
+import type { ArpPattern, ChordParams, MusicalKey } from './theory';
+import type { ArpRate } from './audio/engine';
+import type { InstrumentId } from './audio/instruments';
 
 export type PlayMode = 'Chord' | 'Arp';
+
+/** Everything about how a recorded chord sounds, captured when it was recorded. */
+export interface ClipSound {
+    key: MusicalKey;
+    instrument: InstrumentId;
+    playMode: PlayMode;
+    arpPattern: ArpPattern;
+    arpRate: ArpRate;
+    noteLength: number;
+}
 
 export const BEATS_PER_BAR = 4;
 
@@ -9,7 +21,7 @@ export interface ChordClip {
     start: number;
     len: number;
     rest?: false;
-    chord: ChordParams & { playMode: PlayMode };
+    chord: ChordParams & ClipSound;
 }
 
 /** Silence for `len` beats. */

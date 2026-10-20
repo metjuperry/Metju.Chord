@@ -12,8 +12,9 @@ import {
 } from './theory';
 import { ArpRate, getEngine } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
+import { ARP_RATES } from './components/SoundPanel';
 import {
-    BEATS_PER_BAR, Clip, PlayMode, clipAt, clipEnd, fitTo, isChordClip, loopEnd, place, remove, setLength, split,
+    BEATS_PER_BAR, Clip, ClipSound, PlayMode, clipAt, clipEnd, fitTo, isChordClip, loopEnd, place, remove, setLength, split,
 } from './progression';
 
 const DEGREE_KEYS: { [code: string]: number } = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5, Digit7: 6 };
@@ -21,6 +22,7 @@ const STICK_KEYS: { [code: string]: StickDir } = {
     KeyQ: 'UL', KeyW: 'U', KeyE: 'UR', KeyA: 'L', KeyS: 'C', KeyD: 'R', KeyZ: 'DL', KeyX: 'D', KeyC: 'DR',
 };
 const INVERSION_LABELS = ['ROOT POS', '1ST INV', '2ND INV', '3RD INV'];
+const ARP_PATTERN_LABELS: { [p in ArpPattern]: string } = { up: 'up', down: 'down', upDown: 'up-down', random: 'random' };
 const MAX_INVERSION = 3;
 
 /** What the screen shows: the last chord struck, by a pad or by the progression. */
@@ -78,8 +80,8 @@ const App: React.FC = () => {
     const [metBeat, setMetBeat] = useState<number | null>(null);
 
     // Latest state for Transport callbacks and the global key handler
-    const live = useRef({ selectedKey, octave, inversion, stickDir, playMode, arpPattern, arpRate, noteLength, clips, total, selected, loop, recording });
-    live.current = { selectedKey, octave, inversion, stickDir, playMode, arpPattern, arpRate, noteLength, clips, total, selected, loop, recording };
+    const live = useRef({ selectedKey, octave, inversion, stickDir, instrument, playMode, arpPattern, arpRate, noteLength, clips, total, selected, loop, recording });
+    live.current = { selectedKey, octave, inversion, stickDir, instrument, playMode, arpPattern, arpRate, noteLength, clips, total, selected, loop, recording };
 
     useEffect(() => {
         document.documentElement.setAttribute('data-theme', theme);
@@ -113,6 +115,16 @@ const App: React.FC = () => {
         octave: s.octave,
     });
 
+    /** The sound settings a chord recorded right now would be baked with. */
+    const currentSound = (s = live.current): ClipSound => ({
+        key: s.selectedKey,
+        instrument: s.instrument,
+        playMode: s.playMode,
+        arpPattern: s.arpPattern,
+        arpRate: s.arpRate,
+        noteLength: s.noteLength,
+    });
+
     /** Start a chord sounding; returns how to stop it. */
     const sound = (degree: number) => {
         const s = live.current;
@@ -123,8 +135,7 @@ const App: React.FC = () => {
         if (s.playMode === 'Arp') {
             stop = engine.startArp(chord.midi, { pattern: s.arpPattern, rate: s.arpRate, noteLength: s.noteLength });
         } else {
-            engine.attack(chord.midi);
-            stop = () => engine.release(chord.midi);
+            stop = engine.attack(chord.midi);
         }
         setShown({ chord, degree, dir: s.stickDir, inversion: s.inversion });
         return { params, stop };
@@ -140,7 +151,7 @@ const App: React.FC = () => {
 
         const s = live.current;
         if (s.recording) {
-            setClips(place(s.clips, { start: s.selected, len: 1, chord: { ...params, playMode: s.playMode } }));
+            setClips(place(s.clips, { start: s.selected, len: 1, chord: { ...params, ...currentSound(s) } }));
             setSelected(Math.min(s.selected + 1, s.total - 1));
             setPlayhead(Math.min(s.selected + 1, s.total - 1));
         }
@@ -167,7 +178,7 @@ const App: React.FC = () => {
             holds.current.set(id, { degree: hold.degree, stop: sound(hold.degree).stop });
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [stickDir, inversion, octave, selectedKey, playMode, arpPattern, arpRate]);
+    }, [stickDir, inversion, octave, selectedKey, instrument, playMode, arpPattern, arpRate]);
 
     // ---- progression playback (Transport) --------------------------------------------
 
@@ -195,23 +206,21 @@ const App: React.FC = () => {
         }
         seqBeat.current = beat + 1;
 
+        // Each clip plays with the key, instrument and settings it was recorded with.
+        // The screen, stick and keyboard strip belong to live playing only, so nothing here touches them.
         const clip = s.clips.find(c => c.start === beat);
-        let strike: Shown | null = null;
         if (isChordClip(clip)) {
-            const chord = resolveChord(s.selectedKey, clip.chord);
+            const c = clip.chord;
+            const chord = resolveChord(c.key, c);
             const seconds = clip.len * Tone.Time('4n').toSeconds();
             const engine = getEngine();
-            if (clip.chord.playMode === 'Arp') {
-                engine.scheduleArp(chord.midi, { pattern: s.arpPattern, rate: s.arpRate, noteLength: s.noteLength }, time, seconds);
+            if (c.playMode === 'Arp') {
+                engine.scheduleArp(chord.midi, { pattern: c.arpPattern, rate: c.arpRate, noteLength: c.noteLength }, time, seconds, c.instrument);
             } else {
-                engine.playChord(chord.midi, { duration: seconds * 0.98, time });
+                engine.playChord(chord.midi, { duration: seconds * 0.98, time, instrument: c.instrument });
             }
-            strike = { chord, degree: clip.chord.degree, dir: dirForType(clip), inversion: clip.chord.inversion };
         }
-        Tone.getDraw().schedule(() => {
-            setPlayhead(beat);
-            if (strike) setShown(strike);
-        }, time);
+        Tone.getDraw().schedule(() => setPlayhead(beat), time);
     };
 
     const startPlayback = async () => {
@@ -282,6 +291,7 @@ const App: React.FC = () => {
             setClips(place(selClip ? remove(clips, selClip) : clips, { start: base.start, len: base.len, rest: true }));
         },
         del: () => selClip && setClips(remove(clips, selClip)),
+        restamp: () => isChordClip(selClip) && setClips(place(remove(clips, selClip), { ...selClip, chord: { ...selClip.chord, ...currentSound() } })),
         clearAll: () => {
             stopPlayback();
             setClips([]);
@@ -388,7 +398,6 @@ const App: React.FC = () => {
     ])) as { [d in StickDir]: string };
 
     const instrumentLabel = INSTRUMENTS.find(i => i.id === instrument)?.label ?? '';
-    const playingClip = playing ? clipAt(clips, playhead) : undefined;
     const screen: ScreenView = shown
         ? {
             idle: false,
@@ -399,23 +408,24 @@ const App: React.FC = () => {
             stick: shown.dir,
             inversionLabel: INVERSION_LABELS[Math.min(shown.inversion, shown.chord.midi.length - 1)],
             status: [`${selectedKey} MAJOR`, `OCT ${octave}`, `${bpm} BPM`, `${playMode} · ${instrumentLabel}`],
-            flag: playing
-                ? `BEAT ${playhead + 1}${playingClip && playingClip.len > 1 && playhead > playingClip.start ? ` · HELD ${playhead - playingClip.start + 1}/${playingClip.len}` : ''}`
-                : undefined,
         }
         : {
             idle: true, symbol: '', long: '', numeral: '', notes: [], stick: 'C', inversionLabel: '',
             status: [`${selectedKey} MAJOR`, `OCT ${octave}`, `${bpm} BPM`, `${playMode} · ${instrumentLabel}`],
         };
 
-    const sounding = shown && (held.length > 0 || playing) ? shown.chord.midi : [];
+    const sounding = shown && held.length > 0 ? shown.chord.midi : [];
     const maxInv = Math.min(MAX_INVERSION, Math.max(...pads.map(p =>
         resolveChord(selectedKey, paramsFor(p.degree, stickDir)).midi.length - 1)));
 
+    const labelOf = (id: InstrumentId) => INSTRUMENTS.find(i => i.id === id)?.label ?? id;
+    const soundText = (c: ClipSound) =>
+        [labelOf(c.instrument), c.playMode === 'Arp' ? `Arp ${ARP_PATTERN_LABELS[c.arpPattern]} ${ARP_RATES.find(r => r.rate === c.arpRate)?.label ?? ''}` : null,
+            c.key !== selectedKey ? `${c.key} major` : null].filter(Boolean).join(' · ');
     const describe = (clip: Clip) =>
         isChordClip(clip)
-            ? { symbol: resolveChord(selectedKey, clip.chord).name.symbol, numeral: romanNumeral(clip.chord.degree) }
-            : { symbol: 'Rest', numeral: '' };
+            ? { symbol: resolveChord(clip.chord.key, clip.chord).name.symbol, numeral: romanNumeral(clip.chord.degree), sound: soundText(clip.chord) }
+            : { symbol: 'Rest', numeral: '', sound: '' };
 
     const beatDot = metronomeOn ? metBeat : playing ? playhead % BEATS_PER_BAR : null;
 
@@ -507,6 +517,8 @@ const App: React.FC = () => {
                 onPaste={edit.paste}
                 onRest={edit.rest}
                 onDelete={edit.del}
+                onRestamp={edit.restamp}
+                currentSound={soundText(currentSound())}
                 onClearAll={edit.clearAll}
             />
 
@@ -514,13 +526,5 @@ const App: React.FC = () => {
         </div>
     );
 };
-
-/** The stick direction a recorded chord type came from, for the screen's stick readout. */
-function dirForType(clip: Clip): StickDir {
-    if (!isChordClip(clip)) return 'C';
-    const quality = triadQuality(clip.chord.degree);
-    const dirs: StickDir[] = ['C', 'U', 'UR', 'R', 'DR', 'D', 'DL', 'L', 'UL'];
-    return dirs.find(d => stickChordType(d, quality) === clip.chord.type) ?? 'C';
-}
 
 export default App;

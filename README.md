@@ -23,6 +23,8 @@ A chord instrument modelled on pocket chord machines like the HiChord: seven cho
 ### Progression
 
 - A 4/4 beat timeline. A chord held across several beats is one block, with a strike dot and a sustain bar.
+- Each recorded chord keeps the key, instrument and play settings (chord/arp, pattern, rate, note length) it was recorded with, so one progression can mix instruments. "Use current sound" re-applies the live settings to a chord.
+- Playback doesn't touch the screen or the stick; they only follow what you play live.
 - Press **R** (or Record), pick a beat, and play pads to write chords; the cursor moves on.
 - Lengthen with the edge grip or **[ ]**, split with **/**, rest with **.**, copy and paste, add or remove bars, loop.
 - Metronome click in the top bar, on the same clock as the progression.

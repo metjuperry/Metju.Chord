@@ -46,7 +46,9 @@ export class Engine {
         distortion: { enabled: false, amount: 0.4 },
     };
 
-    private instrument: Instrument | null = null;
+    /** Every instrument used so far stays connected, so recorded chords can play on theirs while you play on another. */
+    private voices = new Map<InstrumentId, Instrument>();
+    private current: InstrumentId = 'epiano';
     private transportUsers = new Set<string>();
 
     constructor() {
@@ -66,44 +68,40 @@ export class Engine {
 
     // ---- instruments -------------------------------------------------------
 
+    /** The instrument the pads and keyboard play. */
     setInstrument(id: InstrumentId) {
-        const next = createInstrument(id);
-        next.output.connect(this.fxIn);
-        const previous = this.instrument;
-        this.instrument = next;
+        this.current = id;
+        this.voice(id);
+    }
 
-        if (previous) {
-            // Fade out rather than cutting, so a switch while notes ring does not click.
-            const fade = new Tone.Gain(1);
-            previous.output.disconnect();
-            previous.output.connect(fade);
-            fade.connect(this.fxIn);
-            fade.gain.rampTo(0, 0.05);
-            setTimeout(() => {
-                previous.nodes.forEach(n => n.dispose());
-                fade.dispose();
-            }, 150);
+    private voice(id: InstrumentId = this.current): Instrument {
+        let v = this.voices.get(id);
+        if (!v) {
+            v = createInstrument(id);
+            v.output.connect(this.fxIn);
+            this.voices.set(id, v);
         }
+        return v;
     }
 
     // ---- playing -----------------------------------------------------------
 
-    /** Play a chord for `duration` (seconds or Tone time) at an audio-clock `time`. */
-    playChord(midi: number[], opts: { duration: Tone.Unit.Time; time?: number }) {
-        this.instrument?.synth.triggerAttackRelease(
+    /** Play a chord for `duration` (seconds or Tone time) at an audio-clock `time`, on `instrument` (default: the live one). */
+    playChord(midi: number[], opts: { duration: Tone.Unit.Time; time?: number; instrument?: InstrumentId }) {
+        this.voice(opts.instrument).synth.triggerAttackRelease(
             this.toFreqs(midi), opts.duration, opts.time ?? Tone.now(), velocityFor(midi.length));
     }
 
-    attack(midi: number[], time?: number) {
-        this.instrument?.synth.triggerAttack(this.toFreqs(midi), time ?? Tone.now(), velocityFor(midi.length));
-    }
-
-    release(midi: number[], time?: number) {
-        this.instrument?.synth.triggerRelease(this.toFreqs(midi), time ?? Tone.now());
+    /** Start a chord on the live instrument; returns how to release it (on that same instrument, even if the live one changes). */
+    attack(midi: number[], time?: number): () => void {
+        const synth = this.voice().synth;
+        const freqs = this.toFreqs(midi);
+        synth.triggerAttack(freqs, time ?? Tone.now(), velocityFor(midi.length));
+        return () => synth.triggerRelease(freqs, Tone.now());
     }
 
     releaseAll() {
-        this.instrument?.synth.releaseAll();
+        this.voices.forEach(v => v.synth.releaseAll());
     }
 
     private toFreqs(midi: number[]): number[] {
@@ -148,6 +146,7 @@ export class Engine {
 
     /** Arpeggiate while held. Returns the function that stops it. */
     startArp(midi: number[], opts: ArpOptions): () => void {
+        const synth = this.voice().synth;
         const owner = `arp:${Math.random().toString(36).slice(2)}`;
         let cycle = arpOrder(midi, opts.pattern);
         let step = 0;
@@ -158,7 +157,7 @@ export class Engine {
                 cycle = arpOrder(midi, opts.pattern); // reshuffles for 'random'
                 step = 0;
             }
-            this.instrument?.synth.triggerAttackRelease(
+            synth.triggerAttackRelease(
                 Tone.Frequency(cycle[step++], 'midi').toFrequency(), opts.noteLength, time, velocity);
         }, opts.rate);
 
@@ -174,7 +173,8 @@ export class Engine {
     }
 
     /** Schedule an arpeggio at an exact audio time, filling `seconds` (used by sequencer steps). */
-    scheduleArp(midi: number[], opts: ArpOptions, time: number, seconds: number) {
+    scheduleArp(midi: number[], opts: ArpOptions, time: number, seconds: number, instrument?: InstrumentId) {
+        const synth = this.voice(instrument).synth;
         const stepSeconds = Tone.Time(opts.rate).toSeconds();
         const steps = Math.max(1, Math.floor((seconds + 1e-6) / stepSeconds));
         let cycle = arpOrder(midi, opts.pattern);
@@ -183,7 +183,7 @@ export class Engine {
                 cycle = arpOrder(midi, opts.pattern);
                 k = 0;
             }
-            this.instrument?.synth.triggerAttackRelease(
+            synth.triggerAttackRelease(
                 Tone.Frequency(cycle[k], 'midi').toFrequency(),
                 Math.min(opts.noteLength, stepSeconds), time + i * stepSeconds, velocityFor(1));
         }

@@ -12,7 +12,9 @@ interface ProgressionProps {
     loop: boolean;
     recording: boolean;
     canPaste: boolean;
-    describe: (clip: Clip) => { symbol: string; numeral: string };
+    describe: (clip: Clip) => { symbol: string; numeral: string; sound: string };
+    /** The sound new recordings get, e.g. "E-Piano". */
+    currentSound: string;
     onSelect: (beat: number) => void;
     onTogglePlay: () => void;
     onFirst: () => void;
@@ -29,6 +31,7 @@ interface ProgressionProps {
     onPaste: () => void;
     onRest: () => void;
     onDelete: () => void;
+    onRestamp: () => void;
     onClearAll: () => void;
 }
 
@@ -95,6 +98,7 @@ const Progression: React.FC<ProgressionProps> = props => {
                         <span className={held ? 'len held' : 'len'}>{held ? `held · ${beats(clip.len)}` : beats(clip.len)}</span>
                     </span>
                     <span className="clip-name">{info ? info.symbol : 'Rest'}</span>
+                    {info && <span className="clip-sound">{info.sound}</span>}
                     <span className="envelope" aria-hidden="true">
                         {Array.from({ length: clip.len }, (_, i) => {
                             const abs = clip.start + i;
@@ -135,8 +139,8 @@ const Progression: React.FC<ProgressionProps> = props => {
                 </button>
                 <span className="section-note prog-hint">
                     {recording
-                        ? `Play a pad to write it on beat ${selected + 1}; the cursor moves on.`
-                        : 'Select a beat, press Record, then play pads.'}
+                        ? `Play a pad to write it on beat ${selected + 1} with ${props.currentSound}; the cursor moves on.`
+                        : 'Each chord keeps the sound it was recorded with. Select a beat, press Record, then play pads.'}
                 </span>
                 <div className="bars">
                     <span className="section-note">{total / BEATS_PER_BAR} bars · 4/4</span>
@@ -168,7 +172,7 @@ const Progression: React.FC<ProgressionProps> = props => {
             <div className="toolbar" role="toolbar" aria-label="Chord actions">
                 <span className="sel-label">
                     {selClip && selClip.len > 1 ? `Beats ${selClip.start + 1}–${clipEnd(selClip)}` : `Beat ${selected + 1}`}
-                    <span className="section-note"> · {selClip ? (selInfo ? selInfo.symbol : 'rest') : 'empty'}</span>
+                    <span className="section-note"> · {selClip ? (selInfo ? `${selInfo.symbol} · ${selInfo.sound}` : 'rest') : 'empty'}</span>
                 </span>
                 <div className="length" role="group" aria-label="Length">
                     <span>Length</span>
@@ -181,6 +185,7 @@ const Progression: React.FC<ProgressionProps> = props => {
                 <button className="chip-button" disabled={!selClip} onClick={props.onCopy}>Copy</button>
                 <button className="chip-button" disabled={!canPaste} onClick={props.onPaste}>Paste</button>
                 <button className="chip-button" onClick={props.onRest}>Make rest <kbd>.</kbd></button>
+                <button className="chip-button" disabled={!selInfo} onClick={props.onRestamp} title={`Re-record this chord's sound as ${props.currentSound}`}>Use current sound</button>
                 <button className="chip-button" disabled={!selClip} onClick={props.onDelete}>Delete <kbd>⌫</kbd></button>
                 <button className="chip-button danger" disabled={clips.length === 0} onClick={props.onClearAll}>Clear all</button>
             </div>

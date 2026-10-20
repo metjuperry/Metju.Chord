@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Clip, place, setLength, split, fitTo, loopEnd, clipAt } from './progression';
 
 const chord = (start: number, len: number, degree = 0): Clip => ({
-    start, len, chord: { degree, type: 'triad', inversion: 0, octave: 4, playMode: 'Chord' },
+    start, len, chord: { degree, type: 'triad', inversion: 0, octave: 4, key: 'C', instrument: 'epiano', playMode: 'Chord', arpPattern: 'up', arpRate: '8n', noteLength: 0.3 },
 });
 const span = (clips: Clip[]) => clips.map(c => [c.start, c.len]);
 
