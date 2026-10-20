@@ -1,211 +1,44 @@
 import React, { Component } from 'react';
 import './EffectsPanel.css';
-import * as Tone from 'tone';
+import { engine, FxName, FxState } from './audio/engine';
 
-interface EffectsPanelProps {
-    synth: Tone.PolySynth | null;
-}
+type EffectsPanelState = FxState;
 
-interface EffectsPanelState {
-    reverbEnabled: boolean;
-    reverbSize: number;
-    reverbWet: number;
-    delayEnabled: boolean;
-    delayTime: string;
-    delayFeedback: number;
-    delayWet: number;
-    chorusEnabled: boolean;
-    chorusDepth: number;
-    chorusFrequency: number;
-    chorusWet: number;
-    distortionEnabled: boolean;
-    distortionAmount: number;
-}
-
-class EffectsPanel extends Component<EffectsPanelProps, EffectsPanelState> {
-    private reverb: Tone.Reverb | null = null;
-    private delay: Tone.FeedbackDelay | null = null;
-    private chorus: Tone.Chorus | null = null;
-    private distortion: Tone.Distortion | null = null;
-
-    constructor(props: EffectsPanelProps) {
+/** UI only: all audio nodes and effect state live in the engine, so toggling the panel never touches the signal path. */
+class EffectsPanel extends Component<{}, EffectsPanelState> {
+    constructor(props: {}) {
         super(props);
-        this.state = {
-            reverbEnabled: false,
-            reverbSize: 1.5,
-            reverbWet: 0.3,
-            delayEnabled: false,
-            delayTime: '8n',
-            delayFeedback: 0.3,
-            delayWet: 0.3,
-            chorusEnabled: false,
-            chorusDepth: 0.5,
-            chorusFrequency: 4,
-            chorusWet: 0.5,
-            distortionEnabled: false,
-            distortionAmount: 0.4,
-        };
+        this.state = engine.fx.get();
     }
 
-    componentDidMount() {
-        this.initializeEffects();
-    }
-
-    componentDidUpdate(prevProps: EffectsPanelProps) {
-        if (prevProps.synth !== this.props.synth) {
-            this.reconnectEffects();
-        }
-    }
-
-    componentWillUnmount() {
-        this.disposeEffects();
-    }
-
-    initializeEffects = () => {
-        // Create effects
-        this.reverb = new Tone.Reverb(this.state.reverbSize);
-        this.delay = new Tone.FeedbackDelay(this.state.delayTime, this.state.delayFeedback);
-        this.chorus = new Tone.Chorus(this.state.chorusFrequency, 2.5, this.state.chorusDepth);
-        this.distortion = new Tone.Distortion(this.state.distortionAmount);
-
-        // Set initial wet/dry
-        this.reverb.wet.value = 0;
-        this.delay.wet.value = 0;
-        this.chorus.wet.value = 0;
-        this.distortion.wet.value = 0;
-
-        // Start chorus (it needs to be started)
-        this.chorus.start();
-
-        this.reconnectEffects();
+    private update = <N extends FxName>(name: N, params: Partial<FxState[N]>) => {
+        engine.fx.set(name, params);
+        this.setState(engine.fx.get());
     };
 
-    reconnectEffects = () => {
-        const { synth } = this.props;
+    handleReverbToggle = (enabled: boolean) => this.update('reverb', { enabled });
+    handleReverbSizeChange = (decay: number) => this.update('reverb', { decay });
+    handleReverbWetChange = (wet: number) => this.update('reverb', { wet });
 
-        if (!synth || !this.reverb || !this.delay || !this.chorus || !this.distortion) return;
+    handleDelayToggle = (enabled: boolean) => this.update('delay', { enabled });
+    handleDelayTimeChange = (time: string) => this.update('delay', { time });
+    handleDelayFeedbackChange = (feedback: number) => this.update('delay', { feedback });
+    handleDelayWetChange = (wet: number) => this.update('delay', { wet });
 
-        // Disconnect synth from destination
-        synth.disconnect();
+    handleChorusToggle = (enabled: boolean) => this.update('chorus', { enabled });
+    handleChorusDepthChange = (depth: number) => this.update('chorus', { depth });
+    handleChorusFrequencyChange = (frequency: number) => this.update('chorus', { frequency });
+    handleChorusWetChange = (wet: number) => this.update('chorus', { wet });
 
-        // Chain: synth → distortion → chorus → delay → reverb → destination
-        synth.chain(this.distortion, this.chorus, this.delay, this.reverb, Tone.Destination);
-    };
-
-    disposeEffects = () => {
-        if (this.reverb) this.reverb.dispose();
-        if (this.delay) this.delay.dispose();
-        if (this.chorus) this.chorus.dispose();
-        if (this.distortion) this.distortion.dispose();
-    };
-
-    handleReverbToggle = (enabled: boolean) => {
-        this.setState({ reverbEnabled: enabled });
-        if (this.reverb) {
-            this.reverb.wet.value = enabled ? this.state.reverbWet : 0;
-        }
-    };
-
-    handleReverbSizeChange = (size: number) => {
-        this.setState({ reverbSize: size });
-        if (this.reverb) {
-            this.reverb.decay = size;
-        }
-    };
-
-    handleReverbWetChange = (wet: number) => {
-        this.setState({ reverbWet: wet });
-        if (this.reverb && this.state.reverbEnabled) {
-            this.reverb.wet.value = wet;
-        }
-    };
-
-    handleDelayToggle = (enabled: boolean) => {
-        this.setState({ delayEnabled: enabled });
-        if (this.delay) {
-            this.delay.wet.value = enabled ? this.state.delayWet : 0;
-        }
-    };
-
-    handleDelayTimeChange = (time: string) => {
-        this.setState({ delayTime: time });
-        if (this.delay) {
-            this.delay.delayTime.value = time;
-        }
-    };
-
-    handleDelayFeedbackChange = (feedback: number) => {
-        this.setState({ delayFeedback: feedback });
-        if (this.delay) {
-            this.delay.feedback.value = feedback;
-        }
-    };
-
-    handleDelayWetChange = (wet: number) => {
-        this.setState({ delayWet: wet });
-        if (this.delay && this.state.delayEnabled) {
-            this.delay.wet.value = wet;
-        }
-    };
-
-    handleChorusToggle = (enabled: boolean) => {
-        this.setState({ chorusEnabled: enabled });
-        if (this.chorus) {
-            this.chorus.wet.value = enabled ? this.state.chorusWet : 0;
-        }
-    };
-
-    handleChorusDepthChange = (depth: number) => {
-        this.setState({ chorusDepth: depth });
-        if (this.chorus) {
-            this.chorus.depth = depth;
-        }
-    };
-
-    handleChorusFrequencyChange = (frequency: number) => {
-        this.setState({ chorusFrequency: frequency });
-        if (this.chorus) {
-            this.chorus.frequency.value = frequency;
-        }
-    };
-
-    handleChorusWetChange = (wet: number) => {
-        this.setState({ chorusWet: wet });
-        if (this.chorus && this.state.chorusEnabled) {
-            this.chorus.wet.value = wet;
-        }
-    };
-
-    handleDistortionToggle = (enabled: boolean) => {
-        this.setState({ distortionEnabled: enabled });
-        if (this.distortion) {
-            this.distortion.wet.value = enabled ? 1 : 0;
-        }
-    };
-
-    handleDistortionAmountChange = (amount: number) => {
-        this.setState({ distortionAmount: amount });
-        if (this.distortion) {
-            this.distortion.distortion = amount;
-        }
-    };
+    handleDistortionToggle = (enabled: boolean) => this.update('distortion', { enabled });
+    handleDistortionAmountChange = (amount: number) => this.update('distortion', { amount });
 
     render() {
-        const {
-            reverbEnabled,
-            reverbSize,
-            reverbWet,
-            delayEnabled,
-            delayTime,
-            delayFeedback,
-            delayWet,
-            chorusEnabled,
-            chorusDepth,
-            chorusFrequency,
-            chorusWet,
-            distortionEnabled,
-            distortionAmount,
-        } = this.state;
+        const { reverb, delay, chorus, distortion } = this.state;
+        const { enabled: reverbEnabled, decay: reverbSize, wet: reverbWet } = reverb;
+        const { enabled: delayEnabled, time: delayTime, feedback: delayFeedback, wet: delayWet } = delay;
+        const { enabled: chorusEnabled, depth: chorusDepth, frequency: chorusFrequency, wet: chorusWet } = chorus;
+        const { enabled: distortionEnabled, amount: distortionAmount } = distortion;
 
         return (
             <div className="effects-panel">
