@@ -78,7 +78,6 @@ export interface Settings {
     loop: boolean;
     theme: 'dark' | 'light';
     /** Vibrate on pad presses and stick moves (phones). */
-    haptics: boolean;
 }
 
 export interface SavedState {
@@ -101,7 +100,7 @@ export function newSong(): Song {
 }
 
 export const defaultSettings = (): Settings => ({
-    key: 'C', scale: 'major', voiceLeading: false, octave: 4, inversion: 0, playMode: 'Chord', arpPattern: 'up', arpRate: '8n', noteLength: 0.3, loop: true, theme: 'dark', haptics: true,
+    key: 'C', scale: 'major', voiceLeading: false, octave: 4, inversion: 0, playMode: 'Chord', arpPattern: 'up', arpRate: '8n', noteLength: 0.3, loop: true, theme: 'dark',
 });
 
 // ---- reading saved data: anything malformed is dropped or replaced with a default --------
@@ -201,7 +200,6 @@ export function readSettings(v: unknown): Settings {
         noteLength: num(v.noteLength, 0.05, 2, d.noteLength),
         loop: bool(v.loop, d.loop),
         theme: oneOf<'dark' | 'light'>(v.theme, ['dark', 'light'], d.theme),
-        haptics: bool(v.haptics, d.haptics),
     };
 }
 

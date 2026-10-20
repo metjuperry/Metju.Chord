@@ -1,10 +1,6 @@
 import React, { useRef } from 'react';
 import './Device.css';
 import { NOTE_NAMES, StickDir, STICK_LABELS } from '../theory';
-import { haptic } from '../haptics';
-
-/** Haptics are for fingers: a mouse click on a laptop shouldn't buzz anything. */
-const isTouch = (e: React.PointerEvent) => e.pointerType === 'touch' || e.pointerType === 'pen';
 
 export interface PadView {
     degree: number;
@@ -151,7 +147,7 @@ const Stick: React.FC<{
     onHold: (d: StickDir | null) => void;
 }> = ({ dir, latched, chords, forPad, showCaption, onStick, onHold }) => {
     const [vx, vy] = DIR_VECTOR[dir];
-    const gesture = useRef<{ id: number; start: number; dir: StickDir; moved: boolean; touch: boolean } | null>(null);
+    const gesture = useRef<{ id: number; start: number; dir: StickDir; moved: boolean } | null>(null);
 
     const pointDir = (e: React.PointerEvent<HTMLDivElement>) => {
         const box = e.currentTarget.getBoundingClientRect();
@@ -165,8 +161,7 @@ const Stick: React.FC<{
         if (gesture.current || e.button > 0) return;
         e.currentTarget.setPointerCapture(e.pointerId);
         const d = pointDir(e);
-        gesture.current = { id: e.pointerId, start: performance.now(), dir: d, moved: false, touch: isTouch(e) };
-        if (gesture.current.touch && d !== 'C') haptic('tick');
+        gesture.current = { id: e.pointerId, start: performance.now(), dir: d, moved: false };
         onHold(d);
     };
     const move = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -176,8 +171,6 @@ const Stick: React.FC<{
         if (d !== g.dir) {
             g.dir = d;
             g.moved = true;
-            // a tick for every direction the thumb slides into, a softer one back at the centre
-            if (g.touch) haptic(d === 'C' ? 'release' : 'tick');
             onHold(d);
         }
     };
@@ -188,7 +181,6 @@ const Stick: React.FC<{
         onHold(null);
         // A quick tap without sliding latches that direction (or unlatches it / the centre clears it)
         const tap = !g.moved && performance.now() - g.start < TAP_MS;
-        if (g.touch) haptic(tap ? 'lock' : 'release');
         if (tap) onStick(g.dir === 'C' || latched === g.dir ? 'C' : g.dir);
     };
 
@@ -244,7 +236,6 @@ const Pad: React.FC<{ pad: PadView; onDown: (d: number) => void; onUp: (d: numbe
         if (holding.current || e.button > 0) return;
         e.currentTarget.setPointerCapture(e.pointerId);
         holding.current = true;
-        if (isTouch(e)) haptic('press');
         onDown(pad.degree);
     };
     const up = () => {

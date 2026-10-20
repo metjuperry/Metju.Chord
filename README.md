@@ -51,8 +51,6 @@ Small screens (phones, narrow windows) show one mode at a time, switched from th
 
 The stick is a thumb-stick: press and slide toward a direction, and let go to spring back to the centre. A quick tap locks a direction instead.
 
-**Haptics.** On Android (Chrome, Samsung Internet, Edge) pads and the stick vibrate: a press when a pad goes down, a tick for each stick direction, a softer one when it springs back, and a double pulse for locking a direction or arming record. iPhone Safari has no vibration support, so it uses the Taptic Engine through a hidden system switch instead: best effort, single ticks only, and Apple may limit it. Turn haptics off in Sound mode.
-
 ## Getting Started
 
 ### Prerequisites

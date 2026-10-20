@@ -5,7 +5,6 @@ import TopBar, { BPM_MAX, BPM_MIN, OCTAVE_MAX, OCTAVE_MIN } from './components/T
 import Device, { PadView, ScreenView, VoicingControls } from './components/Device';
 import CompactBar, { AppMode } from './components/CompactBar';
 import { useMedia } from './useMedia';
-import { hapticsSupported, setHapticsEnabled } from './haptics';
 import SoundPanel from './components/SoundPanel';
 import Progression from './components/Progression';
 import HelpDialog from './components/HelpDialog';
@@ -85,8 +84,6 @@ const App: React.FC = () => {
     const [noteLength, setNoteLength] = useState(initial.noteLength);
     const [inversion, setInversion] = useState(initial.inversion);
     const [notice, setNotice] = useState<string | null>(null);
-    const [haptics, setHaptics] = useState(initial.haptics);
-    useEffect(() => setHapticsEnabled(haptics), [haptics]);
     const [helpOpen, setHelpOpen] = useState(false);
 
     // ---- stick: a latched direction (mouse) and momentary ones (held keys) --------
@@ -451,7 +448,7 @@ const App: React.FC = () => {
     const snapshot = (): SavedState => ({
         version: SAVE_VERSION,
         song,
-        settings: { haptics, key: selectedKey, scale, voiceLeading, octave, inversion, playMode, arpPattern, arpRate, noteLength, loop, theme },
+        settings: { key: selectedKey, scale, voiceLeading, octave, inversion, playMode, arpPattern, arpRate, noteLength, loop, theme },
     });
 
     // Autosave a moment after any change
@@ -465,7 +462,7 @@ const App: React.FC = () => {
         }, 400);
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [song, haptics, selectedKey, scale, voiceLeading, octave, inversion, playMode, arpPattern, arpRate, noteLength, loop, theme]);
+    }, [song, selectedKey, scale, voiceLeading, octave, inversion, playMode, arpPattern, arpRate, noteLength, loop, theme]);
 
     /** Replace the song (undoable) and take over its saved settings. */
     const loadState = (state: SavedState, message: string) => {
@@ -473,7 +470,6 @@ const App: React.FC = () => {
         editSong(() => state.song);
         const st = state.settings;
         setSelectedKey(st.key);
-        setHaptics(st.haptics);
         setScale(st.scale);
         setVoiceLeading(st.voiceLeading);
         setOctave(st.octave);
@@ -812,11 +808,6 @@ const App: React.FC = () => {
                                     {theme === 'dark' ? 'Light' : 'Dark'} theme
                                 </button>
                                 <button className="chip-button" onClick={() => setHelpOpen(true)}>How to play</button>
-                                {hapticsSupported() && (
-                                    <button className="chip-button" aria-pressed={haptics} onClick={() => setHaptics(h => !h)}>
-                                        Haptics {haptics ? 'on' : 'off'}
-                                    </button>
-                                )}
                             </div>
                         </section>
                     </div>
