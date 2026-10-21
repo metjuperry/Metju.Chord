@@ -286,10 +286,11 @@
     width: var(--knob);
     height: var(--knob);
     border-radius: 50%;
-    border: 1px solid #4a4a52;
-    background: radial-gradient(circle at 40% 35%, #5a5a63, #2a2a30 70%);
-    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5);
-    color: #f2f0e6;
+    /* flat like the wedges, with the same lip as the pads: it reads as a cap you push */
+    border: 1px solid var(--device-line);
+    background: var(--device-inset);
+    box-shadow: 0 3px 0 var(--device-line);
+    color: var(--device-text);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -299,19 +300,26 @@
 }
 
 .stick-knob.active {
-    color: #ffcc00;
+    border-color: var(--cap);
+    box-shadow: 0 3px 0 #b38f00;
+}
+
+.stick-knob.active .knob-name {
+    color: var(--cap);
 }
 
 .knob-name {
     font-family: var(--font-display);
     font-weight: 700;
-    font-size: 15px;
+    font-size: 16px;
+    line-height: 1.1;
 }
 
 .knob-rule {
-    font-size: 9px;
-    color: #b8b5a8;
+    font-size: 8px;
+    color: var(--device-muted);
     text-transform: uppercase;
+    letter-spacing: 0.06em;
 }
 
 .stick-caption {
