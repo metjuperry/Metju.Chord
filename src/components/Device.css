@@ -191,14 +191,13 @@
 }
 
 .stick {
-    /* ring radius: labels sit this far from the centre */
-    --stick-rx: 104px;
-    --stick-ry: 92px;
-    --well: 124px;
-    --knob: 76px;
+    /* a round pad: eight wedges around a knob, the chord names inside the wedges */
+    --stick-size: 264px;
+    --label-r: calc(var(--stick-size) * 0.35);
+    --knob: calc(var(--stick-size) * 0.36);
     position: relative;
-    width: calc(2 * var(--stick-rx) + 84px);
-    height: calc(2 * var(--stick-ry) + 52px);
+    width: var(--stick-size);
+    height: var(--stick-size);
     touch-action: none;
     user-select: none;
     -webkit-user-select: none;
@@ -209,25 +208,37 @@
     cursor: grabbing;
 }
 
-.stick-well {
+.stick-ring {
     position: absolute;
-    left: calc(50% - var(--well) / 2);
-    top: calc(50% - var(--well) / 2);
-    width: var(--well);
-    height: var(--well);
-    border-radius: 50%;
-    background: radial-gradient(circle at 50% 40%, #121215, #0a0a0c);
-    box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.6);
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.stick-ring .seg {
+    fill: var(--device-inset);
+    stroke: var(--device-line);
+    stroke-width: 0.4;
+    transition: fill 0.06s;
+}
+
+/* a locked direction keeps a yellow edge */
+.stick-ring .seg.latched {
+    stroke: var(--cap);
+    stroke-width: 1.4;
+}
+
+.stick-ring .seg.active {
+    fill: var(--cap);
+    stroke: var(--cap);
 }
 
 .stick-dir {
     position: absolute;
     transform: translate(-50%, -50%);
-    min-width: 68px;
-    height: 44px;
-    padding: 2px 8px;
-    border: 1px solid transparent;
-    border-radius: 8px;
+    padding: 0;
+    border: 0;
     background: transparent;
     color: var(--device-text);
     display: flex;
@@ -235,57 +246,37 @@
     align-items: center;
     justify-content: center;
     gap: 1px;
+    pointer-events: none;
 }
 
-.stick-dir:hover {
-    border-color: var(--device-line);
+.stick-dir:focus-visible {
+    outline: 2px solid var(--cap);
+    outline-offset: 4px;
+    border-radius: 4px;
 }
 
 .dir-name {
-    display: flex;
-    align-items: center;
-    gap: 5px;
     font-family: var(--font-display);
     font-weight: 700;
     font-size: 14px;
+    line-height: 1.1;
     white-space: nowrap;
 }
 
 .dir-rule {
-    font-size: 9px;
+    font-size: 8px;
     color: var(--device-muted);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     white-space: nowrap;
 }
 
-.stick-dir .led {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--device-line);
-    flex: 0 0 auto;
-}
-
-.stick-dir[aria-pressed='true'] {
-    border-color: #6b5a10;
-}
-
-.stick-dir[aria-pressed='true'] .led {
-    background: #ffe680;
-}
-
 .stick-dir.active {
-    background: #ffcc00;
-    color: #000;
+    color: var(--cap-ink);
 }
 
 .stick-dir.active .dir-rule {
-    color: #4a3d00;
-}
-
-.stick-dir.active .led {
-    background: #000;
+    color: var(--cap-sub);
 }
 
 .stick-knob {
@@ -689,10 +680,11 @@
     }
 
     .device.compact .stick {
-        --stick-rx: 86px;
-        --stick-ry: 64px;
-        --well: 96px;
-        --knob: 60px;
+        --stick-size: min(232px, calc(100dvh - 140px));
+    }
+
+    .device.compact .dir-name {
+        font-size: 12px;
     }
 
     .device.compact .pads {
