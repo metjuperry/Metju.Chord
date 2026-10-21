@@ -51,10 +51,6 @@ interface DeviceProps {
     compact?: boolean;
 }
 
-// Staggered like the hardware: 2 4 6 above, 1 3 5 7 below
-const TOP_ROW = [1, 3, 5];
-const BOTTOM_ROW = [0, 2, 4, 6];
-
 const DIR_VECTOR: { [d in StickDir]: [number, number] } = {
     C: [0, 0], U: [0, -1], UR: [0.71, -0.71], R: [1, 0], DR: [0.71, 0.71],
     D: [0, 1], DL: [-0.71, 0.71], L: [-1, 0], UL: [-0.71, -0.71],
@@ -246,7 +242,6 @@ const Pad: React.FC<{ pad: PadView; onDown: (d: number) => void; onUp: (d: numbe
     return (
         <button
             className={`pad ${pad.held ? 'held' : ''}`}
-            style={{ gridArea: `p${pad.degree + 1}` }}
             aria-label={`${pad.degree + 1}: ${pad.numeral}, ${pad.symbol}`}
             onPointerDown={down}
             onPointerUp={up}
@@ -310,7 +305,7 @@ const Device: React.FC<DeviceProps> = ({
         <div className="device-controls">
             <Stick dir={stickDir} latched={latchedDir} chords={stickChords} forPad={stickFor} showCaption={!compact} onStick={onStick} onHold={onStickHold} />
             <div className="pads">
-                {[...TOP_ROW, ...BOTTOM_ROW].map(d => (
+                {[0, 1, 2, 3, 4, 5, 6].map(d => (
                     <Pad key={d} pad={pads[d]} onDown={onPadDown} onUp={onPadUp} />
                 ))}
             </div>
