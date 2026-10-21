@@ -1,8 +1,9 @@
 import { ArpPattern, KEYS, MusicalKey, ChordType, SCALE_IDS, ScaleId } from './theory';
 import type { ArpRate } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
-import { Clip, PPQ, PlayMode, STEPS_PER_ROW, TRACK_COLORS, Track, newTrack } from './progression';
-import { DRUM_VOICES, DrumPattern, PATTERN_BARS, PatternBars, fitPattern, sixteenthsPerBar } from './drums';
+import { Clip, PPQ, STEPS_PER_ROW } from './progression';
+import { DRUM_VOICES, DrumPattern, PATTERN_BARS, PatternBars, TICKS_PER_SIXTEENTH, fitPattern, sixteenthsPerBar } from './drums';
+import { BASS_STYLES, BassStyle, MAX_PARTS, MELODY_STEPS, Note, PART_COLORS, Part, PartKind, PlayMode, newPart } from './parts';
 
 // ---- the song: everything undo/redo, saving and sharing cover ---------------------------
 
@@ -43,22 +44,30 @@ export function changeTimeSignature(song: Song, next: TimeSignature): Song {
     const scale = ticksPerStep(next) / ticksPerStep(from);
     const row = stepsPerRow(next);
     // about as long as before (nearest whole number of rows), but never cutting off a chord
-    const contentSteps = Math.max(0, ...song.tracks.flatMap(t => t.clips.map(c => (c.start + c.len) / ticksPerStep(from))));
+    const contentSteps = Math.max(0, ...song.chords.map(c => (c.start + c.len) / ticksPerStep(from)));
     const steps = Math.max(row, Math.round(song.steps / row) * row, Math.ceil(contentSteps / row) * row);
+    // melody notes move with the beats, snapped back onto the 1/16 grid
+    const snap = (t: number) => Math.round((t * scale) / TICKS_PER_SIXTEENTH) * TICKS_PER_SIXTEENTH;
     return {
         ...song,
         timeSignature: next,
         steps,
-        tracks: song.tracks.map(t => ({
-            ...t,
-            ...(t.drums ? { drums: fitPattern(t.drums, next) } : {}),
-            clips: t.clips.map(c => ({ ...c, start: Math.round(c.start * scale), len: Math.max(1, Math.round(c.len * scale)) })),
-        })),
+        chords: song.chords.map(c => ({ ...c, start: Math.round(c.start * scale), len: Math.max(1, Math.round(c.len * scale)) })),
+        parts: song.parts.map(p => {
+            if (p.kind === 'drums') return { ...p, drums: fitPattern(p.drums, next) };
+            if (p.kind === 'melody') return { ...p, notes: p.notes.map(n => ({ ...n, start: snap(n.start), len: Math.max(TICKS_PER_SIXTEENTH, snap(n.len)) })) };
+            return p;
+        }),
     };
 }
 
 export interface Song {
-    tracks: Track[];
+    /** Key and scale of the whole song: changing them transposes or re-harmonises every part. */
+    key: MusicalKey;
+    scale: ScaleId;
+    /** The one chord row every part follows. */
+    chords: Clip[];
+    parts: Part[];
     /** Length of the sequencer, in steps. */
     steps: number;
     bpm: number;
@@ -67,33 +76,32 @@ export interface Song {
 
 /** Live playing settings, saved with the song but not part of undo. */
 export interface Settings {
-    key: MusicalKey;
-    scale: ScaleId;
     /** Pick each chord's inversion automatically so it moves as little as possible from the last one. */
     voiceLeading: boolean;
     octave: number;
     inversion: number;
-    playMode: PlayMode;
-    arpPattern: ArpPattern;
-    arpRate: ArpRate;
-    noteLength: number;
     loop: boolean;
     theme: 'dark' | 'light';
 }
 
 export interface SavedState {
-    version: 1;
+    version: 2;
     song: Song;
     settings: Settings;
 }
 
-export const SAVE_VERSION = 1;
-export const STORAGE_KEY = 'metju.chord.v1';
+export const SAVE_VERSION = 2;
+export const STORAGE_KEY = 'metju.chord.v2';
 
+/** A new song: Keys, Bass and an empty Melody, all following an empty chord row. */
 export function newSong(): Song {
-    const keys = newTrack([], 'epiano', 'Keys');
+    const parts: Part[] = [];
+    for (const kind of ['chords', 'bass', 'melody'] as PartKind[]) parts.push(newPart(kind, parts));
     return {
-        tracks: [keys, newTrack([keys], 'warmpad', 'Pad')],
+        key: 'C',
+        scale: 'major',
+        chords: [],
+        parts,
         steps: stepsPerRow({ beats: 4, unit: 4 }),
         bpm: 100,
         timeSignature: { beats: 4, unit: 4 },
@@ -101,7 +109,7 @@ export function newSong(): Song {
 }
 
 export const defaultSettings = (): Settings => ({
-    key: 'C', scale: 'major', voiceLeading: false, octave: 4, inversion: 0, playMode: 'Chord', arpPattern: 'up', arpRate: '8n', noteLength: 0.3, loop: true, theme: 'dark',
+    voiceLeading: false, octave: 4, inversion: 0, loop: true, theme: 'dark',
 });
 
 // ---- reading saved data: anything malformed is dropped or replaced with a default --------
@@ -136,24 +144,23 @@ function readClip(v: unknown, maxTick: number): Clip | null {
             type: c.type as ChordType,
             inversion: int(c.inversion, 0, 4, 0),
             octave: int(c.octave, 1, 7, 4),
-            scale: oneOf<ScaleId>(c.scale, SCALE_IDS, 'major'),
-            key: oneOf(c.key, KEYS, 'C'),
-            playMode: oneOf<PlayMode>(c.playMode, ['Chord', 'Arp'], 'Chord'),
-            arpPattern: oneOf(c.arpPattern, ARP_PATTERNS, 'up'),
-            arpRate: oneOf(c.arpRate, ARP_RATES, '8n'),
-            noteLength: num(c.noteLength, 0.05, 2, 0.3),
         },
     };
 }
 
-function readPattern(v: unknown, barLen: number): DrumPattern | undefined {
-    if (!isObj(v)) return undefined;
-    const bars = oneOf<PatternBars>(v.bars, PATTERN_BARS, 1);
+/** Clips sorted, dropping anything that overlaps the clip before it. */
+const sortClips = (clips: Clip[]) => clips
+    .sort((a, b) => a.start - b.start)
+    .filter((c, i, all) => i === 0 || c.start >= all[i - 1].start + all[i - 1].len);
+
+function readPattern(v: unknown, barLen: number): DrumPattern {
+    const src = isObj(v) ? v : {};
+    const bars = oneOf<PatternBars>(src.bars, PATTERN_BARS, 1);
     const len = bars * barLen;
-    const src = isObj(v.hits) ? v.hits : {};
+    const hitsIn = isObj(src.hits) ? src.hits : {};
     const hits: DrumPattern['hits'] = {};
     for (const voice of DRUM_VOICES) {
-        const list = src[voice];
+        const list = hitsIn[voice];
         if (!Array.isArray(list)) continue;
         const kept = [...new Set(list.filter((i): i is number => Number.isInteger(i) && i >= 0 && i < len))].sort((a, b) => a - b);
         if (kept.length) hits[voice] = kept;
@@ -161,63 +168,91 @@ function readPattern(v: unknown, barLen: number): DrumPattern | undefined {
     return { bars, hits };
 }
 
-function readTrack(v: unknown, index: number, maxTick: number, barLen: number): Track | null {
-    if (!isObj(v)) return null;
-    const drums = readPattern(v.drums, barLen);
-    const clips = (Array.isArray(v.clips) ? v.clips : [])
-        .map(c => readClip(c, maxTick))
-        .filter((c): c is Clip => c !== null)
-        .sort((a, b) => a.start - b.start)
-        // drop anything overlapping the clip before it
-        .filter((c, i, all) => i === 0 || c.start >= all[i - 1].start + all[i - 1].len);
-    return {
-        id: typeof v.id === 'string' && v.id ? v.id : `t${index + 1}`,
-        name: typeof v.name === 'string' && v.name.trim() ? v.name.trim().slice(0, 24) : `Track ${index + 1}`,
-        color: oneOf(v.color, TRACK_COLORS, TRACK_COLORS[index % TRACK_COLORS.length]),
-        instrument: oneOf(v.instrument, INSTRUMENT_IDS, 'epiano') as InstrumentId,
+function readNotes(v: unknown, maxTick: number): Note[] {
+    if (!Array.isArray(v)) return [];
+    const notes = v.flatMap((n): Note[] => {
+        if (!isObj(n)) return [];
+        const start = int(n.start, 0, maxTick, -1);
+        const len = int(n.len, 1, maxTick, -1);
+        if (start < 0 || len < 1 || start + len > maxTick) return [];
+        return [{ start, len, step: int(n.step, 0, MELODY_STEPS - 1, 0) }];
+    });
+    // one note at a time: drop any that overlaps the one before
+    return notes.sort((a, b) => a.start - b.start).filter((n, i, all) => i === 0 || n.start >= all[i - 1].start + all[i - 1].len);
+}
+
+const PART_KINDS: PartKind[] = ['chords', 'bass', 'melody', 'drums'];
+
+function readPart(v: unknown, index: number, existing: Part[], maxTick: number, barLen: number): Part | null {
+    if (!isObj(v) || !PART_KINDS.includes(v.kind as PartKind)) return null;
+    const kind = v.kind as PartKind;
+    const base = newPart(kind, existing);
+    const common = {
+        id: typeof v.id === 'string' && v.id && !existing.some(p => p.id === v.id) ? v.id : base.id,
+        name: typeof v.name === 'string' && v.name.trim() ? v.name.trim().slice(0, 24) : base.name,
+        color: oneOf(v.color, PART_COLORS, PART_COLORS[index % PART_COLORS.length]),
         volume: int(v.volume, -24, 6, 0),
         mute: bool(v.mute, false),
         solo: bool(v.solo, false),
-        clips: drums ? [] : clips,
-        ...(drums ? { drums } : {}),
     };
+    const instrument = () => oneOf(v.instrument, INSTRUMENT_IDS, (base as { instrument: string }).instrument) as InstrumentId;
+    switch (kind) {
+        case 'chords':
+            return {
+                ...common, kind, instrument: instrument(),
+                playMode: oneOf<PlayMode>(v.playMode, ['Chord', 'Arp'], 'Chord'),
+                arpPattern: oneOf(v.arpPattern, ARP_PATTERNS, 'up'),
+                arpRate: oneOf(v.arpRate, ARP_RATES, '8n'),
+                noteLength: num(v.noteLength, 0.05, 2, 0.3),
+            };
+        case 'bass':
+            return {
+                ...common, kind, instrument: instrument(),
+                style: oneOf<BassStyle>(v.style, BASS_STYLES.map(b => b.id), 'pulse'),
+                octave: int(v.octave, 1, 3, 2),
+            };
+        case 'melody':
+            return { ...common, kind, instrument: instrument(), octave: int(v.octave, 3, 5, 4), notes: readNotes(v.notes, maxTick) };
+        case 'drums':
+            return { ...common, kind, drums: readPattern(v.drums, barLen) };
+    }
 }
 
 /** Rebuild a song from untrusted data (a file, a link, storage). Returns null if it isn't a song at all. */
 export function readSong(v: unknown): Song | null {
-    if (!isObj(v) || !Array.isArray(v.tracks)) return null;
+    if (!isObj(v) || !Array.isArray(v.parts) || !Array.isArray(v.chords)) return null;
     const ts = isObj(v.timeSignature) ? v.timeSignature : {};
     const timeSignature: TimeSignature = { beats: int(ts.beats, 2, 12, 4), unit: oneOf<4 | 8>(ts.unit, [4, 8], 4) };
     const steps = int(v.steps, 1, 512, STEPS_PER_ROW);
     const maxTick = steps * ticksPerStep(timeSignature);
-    const tracks = v.tracks.slice(0, TRACK_COLORS.length)
-        .map((t, i) => readTrack(t, i, maxTick, sixteenthsPerBar(timeSignature)))
-        .filter((t): t is Track => t !== null);
-    if (tracks.length === 0) return null;
-    // the pads always need a chord track to play through
-    if (tracks.every(t => t.drums)) tracks.unshift(newTrack(tracks, 'epiano', 'Keys'));
-    // ids must be unique
-    const seen = new Set<string>();
-    tracks.forEach((t, i) => {
-        if (seen.has(t.id)) t.id = `t${100 + i}`;
-        seen.add(t.id);
+    const parts: Part[] = [];
+    v.parts.slice(0, MAX_PARTS).forEach((p, i) => {
+        const part = readPart(p, i, parts, maxTick, sixteenthsPerBar(timeSignature));
+        if (part) parts.push(part);
     });
-    return { tracks, steps, bpm: int(v.bpm, 40, 240, 100), timeSignature };
+    // the pads always need a chord part to play through
+    if (!parts.some(p => p.kind === 'chords')) {
+        if (parts.length >= MAX_PARTS) parts.pop();
+        parts.unshift(newPart('chords', parts));
+    }
+    return {
+        key: oneOf(v.key, KEYS, 'C'),
+        scale: oneOf<ScaleId>(v.scale, SCALE_IDS, 'major'),
+        chords: sortClips(v.chords.map(c => readClip(c, maxTick)).filter((c): c is Clip => c !== null)),
+        parts,
+        steps,
+        bpm: int(v.bpm, 40, 240, 100),
+        timeSignature,
+    };
 }
 
 export function readSettings(v: unknown): Settings {
     const d = defaultSettings();
     if (!isObj(v)) return d;
     return {
-        key: oneOf(v.key, KEYS, d.key),
-        scale: oneOf<ScaleId>(v.scale, SCALE_IDS, d.scale),
         voiceLeading: bool(v.voiceLeading, d.voiceLeading),
         octave: int(v.octave, 2, 6, d.octave),
         inversion: int(v.inversion, 0, 3, d.inversion),
-        playMode: oneOf<PlayMode>(v.playMode, ['Chord', 'Arp'], d.playMode),
-        arpPattern: oneOf(v.arpPattern, ARP_PATTERNS, d.arpPattern),
-        arpRate: oneOf(v.arpRate, ARP_RATES, d.arpRate),
-        noteLength: num(v.noteLength, 0.05, 2, d.noteLength),
         loop: bool(v.loop, d.loop),
         theme: oneOf<'dark' | 'light'>(v.theme, ['dark', 'light'], d.theme),
     };

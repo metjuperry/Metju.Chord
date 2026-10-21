@@ -1,0 +1,214 @@
+.part-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+}
+
+.part-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+}
+
+.part-head .segmented > button {
+    min-height: 30px;
+    padding: 0 10px;
+    white-space: nowrap;
+}
+
+.part-head .segmented > button[aria-pressed='true'],
+.part-body .segmented > button[aria-pressed='true'] {
+    background: var(--track);
+    color: #000;
+}
+
+.part-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 640px;
+}
+
+.part-body .segmented {
+    flex-wrap: wrap;
+}
+
+/* ---- melody grid ------------------------------------------------------------------------------ */
+
+.melody-editor {
+    --mel-label: 40px;
+    --mel-cell: 20px;
+}
+
+.mel-blocks {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.mel-scroll {
+    overflow-x: auto;
+}
+
+.mel-block {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: calc(var(--mel-label) + var(--mel-cols) * var(--mel-cell));
+}
+
+.mel-row {
+    display: grid;
+    align-items: stretch;
+}
+
+.mel-name {
+    font-size: 10px;
+    color: var(--muted);
+    padding-right: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    white-space: nowrap;
+}
+
+.mel-name.tonic {
+    color: var(--text);
+    font-weight: 700;
+}
+
+.mel-chords {
+    display: grid;
+    height: 20px;
+}
+
+.mel-chord {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text);
+    border-left: 2px solid var(--accent);
+    padding-left: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    align-self: center;
+}
+
+.mel-cell {
+    height: 20px;
+    padding: 0;
+    border: 0;
+    border-left: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    background: var(--panel-2);
+}
+
+.mel-cell.alt {
+    background: var(--bg);
+}
+
+.mel-cell.beat {
+    border-left-color: var(--line-2);
+}
+
+.mel-cell.bar {
+    border-left: 2px solid var(--faint);
+}
+
+/* the notes of the chord under this step: safe landing spots */
+.mel-cell.tone {
+    background: color-mix(in srgb, var(--accent) 16%, var(--panel-2));
+}
+
+.mel-cell.alt.tone {
+    background: color-mix(in srgb, var(--accent) 16%, var(--bg));
+}
+
+.mel-cell.root {
+    background: color-mix(in srgb, var(--accent) 30%, var(--panel-2));
+}
+
+.mel-cell.alt.root {
+    background: color-mix(in srgb, var(--accent) 30%, var(--bg));
+}
+
+.mel-cell.on {
+    background: var(--track);
+    border-left-color: var(--track);
+}
+
+.mel-cell.on.head {
+    border-left: 2px solid #000;
+    border-radius: 4px 0 0 4px;
+}
+
+.mel-cell.on.tail {
+    border-radius: 0 4px 4px 0;
+}
+
+.mel-cell.on.head.tail {
+    border-radius: 4px;
+}
+
+.mel-cell.now {
+    box-shadow: inset 0 0 0 1px var(--text);
+}
+
+.mel-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--muted);
+}
+
+.mel-legend i {
+    display: inline-block;
+    width: 12px;
+    height: 10px;
+    margin-right: 5px;
+    vertical-align: -1px;
+    border-radius: 2px;
+}
+
+.mel-legend .lg-root {
+    background: color-mix(in srgb, var(--accent) 30%, var(--panel-2));
+}
+
+.mel-legend .lg-tone {
+    background: color-mix(in srgb, var(--accent) 16%, var(--panel-2));
+}
+
+.mel-legend .lg-other {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+}
+
+@media (max-height: 560px) {
+    .melody-editor {
+        --mel-cell: 22px;
+    }
+
+    .mel-cell {
+        height: 18px;
+    }
+
+    .mel-legend {
+        display: none;
+    }
+}
+
+@media (max-width: 560px) {
+    .melody-editor {
+        --mel-label: 30px;
+        --mel-cell: 16px;
+    }
+
+    .mel-name {
+        font-size: 9px;
+        padding-right: 3px;
+    }
+}

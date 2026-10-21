@@ -17,19 +17,24 @@ A chord instrument modelled on pocket chord machines like the HiChord: seven cho
 
 ### Sound
 
-- Twelve instruments built from Tone.js synths: E-Piano, Pad, Warm Pad, Strings, Organ, Drawbar, Brass, Lead/Bass, Chiptune, Pluck, Mallets, Bells. They are level-matched (`npm run levels`).
-- Play chords, or arpeggiate them (up, down, up-down, random; 1/4 to 1/32 with triplets).
+- Thirteen instruments built from Tone.js synths: E-Piano, Pad, Warm Pad, Strings, Organ, Drawbar, Brass, Lead, Bass, Chiptune, Pluck, Mallets, Bells. They are level-matched (`npm run levels`).
+- The Sound panel sets the instrument of the selected part. A chord part plays chords held, or arpeggiated (up, down, up-down, random; 1/4 to 1/32 with triplets); the pads play the same way.
 - Effects in signal order: distortion → chorus → delay → reverb, then a master limiter.
 
 ### Progression
 
 - A step sequencer that grows a row of 8 steps at a time (SEQ-8, SEQ-16, …), one step per beat in 4/4. A chord held across several steps is one block with a strike dot and a sustain bar, and it carries on into the next row when it crosses a row break.
-- Tracks: up to six lanes, each with its own instrument, volume, mute and solo. Pads play and record on the selected track; mute and solo only affect playback, so you can still play a muted track live.
-- Drums: **+ Drums** adds a drum track with a synthesised 808/909-style kit (kick, snare, clap, closed and open hat, two toms, rim). Program it on a 1/16 step grid of 1, 2 or 4 bars that loops under the whole song, or start from a beat that fits the time signature (Rock, Four on the floor, Half-time, Boom bap, Bossa nova, Disco in 4/4; Waltz in 3/4; a 6/8 groove; a basic beat for any meter). Drums play dry, without the chord effects. The pads keep playing the last chord track you selected.
-- Each recorded chord keeps the key and chord/arp settings it was recorded with. "Use current settings" re-applies the live ones to a chord.
+- **One chord row** holds the song's chords. The pads record into it. Key and scale belong to the song, so changing them moves every part with it (and can be undone).
+- **Parts** play the chord row, each in its own way, up to six of them, each with its own instrument, volume, mute and solo:
+  - **Chords** (Keys, Pad, ...): the chords held as block chords, or arpeggiated. The pads play through the chord part you selected last.
+  - **Bass**: follows the chord roots. Styles: Hold, Beats, 8ths, Root–5th, and Walk (steps into the next chord on the last beat). Octave C1–C3.
+  - **Melody**: notes you write on a scale-locked grid, two octaves of the key, one column per 1/16. The notes of the chord under each column are shaded (the root darker), so you can see where a note will sit before you hear it. One note at a time; new notes are 1/16 to 1/2 long.
+  - **Drums**: a synthesised 808/909-style kit (kick, snare, clap, closed and open hat, two toms, rim) on a 1/16 grid of 1, 2 or 4 bars that loops under the whole song, with starter beats that fit the time signature (Rock, Four on the floor, Half-time, Boom bap, Bossa nova, Disco in 4/4; Waltz in 3/4; a 6/8 groove; a basic beat for any meter). Drums play dry, without the effects.
+- Each part's lane shows a miniature of what it plays. Select a lane to edit that part underneath.
+- Mute and solo only affect playback, so you can still play live through a muted part.
 - Chords are stored in ticks (96 per beat) and played by a lookahead scheduler on the audio clock, so edits made while playing are heard straight away and tempo changes apply immediately.
 - Playback doesn't touch the screen or the stick; they only follow what you play live.
-- Press **R** (or Record), pick a step, and play pads to write chords; the cursor moves on.
+- Press **R** (or Record), pick a step, and play pads to write chords into the chord row; the cursor moves on.
 - Lengthen with the edge grip or **[ ]**, split with **/**, rest with **.**, copy and paste, add or remove rows, loop.
 - Time signatures 2/4, 3/4, 4/4, 5/4, 6/8, 7/8, 9/8, 12/8. One step is one beat, BPM counts beats of the signature, rows hold whole bars, and the click accents the downbeat (plus every third beat in 6/8, 9/8, 12/8).
 - Metronome click in the top bar, on the same clock as the progression.
@@ -47,8 +52,8 @@ Press the keyboard icon in the app for the full shortcut list.
 Small screens (phones, narrow windows) show one mode at a time, switched from the top bar:
 
 - **Play**: the instrument fills the screen with nothing to scroll. Turn the phone sideways for the HiChord layout, stick on the left and pads on the right, so one thumb works the stick while the other plays. The bar has play and record, and the screen shows the step you're recording to.
-- **Seq**: the step sequencer and tracks.
-- **Sound**: instrument, chord/arp, effects, inversion and voice leading, click, theme and help.
+- **Seq**: the chord row, the parts and their editors.
+- **Sound**: the selected part's instrument, chord/arp, effects, inversion and voice leading, click, theme and help.
 
 The stick is a thumb-stick: press and slide toward a direction, and let go to spring back to the centre. A quick tap locks a direction instead.
 
