@@ -74,7 +74,8 @@ export type Part = ChordPart | BassPart | MelodyPart | DrumPart;
 export type InstrumentPart = ChordPart | BassPart | MelodyPart;
 export const hasInstrument = (p: Part): p is InstrumentPart => p.kind !== 'drums';
 
-export const PART_COLORS = ['#ffcc00', '#4fd1c5', '#ff7aa8', '#7fb4ff', '#d38cff', '#c8e06e'];
+/** Part colours. Yellow is left out: it belongs to the chord row and to whatever is active. */
+export const PART_COLORS = ['#4fd1c5', '#ff7aa8', '#7fb4ff', '#d38cff', '#c8e06e', '#e8b98a'];
 export const MAX_PARTS = PART_COLORS.length;
 
 export const PART_LABELS: { [k in PartKind]: string } = { chords: 'Chords', bass: 'Bass', melody: 'Melody', drums: 'Drums' };

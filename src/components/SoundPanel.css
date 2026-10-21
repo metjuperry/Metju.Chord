@@ -163,17 +163,17 @@
 .switch {
     width: 44px;
     height: 24px;
-    border: 0;
+    border: 1px solid var(--line-2);
     border-radius: 12px;
-    background: var(--line-2);
+    background: var(--bg);
     position: relative;
     padding: 0;
 }
 
 .switch span {
     position: absolute;
-    top: 3px;
-    left: 3px;
+    top: 2px;
+    left: 2px;
     width: 18px;
     height: 18px;
     border-radius: 50%;
@@ -183,10 +183,11 @@
 
 .switch[aria-checked='true'] {
     background: var(--accent);
+    border-color: var(--accent);
 }
 
 .switch[aria-checked='true'] span {
-    left: 23px;
+    left: 22px;
     background: var(--accent-ink);
 }
 

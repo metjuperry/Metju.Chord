@@ -127,8 +127,8 @@
 }
 
 .voicing-card .segmented.dark > button[aria-pressed='true'] {
-    background: var(--text);
-    color: var(--bg);
+    background: var(--accent);
+    color: var(--accent-ink);
 }
 
 .voicing-card .segmented.dark > button:disabled {

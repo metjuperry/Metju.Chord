@@ -164,6 +164,7 @@
 
 .track-volume input {
     width: 72px;
+    accent-color: var(--track);
 }
 
 .ms-button {
@@ -321,10 +322,15 @@
 }
 
 .cell.empty {
-    border: 1px dashed var(--line-2);
-    background: transparent;
-    color: var(--muted);
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--faint);
     font-size: 18px;
+}
+
+.cell.empty:hover {
+    color: var(--muted);
+    border-color: var(--line-2);
 }
 
 .cell.selected {

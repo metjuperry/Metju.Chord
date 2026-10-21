@@ -467,8 +467,8 @@
 }
 
 .segmented.dark > button[aria-pressed='true'] {
-    background: var(--device-text);
-    color: var(--device);
+    background: var(--cap);
+    color: var(--cap-ink);
 }
 
 .segmented.dark > button:disabled {
@@ -540,11 +540,21 @@
 }
 
 .vl-toggle .switch {
-    background: var(--device-led);
+    background: var(--device-inset);
+    border-color: var(--device-line);
+}
+
+.vl-toggle .switch span {
+    background: var(--device-muted);
 }
 
 .vl-toggle .switch[aria-checked='true'] {
-    background: #ffcc00;
+    background: var(--cap);
+    border-color: var(--cap);
+}
+
+.vl-toggle .switch[aria-checked='true'] span {
+    background: var(--cap-ink);
 }
 
 [data-theme='light'] .pad {
@@ -710,4 +720,9 @@
     .device.compact .pad-number {
         font-size: 22px;
     }
+}
+
+/* yellow text doesn't read on the light device: the centred knob's name goes dark gold */
+[data-theme='light'] .stick-knob.active .knob-name {
+    color: #8a6d00;
 }
