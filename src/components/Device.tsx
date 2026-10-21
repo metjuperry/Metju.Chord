@@ -241,7 +241,7 @@ const Pad: React.FC<{ pad: PadView; onDown: (d: number) => void; onUp: (d: numbe
     };
     return (
         <button
-            className={`pad ${pad.held ? 'held' : ''}`}
+            className={`pad pad-${pad.degree + 1} ${pad.degree % 2 ? 'upper' : 'lower'} ${pad.held ? 'held' : ''}`}
             aria-label={`${pad.degree + 1}: ${pad.numeral}, ${pad.symbol}`}
             onPointerDown={down}
             onPointerUp={up}
@@ -305,7 +305,7 @@ const Device: React.FC<DeviceProps> = ({
         <div className="device-controls">
             <Stick dir={stickDir} latched={latchedDir} chords={stickChords} forPad={stickFor} showCaption={!compact} onStick={onStick} onHold={onStickHold} />
             <div className="pads">
-                {[0, 1, 2, 3, 4, 5, 6].map(d => (
+                {[0, 2, 4, 6, 1, 3, 5].map(d => (
                     <Pad key={d} pad={pads[d]} onDown={onPadDown} onUp={onPadUp} />
                 ))}
             </div>
