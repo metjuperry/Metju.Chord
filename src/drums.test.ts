@@ -4,7 +4,7 @@ import {
     patternLength, presetsFor, setBars, sixteenthsPerBar, toggleHit,
 } from './drums';
 import { TIME_SIGNATURES, TimeSignature, changeTimeSignature, newSong, readSong, ticksPerBar } from './song';
-import { newTrack, songEnd, songLoopEnd } from './progression';
+import { musicEnd, musicLoopEnd, newPart } from './parts';
 
 const FOUR: TimeSignature = { beats: 4, unit: 4 };
 
@@ -83,37 +83,27 @@ describe('drum patterns', () => {
     });
 });
 
-describe('drum tracks in the song', () => {
-    const drumTrack = (bars: 1 | 2 | 4) => ({ ...newTrack([], 'epiano', 'Drums'), id: 'd1', drums: { bars, hits: { kick: [0] } } });
+describe('drum parts in the song', () => {
+    const drumPart = (bars: 1 | 2 | 4) => newPart('drums', [], { bars, hits: { kick: [0] } });
 
-    it('a drum track sets the loop when it is longer than the chords', () => {
-        const song = newSong();
-        expect(songLoopEnd([...song.tracks, drumTrack(2)], ticksPerBar(FOUR))).toBe(2 * ticksPerBar(FOUR));
-        expect(songEnd([drumTrack(4)], ticksPerBar(FOUR))).toBe(4 * ticksPerBar(FOUR));
+    it('a drum part sets the loop when it is longer than the chords', () => {
+        expect(musicLoopEnd([], [drumPart(2)], ticksPerBar(FOUR))).toBe(2 * ticksPerBar(FOUR));
+        expect(musicEnd([], [drumPart(4)], ticksPerBar(FOUR))).toBe(4 * ticksPerBar(FOUR));
     });
 
     it('saves and reads back, dropping bad hits', () => {
-        const song = { ...newSong(), tracks: [...newSong().tracks, { ...drumTrack(1), drums: { bars: 1, hits: { kick: [0, 4, 4, 99, -1, 1.5], cowbell: [1] } } }] };
+        const song = newSong();
+        song.parts.push(newPart('drums', song.parts, { bars: 1, hits: { kick: [0, 4, 4, 99, -1, 1.5], cowbell: [1] } as never }));
         const read = readSong(JSON.parse(JSON.stringify(song)))!;
-        const drums = read.tracks.find(t => t.drums)!;
-        expect(drums.drums!.hits).toEqual({ kick: [0, 4] });
-        expect(drums.clips).toEqual([]);
-    });
-
-    it('a song with only drums gets a chord track for the pads', () => {
-        const read = readSong({ tracks: [drumTrack(1)], steps: 8, bpm: 100, timeSignature: FOUR })!;
-        expect(read.tracks.filter(t => !t.drums)).toHaveLength(1);
-        expect(new Set(read.tracks.map(t => t.id)).size).toBe(read.tracks.length);
-    });
-
-    it('older songs without drums still load', () => {
-        const read = readSong(JSON.parse(JSON.stringify(newSong())))!;
-        expect(read.tracks.every(t => !t.drums)).toBe(true);
+        const drums = read.parts.find(p => p.kind === 'drums');
+        expect(drums?.kind === 'drums' && drums.drums.hits).toEqual({ kick: [0, 4] });
     });
 
     it('changing the time signature keeps the pattern where it fits', () => {
-        const song = { ...newSong(), tracks: [...newSong().tracks, { ...drumTrack(1), drums: { bars: 1 as const, hits: { hat: [0, 4, 8, 12] } } }] };
+        const song = newSong();
+        song.parts.push(newPart('drums', song.parts, { bars: 1, hits: { hat: [0, 4, 8, 12] } }));
         const changed = changeTimeSignature(song, { beats: 3, unit: 4 });
-        expect(changed.tracks.find(t => t.drums)!.drums!.hits.hat).toEqual([0, 4, 8]);
+        const drums = changed.parts.find(p => p.kind === 'drums');
+        expect(drums?.kind === 'drums' && drums.drums.hits.hat).toEqual([0, 4, 8]);
     });
 });

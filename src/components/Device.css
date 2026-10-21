@@ -191,14 +191,13 @@
 }
 
 .stick {
-    /* ring radius: labels sit this far from the centre */
-    --stick-rx: 104px;
-    --stick-ry: 92px;
-    --well: 124px;
-    --knob: 76px;
+    /* a round pad: eight wedges around a knob, the chord names inside the wedges */
+    --stick-size: 264px;
+    --label-r: calc(var(--stick-size) * 0.35);
+    --knob: calc(var(--stick-size) * 0.36);
     position: relative;
-    width: calc(2 * var(--stick-rx) + 84px);
-    height: calc(2 * var(--stick-ry) + 52px);
+    width: var(--stick-size);
+    height: var(--stick-size);
     touch-action: none;
     user-select: none;
     -webkit-user-select: none;
@@ -209,25 +208,37 @@
     cursor: grabbing;
 }
 
-.stick-well {
+.stick-ring {
     position: absolute;
-    left: calc(50% - var(--well) / 2);
-    top: calc(50% - var(--well) / 2);
-    width: var(--well);
-    height: var(--well);
-    border-radius: 50%;
-    background: radial-gradient(circle at 50% 40%, #121215, #0a0a0c);
-    box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.6);
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.stick-ring .seg {
+    fill: var(--device-inset);
+    stroke: var(--device-line);
+    stroke-width: 0.4;
+    transition: fill 0.06s;
+}
+
+/* a locked direction keeps a yellow edge */
+.stick-ring .seg.latched {
+    stroke: var(--cap);
+    stroke-width: 1.4;
+}
+
+.stick-ring .seg.active {
+    fill: var(--cap);
+    stroke: var(--cap);
 }
 
 .stick-dir {
     position: absolute;
     transform: translate(-50%, -50%);
-    min-width: 68px;
-    height: 44px;
-    padding: 2px 8px;
-    border: 1px solid transparent;
-    border-radius: 8px;
+    padding: 0;
+    border: 0;
     background: transparent;
     color: var(--device-text);
     display: flex;
@@ -235,57 +246,37 @@
     align-items: center;
     justify-content: center;
     gap: 1px;
+    pointer-events: none;
 }
 
-.stick-dir:hover {
-    border-color: var(--device-line);
+.stick-dir:focus-visible {
+    outline: 2px solid var(--cap);
+    outline-offset: 4px;
+    border-radius: 4px;
 }
 
 .dir-name {
-    display: flex;
-    align-items: center;
-    gap: 5px;
     font-family: var(--font-display);
     font-weight: 700;
     font-size: 14px;
+    line-height: 1.1;
     white-space: nowrap;
 }
 
 .dir-rule {
-    font-size: 9px;
+    font-size: 8px;
     color: var(--device-muted);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     white-space: nowrap;
 }
 
-.stick-dir .led {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--device-line);
-    flex: 0 0 auto;
-}
-
-.stick-dir[aria-pressed='true'] {
-    border-color: #6b5a10;
-}
-
-.stick-dir[aria-pressed='true'] .led {
-    background: #ffe680;
-}
-
 .stick-dir.active {
-    background: #ffcc00;
-    color: #000;
+    color: var(--cap-ink);
 }
 
 .stick-dir.active .dir-rule {
-    color: #4a3d00;
-}
-
-.stick-dir.active .led {
-    background: #000;
+    color: var(--cap-sub);
 }
 
 .stick-knob {
@@ -295,10 +286,11 @@
     width: var(--knob);
     height: var(--knob);
     border-radius: 50%;
-    border: 1px solid #4a4a52;
-    background: radial-gradient(circle at 40% 35%, #5a5a63, #2a2a30 70%);
-    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5);
-    color: #f2f0e6;
+    /* flat like the wedges, with the same lip as the pads: it reads as a cap you push */
+    border: 1px solid var(--device-line);
+    background: var(--device-inset);
+    box-shadow: 0 3px 0 var(--device-line);
+    color: var(--device-text);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -308,19 +300,26 @@
 }
 
 .stick-knob.active {
-    color: #ffcc00;
+    border-color: var(--cap);
+    box-shadow: 0 3px 0 #b38f00;
+}
+
+.stick-knob.active .knob-name {
+    color: var(--cap);
 }
 
 .knob-name {
     font-family: var(--font-display);
     font-weight: 700;
-    font-size: 15px;
+    font-size: 16px;
+    line-height: 1.1;
 }
 
 .knob-rule {
-    font-size: 9px;
-    color: #b8b5a8;
+    font-size: 8px;
+    color: var(--device-muted);
     text-transform: uppercase;
+    letter-spacing: 0.06em;
 }
 
 .stick-caption {
@@ -335,23 +334,52 @@
 
 .pads {
     flex: 1 1 340px;
+    max-width: 480px;
+    height: 150px;
+    margin: 0 auto;
     min-width: 0;
     display: grid;
-    grid-template-columns: repeat(8, minmax(0, 1fr));
-    grid-template-areas:
-        '. p2 p2 p4 p4 p6 p6 .'
-        'p1 p1 p3 p3 p5 p5 p7 p7';
-    gap: 10px;
+    /*
+     * HiChord layout, set like a piano: 1 3 5 7 are the long keys along the bottom, and 2 4 6
+     * sit over the gaps between them like black keys. 24 columns: a long key is 6 wide, a
+     * short one 4, centred on the boundary between two long keys.
+     */
+    grid-template-columns: repeat(24, minmax(0, 1fr));
+    grid-template-rows: 56fr 44fr;
+    column-gap: 5px;
+}
+
+.pad-1 { grid-column: 1 / 7; }
+.pad-3 { grid-column: 7 / 13; }
+.pad-5 { grid-column: 13 / 19; }
+.pad-7 { grid-column: 19 / 25; }
+.pad-2 { grid-column: 5 / 9; }
+.pad-4 { grid-column: 11 / 15; }
+.pad-6 { grid-column: 17 / 21; }
+
+.pad.lower {
+    grid-row: 1 / 3;
+    /* the label sits low, below the short keys */
+    justify-content: flex-end;
+    gap: 2px;
+}
+
+.pad.upper {
+    grid-row: 1 / 2;
+    z-index: 1;
+    /* a ring in the device colour separates a short key from the long keys behind it */
+    outline: 4px solid var(--device);
 }
 
 .pad {
-    height: 96px;
+    min-width: 0;
+    height: auto;
     border: 0;
-    border-radius: 10px;
+    border-radius: 8px;
     background: var(--cap);
     color: var(--cap-ink);
     box-shadow: 0 4px 0 #b38f00, 0 6px 12px rgba(0, 0, 0, 0.35);
-    padding: 10px 12px;
+    padding: 8px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -372,7 +400,7 @@
 .pad-number {
     font-family: var(--font-display);
     font-weight: 700;
-    font-size: 30px;
+    font-size: 22px;
     line-height: 1;
 }
 
@@ -381,11 +409,12 @@
     width: 100%;
     justify-content: space-between;
     align-items: baseline;
-    gap: 6px;
+    gap: 4px;
 }
 
 .pad-numeral {
-    font-size: 11px;
+    font-size: 10px;
+    line-height: 1.1;
     color: var(--cap-sub);
 }
 
@@ -394,9 +423,10 @@
 }
 
 .pad-symbol {
+    max-width: 100%;
     font-family: var(--font-display);
     font-weight: 700;
-    font-size: 15px;
+    font-size: 14px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -437,8 +467,8 @@
 }
 
 .segmented.dark > button[aria-pressed='true'] {
-    background: var(--device-text);
-    color: var(--device);
+    background: var(--cap);
+    color: var(--cap-ink);
 }
 
 .segmented.dark > button:disabled {
@@ -475,17 +505,21 @@
         font-size: 16px;
     }
 
+    .pads {
+        height: 136px;
+        column-gap: 4px;
+    }
+
     .pad {
-        height: 84px;
-        padding: 8px;
+        padding: 6px;
     }
 
     .pad-number {
-        font-size: 24px;
+        font-size: 18px;
     }
 
     .pad-symbol {
-        font-size: 13px;
+        font-size: 12px;
     }
 
     .pad-numeral {
@@ -506,11 +540,21 @@
 }
 
 .vl-toggle .switch {
-    background: var(--device-led);
+    background: var(--device-inset);
+    border-color: var(--device-line);
+}
+
+.vl-toggle .switch span {
+    background: var(--device-muted);
 }
 
 .vl-toggle .switch[aria-checked='true'] {
-    background: #ffcc00;
+    background: var(--cap);
+    border-color: var(--cap);
+}
+
+.vl-toggle .switch[aria-checked='true'] span {
+    background: var(--cap-ink);
 }
 
 [data-theme='light'] .pad {
@@ -654,25 +698,31 @@
     }
 
     .device.compact .stick {
-        --stick-rx: 86px;
-        --stick-ry: 64px;
-        --well: 96px;
-        --knob: 60px;
+        --stick-size: min(232px, calc(100dvh - 140px));
+    }
+
+    .device.compact .dir-name {
+        font-size: 12px;
     }
 
     .device.compact .pads {
         flex: 1 1 auto;
-        grid-template-rows: repeat(2, minmax(0, 1fr));
-        gap: 8px;
+        max-width: none;
+        height: auto;
+        margin: 0;
     }
 
     .device.compact .pad {
-        height: auto;
-        min-height: 64px;
-        padding: 8px 10px;
+        min-height: 0;
+        padding: 7px 8px;
     }
 
     .device.compact .pad-number {
-        font-size: 26px;
+        font-size: 22px;
     }
+}
+
+/* yellow text doesn't read on the light device: the centred knob's name goes dark gold */
+[data-theme='light'] .stick-knob.active .knob-name {
+    color: #8a6d00;
 }

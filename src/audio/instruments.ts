@@ -2,7 +2,7 @@ import * as Tone from 'tone';
 
 export type InstrumentId =
     | 'pad' | 'epiano' | 'organ' | 'pluck' | 'lead'
-    | 'strings' | 'warmpad' | 'brass' | 'drawbar' | 'bells' | 'mallets' | 'chip';
+    | 'strings' | 'warmpad' | 'brass' | 'drawbar' | 'bells' | 'mallets' | 'chip' | 'bass';
 
 /** `sustains`: the note holds while the key is down (used for level matching; plucked/struck sounds decay). */
 export const INSTRUMENTS: { id: InstrumentId; label: string; sustains: boolean }[] = [
@@ -13,7 +13,8 @@ export const INSTRUMENTS: { id: InstrumentId; label: string; sustains: boolean }
     { id: 'organ', label: 'Organ', sustains: true },
     { id: 'drawbar', label: 'Drawbar', sustains: true },
     { id: 'brass', label: 'Brass', sustains: true },
-    { id: 'lead', label: 'Lead/Bass', sustains: true },
+    { id: 'lead', label: 'Lead', sustains: true },
+    { id: 'bass', label: 'Bass', sustains: true },
     { id: 'chip', label: 'Chiptune', sustains: true },
     { id: 'pluck', label: 'Pluck', sustains: false },
     { id: 'mallets', label: 'Mallets', sustains: false },
@@ -23,7 +24,7 @@ export const INSTRUMENTS: { id: InstrumentId; label: string; sustains: boolean }
 /** Output level per instrument in dB, matched with `npm run levels`. */
 const VOLUMES: { [id in InstrumentId]: number } = {
     pad: -6, epiano: 3.5, organ: 3.5, pluck: -7, lead: -14,
-    strings: -8, warmpad: 11, brass: -10, drawbar: -6, bells: 0, mallets: 0, chip: -12,
+    strings: -8, warmpad: 11, brass: -10, drawbar: -6, bells: 0, mallets: 0, chip: -12, bass: -4,
 };
 
 export interface Instrument {
@@ -174,6 +175,19 @@ export function createInstrument(id: InstrumentId): Instrument {
             const filter = new Tone.Filter(6000, 'lowpass');
             synth.chain(dcBlock, filter);
             return { synth, output: filter, nodes: [synth, dcBlock, filter] };
+        }
+        case 'bass': {
+            // a round saw bass: the filter opens on each note and settles low, so lines stay punchy but warm
+            const synth = new Tone.PolySynth(Tone.MonoSynth, {
+                oscillator: { type: 'fatsawtooth', count: 2, spread: 12 },
+                envelope: { attack: 0.004, decay: 0.25, sustain: 0.8, release: 0.12 },
+                filter: { Q: 1, rolloff: -24 },
+                filterEnvelope: { attack: 0.004, decay: 0.2, sustain: 0.35, release: 0.2, baseFrequency: 260, octaves: 2.6 },
+            } as unknown as Partial<Tone.MonoSynthOptions>);
+            synth.volume.value = VOLUMES.bass;
+            const dcBlock = new Tone.Filter(30, 'highpass');
+            synth.connect(dcBlock);
+            return { synth, output: dcBlock, nodes: [synth, dcBlock] };
         }
         case 'lead':
         default: {

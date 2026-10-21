@@ -9,57 +9,61 @@ import SoundPanel from './components/SoundPanel';
 import Progression from './components/Progression';
 import HelpDialog from './components/HelpDialog';
 import DrumEditor from './components/DrumEditor';
+import MelodyEditor from './components/MelodyEditor';
+import { BassEditor, ChordPartEditor } from './components/PartEditors';
 import {
-    ArpPattern, ChordParams, MusicalKey, ResolvedChord, StickDir,
+    ChordParams, ResolvedChord, StickDir,
     STICK_DIRS, ScaleId, buildChordMidi, keyPitchClass, resolveChord, romanNumeral, scaleLabel, scalePitchClasses,
     stickChordType, triadQuality, voiceLead,
 } from './theory';
-import { ArpRate, getEngine } from './audio/engine';
+import { getEngine } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
-import { ARP_RATES } from './components/SoundPanel';
 import { useHistory } from './useHistory';
 import SongMenu from './components/SongMenu';
 import {
     STORAGE_KEY, SAVE_VERSION, SavedState, Song, TimeSignature, changeTimeSignature, decodeShare, defaultSettings, encodeShare,
     isCompound, newSong, readSaved, stepsPerRow, ticksPerBar, ticksPerStep, transportBpm,
 } from './song';
+import { Clip, clipAt, fitTo, isChordClip, place, remove, setLength, split } from './progression';
 import {
-    ChordClip, Clip, ClipSound, PlayMode, Track,
-    audibleTracks, clipAt, fitTo, isChordClip, newTrack, place, remove, setLength, songEnd, songLoopEnd, split,
-} from './progression';
+    BassPart, ChordPart, Harmony, InstrumentPart, MAX_PARTS, Part, PartKind,
+    audibleParts, fitNotes, hasInstrument, melodyMidi, musicEnd, musicLoopEnd, newPart, noteAt, partNotes, placeNote, removeNote, resolveClip,
+} from './parts';
 import { SeqEvent, SeqOptions, SequencerPlayer, ticksToSeconds } from './audio/sequencer';
 import {
     DrumPattern, DrumVoice, PatternBars, TICKS_PER_SIXTEENTH, emptyPattern, expandPattern, hasHit, presetsFor, setBars,
     sixteenthsPerBar, sixteenthsPerStep, toggleHit,
 } from './drums';
+import { CHORD_LANE, MiniNote, PartPatch } from './components/Progression';
+import type { ChordStyle } from './components/SoundPanel';
 
 const DEGREE_KEYS: { [code: string]: number } = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5, Digit7: 6 };
 const STICK_KEYS: { [code: string]: StickDir } = {
     KeyQ: 'UL', KeyW: 'U', KeyE: 'UR', KeyA: 'L', KeyS: 'C', KeyD: 'R', KeyZ: 'DL', KeyX: 'D', KeyC: 'DR',
 };
 const INVERSION_LABELS = ['ROOT POS', '1ST INV', '2ND INV', '3RD INV'];
-const ARP_PATTERN_LABELS: { [p in ArpPattern]: string } = { up: 'up', down: 'down', upDown: 'up-down', random: 'random' };
 const MAX_INVERSION = 3;
-/** Instruments offered to new tracks, in order. */
-const NEW_TRACK_INSTRUMENTS: InstrumentId[] = ['lead', 'strings', 'bells', 'brass', 'organ', 'pluck', 'epiano', 'warmpad'];
 
-/** What the sequencer schedules: a chord or a drum hit, and the track it plays on. */
+/** What the sequencer schedules: some notes or a drum hit, and the part that plays them. */
 type Scheduled =
-    | { clip: ChordClip; track: string; drum?: undefined }
-    | { drum: DrumVoice; track: string };
+    | { midi: number[]; gate?: number; legato: number; part: string; drum?: undefined }
+    | { drum: DrumVoice; part: string };
 
-/** Keep the engine's strips in step with the tracks: an instrument per chord track, a kit per drum track. */
-function syncTracks(engine: ReturnType<typeof getEngine>, tracks: Track[]) {
-    tracks.forEach(t => (t.drums
-        ? engine.setDrumTrack(t.id, { volume: t.volume })
-        : engine.setTrack(t.id, { instrument: t.instrument, volume: t.volume })));
+/** How much of each note's length it actually sounds, so repeated notes are struck rather than smeared. */
+const LEGATO: { [k in Exclude<PartKind, 'drums'>]: number } = { chords: 0.98, bass: 0.85, melody: 0.95 };
+
+/** Keep the engine's strips in step with the parts: an instrument per instrument part, a kit per drum part. */
+function syncParts(engine: ReturnType<typeof getEngine>, parts: Part[]) {
+    parts.forEach(p => (hasInstrument(p)
+        ? engine.setTrack(p.id, { instrument: p.instrument, volume: p.volume })
+        : engine.setDrumTrack(p.id, { volume: p.volume })));
 }
 
-interface PlayState { tracks: Track[]; barTicks: number; stepTicks: number; total: number; loop: boolean }
+interface PlayState { chords: Clip[]; parts: Part[]; barTicks: number; stepTicks: number; total: number; loop: boolean }
 /** Where looping playback wraps: the end of the music, rounded up to a bar, but never past the sequencer's length. */
-const loopLength = (s: PlayState) => Math.min(songLoopEnd(s.tracks, s.barTicks), s.total * s.stepTicks);
+const loopLength = (s: PlayState) => Math.min(musicLoopEnd(s.chords, s.parts, s.barTicks), s.total * s.stepTicks);
 /** How far playback goes before it wraps or stops. */
-const playLength = (s: PlayState) => (s.loop ? loopLength(s) : songEnd(s.tracks, s.barTicks));
+const playLength = (s: PlayState) => (s.loop ? loopLength(s) : musicEnd(s.chords, s.parts, s.barTicks));
 
 /** The song and settings saved in this browser, if any. */
 function loadSaved(): SavedState | null {
@@ -91,14 +95,8 @@ const App: React.FC = () => {
     const [saved] = useState(loadSaved);
     const initial = saved?.settings ?? defaultSettings();
     const [theme, setTheme] = useState<'dark' | 'light'>(initial.theme);
-    const [selectedKey, setSelectedKey] = useState<MusicalKey>(initial.key);
-    const [scale, setScale] = useState<ScaleId>(initial.scale);
     const [voiceLeading, setVoiceLeading] = useState(initial.voiceLeading);
     const [octave, setOctave] = useState(initial.octave);
-    const [playMode, setPlayMode] = useState<PlayMode>(initial.playMode);
-    const [arpPattern, setArpPattern] = useState<ArpPattern>(initial.arpPattern);
-    const [arpRate, setArpRate] = useState<ArpRate>(initial.arpRate);
-    const [noteLength, setNoteLength] = useState(initial.noteLength);
     const [inversion, setInversion] = useState(initial.inversion);
     const [notice, setNotice] = useState<string | null>(null);
     const [helpOpen, setHelpOpen] = useState(false);
@@ -124,36 +122,41 @@ const App: React.FC = () => {
     const history = useHistory<Song>(() => saved?.song ?? newSong());
     const song = history.state;
     const editSong = history.commit;
-    const { tracks, steps: total, bpm, timeSignature: ts } = song;
+    const { chords, parts, steps: total, bpm, timeSignature: ts, key: selectedKey, scale } = song;
+    const harmony: Harmony = useMemo(() => ({ chords, key: selectedKey, scale }), [chords, selectedKey, scale]);
     // One step is one beat of the time signature; rows hold whole bars
     const T = ticksPerStep(ts);
     const rowSteps = stepsPerRow(ts);
     const barTicks = ticksPerBar(ts);
-    const setTracks = (update: (ts: Track[]) => Track[], mergeKey?: string) =>
-        editSong(sg => ({ ...sg, tracks: update(sg.tracks) }), mergeKey);
+    const setChords = (next: Clip[]) => editSong(sg => ({ ...sg, chords: next }));
+    const setParts = (update: (ps: Part[]) => Part[], mergeKey?: string) =>
+        editSong(sg => ({ ...sg, parts: update(sg.parts) }), mergeKey);
     const setBpm = (b: number) => editSong(sg => ({ ...sg, bpm: b }), 'bpm');
-    const [selectedTrack, setSelectedTrack] = useState('');
-    const [chordTrack, setChordTrack] = useState('');
-    /** The track selected in the sequencer: a chord track or a drum track. */
-    const selTrack = tracks.find(t => t.id === selectedTrack) ?? tracks[0];
-    // The chord track the pads play through and recordings land on: the selected one, or with a
-    // drum track selected, the chord track that was selected before it
-    const current = (!selTrack.drums ? selTrack : undefined)
-        ?? tracks.find(t => t.id === chordTrack && !t.drums)
-        ?? tracks.find(t => !t.drums)
-        ?? tracks[0];
-    const drumTrack = selTrack.drums ? selTrack : null;
-    const pickTrack = (id: string) => {
-        setSelectedTrack(id);
-        if (!tracks.find(t => t.id === id)?.drums) setChordTrack(id);
+    // Key and scale belong to the song: changing them moves every part with it (and can be undone)
+    const setSelectedKey = (k: Song['key']) => editSong(sg => ({ ...sg, key: k }));
+    const setScale = (sc: ScaleId) => editSong(sg => ({ ...sg, scale: sc }));
+
+    /** The lane being edited: the chord row, or a part. */
+    const [selectedLane, setSelectedLane] = useState(CHORD_LANE);
+    const [padPartId, setPadPartId] = useState('');
+    const selPart = parts.find(p => p.id === selectedLane);
+    const chordParts = parts.filter((p): p is ChordPart => p.kind === 'chords');
+    // The chord part the pads play through: the selected one, else the one picked last, else the first
+    const padPart: ChordPart = (selPart?.kind === 'chords' ? selPart : undefined)
+        ?? chordParts.find(p => p.id === padPartId)
+        ?? chordParts[0];
+    // The Sound panel edits the selected part's instrument, or the pads' part while the chords or drums are selected
+    const soundPart: InstrumentPart = selPart && hasInstrument(selPart) ? selPart : padPart;
+    const pickLane = (lane: string) => {
+        setSelectedLane(lane);
+        if (parts.find(p => p.id === lane)?.kind === 'chords') setPadPartId(lane);
     };
-    const clips = current.clips;
-    const instrument = current.instrument;
-    const updateTrack = (id: string, patch: Partial<Track>) =>
+    const updatePart = (id: string, patch: PartPatch | Partial<Part>) =>
         // dragging a volume slider is one undo step, not one per pixel
-        setTracks(ts => ts.map(t => (t.id === id ? { ...t, ...patch } : t)), 'volume' in patch ? `vol:${id}` : undefined);
-    const setClips = (next: Clip[]) => updateTrack(current.id, { clips: next });
-    const setInstrument = (id: InstrumentId) => updateTrack(current.id, { instrument: id });
+        setParts(ps => ps.map(p => (p.id === id ? { ...p, ...patch } as Part : p)), 'volume' in patch ? `vol:${id}` : undefined);
+    const setInstrument = (id: InstrumentId) => updatePart(soundPart.id, { instrument: id });
+    const setChordStyle = (id: string, patch: Partial<ChordStyle>) => updatePart(id, patch as Partial<Part>);
+    const clips = chords;
     const [selected, setSelected] = useState(0);
     const [playhead, setPlayhead] = useState(0);
     /** The playhead in 1/16 steps from the top of the song, for the drum grid. */
@@ -169,8 +172,9 @@ const App: React.FC = () => {
     const [metBeat, setMetBeat] = useState<number | null>(null);
 
     // Latest state for Transport callbacks and the global key handler
-    const live = useRef({ ts, stepTicks: T, barTicks, selectedKey, scale, voiceLeading, octave, inversion, stickDir, instrument, playMode, arpPattern, arpRate, noteLength, clips, tracks, total, selected, loop, recording });
-    live.current = { ts, stepTicks: T, barTicks, selectedKey, scale, voiceLeading, octave, inversion, stickDir, instrument, playMode, arpPattern, arpRate, noteLength, clips, tracks, total, selected, loop, recording };
+    const liveState = { ts, stepTicks: T, barTicks, selectedKey, scale, voiceLeading, octave, inversion, stickDir, padPart, chords, parts, total, selected, loop, recording };
+    const live = useRef(liveState);
+    live.current = liveState;
 
     useEffect(() => {
         document.documentElement.setAttribute('data-theme', theme);
@@ -183,8 +187,8 @@ const App: React.FC = () => {
         await Tone.start();
         const engine = getEngine(); // built on first use, after the user gesture
         engine.setBpm(transportBpm(bpm, ts));
-        syncTracks(engine, tracks);
-        engine.selectTrack(current.id);
+        syncParts(engine, parts);
+        engine.selectTrack(padPart.id);
         setAudioReady(true);
     };
 
@@ -193,21 +197,21 @@ const App: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [bpm, ts.unit, audioReady]);
 
-    // Keep the engine's per-track strips (instrument, volume) in step with the tracks
-    const engineTracks = useRef(new Set<string>());
+    // Keep the engine's per-part strips (instrument, volume) in step with the parts
+    const engineParts = useRef(new Set<string>());
     useEffect(() => {
         if (!audioReady) return;
         const engine = getEngine();
-        syncTracks(engine, tracks);
-        engineTracks.current.forEach(id => {
-            if (!tracks.some(t => t.id === id)) engine.removeTrack(id);
+        syncParts(engine, parts);
+        engineParts.current.forEach(id => {
+            if (!parts.some(p => p.id === id)) engine.removeTrack(id);
         });
-        engineTracks.current = new Set(tracks.map(t => t.id));
-    }, [tracks, audioReady]);
+        engineParts.current = new Set(parts.map(p => p.id));
+    }, [parts, audioReady]);
 
     useEffect(() => {
-        if (audioReady) getEngine().selectTrack(current.id);
-    }, [current.id, audioReady]);
+        if (audioReady) getEngine().selectTrack(padPart.id);
+    }, [padPart.id, audioReady]);
 
     // ---- chords -------------------------------------------------------------------
 
@@ -222,15 +226,6 @@ const App: React.FC = () => {
     /** The last chord played live, which voice leading moves from. */
     const lastVoicing = useRef<number[] | null>(null);
 
-    /** The sound settings a chord recorded right now would be baked with. */
-    const currentSound = (s = live.current): ClipSound => ({
-        key: s.selectedKey,
-        playMode: s.playMode,
-        arpPattern: s.arpPattern,
-        arpRate: s.arpRate,
-        noteLength: s.noteLength,
-    });
-
     /** Start a chord sounding; returns how to stop it. */
     const sound = (degree: number) => {
         const s = live.current;
@@ -244,9 +239,10 @@ const App: React.FC = () => {
         const chord = resolveChord(s.selectedKey, params);
         lastVoicing.current = chord.midi;
         const engine = getEngine();
+        const style = s.padPart;
         let stop: () => void;
-        if (s.playMode === 'Arp') {
-            stop = engine.startArp(chord.midi, { pattern: s.arpPattern, rate: s.arpRate, noteLength: s.noteLength });
+        if (style.playMode === 'Arp') {
+            stop = engine.startArp(chord.midi, { pattern: style.arpPattern, rate: style.arpRate, noteLength: style.noteLength });
         } else {
             stop = engine.attack(chord.midi);
         }
@@ -264,7 +260,8 @@ const App: React.FC = () => {
 
         const s = live.current;
         if (s.recording) {
-            setClips(place(s.clips, { start: s.selected * s.stepTicks, len: s.stepTicks, chord: { ...params, ...currentSound(s) } }));
+            const { scale: _scale, ...chord } = params;
+            setChords(place(s.chords, { start: s.selected * s.stepTicks, len: s.stepTicks, chord }));
             setSelected(Math.min(s.selected + 1, s.total - 1));
             setPlayhead(Math.min(s.selected + 1, s.total - 1));
         }
@@ -291,38 +288,37 @@ const App: React.FC = () => {
             holds.current.set(id, { degree: hold.degree, stop: sound(hold.degree).stop });
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [stickDir, inversion, octave, selectedKey, scale, voiceLeading, instrument, playMode, arpPattern, arpRate]);
+    }, [stickDir, inversion, octave, selectedKey, scale, voiceLeading, padPart.instrument, padPart.playMode, padPart.arpPattern, padPart.arpRate]);
 
     // ---- progression playback (Transport) --------------------------------------------
 
-    /** The progression as timed events, and how it loops (the grid is in steps, the events in ticks). */
-    const schedule = (s = live.current): { events: SeqEvent<Scheduled>[]; opts: SeqOptions } => ({
-        // Mute and solo only affect playback, so a muted track can still be played live from the pads
-        events: audibleTracks(s.tracks).flatMap((t): SeqEvent<Scheduled>[] => (t.drums
-            // a drum pattern repeats from the top until the loop (or the song) ends
-            ? expandPattern(t.drums, s.ts, playLength(s)).map(h => ({ tick: h.tick, duration: TICKS_PER_SIXTEENTH, data: { drum: h.voice, track: t.id } }))
-            : t.clips.filter(isChordClip).map(clip => ({ tick: clip.start, duration: clip.len, data: { clip, track: t.id } })))),
-        opts: { loop: s.loop, loopEnd: loopLength(s), end: songEnd(s.tracks, s.barTicks) },
-    });
+    /** The song as timed events, and how it loops (the grid is in steps, the events in ticks). */
+    const schedule = (s = live.current): { events: SeqEvent<Scheduled>[]; opts: SeqOptions } => {
+        const h: Harmony = { chords: s.chords, key: s.selectedKey, scale: s.scale };
+        return {
+            // Mute and solo only affect playback, so a muted part can still be played live from the pads
+            events: audibleParts(s.parts).flatMap((p): SeqEvent<Scheduled>[] => (p.kind === 'drums'
+                // a drum pattern repeats from the top until the loop (or the song) ends
+                ? expandPattern(p.drums, s.ts, playLength(s)).map(hit => ({ tick: hit.tick, duration: TICKS_PER_SIXTEENTH, data: { drum: hit.voice, part: p.id } }))
+                : partNotes(p, h, s.stepTicks).map(n => ({
+                    tick: n.start, duration: n.len, data: { midi: n.midi, gate: n.gate, legato: LEGATO[p.kind], part: p.id },
+                })))),
+            opts: { loop: s.loop, loopEnd: loopLength(s), end: musicEnd(s.chords, s.parts, s.barTicks) },
+        };
+    };
 
-    // Each chord plays on its track's instrument, with the key and chord/arp settings it was recorded with.
-    // The screen, stick and keyboard strip belong to live playing only, so nothing here touches them.
+    // Every part plays the chord row its own way; the screen, stick and keyboard strip belong to live
+    // playing only, so nothing here touches them.
     const playEvent = (event: SeqEvent<Scheduled>, time: number) => {
         const data = event.data;
+        const engine = getEngine();
         if (data.drum) {
-            getEngine().playDrum(data.track, data.drum, time);
+            engine.playDrum(data.part, data.drum, time);
             return;
         }
-        const { clip, track } = data;
-        const c = clip.chord;
-        const chord = resolveChord(c.key, c);
         const seconds = ticksToSeconds(event.duration);
-        const engine = getEngine();
-        if (c.playMode === 'Arp') {
-            engine.scheduleArp(chord.midi, { pattern: c.arpPattern, rate: c.arpRate, noteLength: c.noteLength }, time, seconds, track);
-        } else {
-            engine.playChord(chord.midi, { duration: seconds * 0.98, time, track });
-        }
+        const duration = data.gate !== undefined ? Math.min(data.gate, seconds) : seconds * data.legato;
+        engine.playChord(data.midi, { duration, time, track: data.part });
     };
     const playEventRef = useRef(playEvent);
     playEventRef.current = playEvent;
@@ -418,59 +414,57 @@ const App: React.FC = () => {
     const totalTicks = total * T;
     const selTick = selected * T;
     const selClip = clipAt(clips, selTick);
-    const select = (step: number, track?: string) => {
+    const select = (step: number, lane?: string) => {
         setSelected(step);
-        if (track) pickTrack(track);
+        if (lane) pickLane(lane);
         if (!playing) setPlayhead(step);
     };
-    const trackActions = {
-        add: () => {
-            const used = new Set(tracks.map(t => t.instrument));
-            const inst = NEW_TRACK_INSTRUMENTS.find(i => !used.has(i)) ?? 'epiano';
-            const track = newTrack(tracks, inst);
-            setTracks(ts => [...ts, track]);
-            pickTrack(track.id);
+    const onChordLane = selectedLane === CHORD_LANE || !selPart;
+    const partActions = {
+        add: (kind: PartKind) => {
+            if (parts.length >= MAX_PARTS) return;
+            // a drum part starts with the first starter beat for the time signature, so Play just works
+            const part = newPart(kind, parts, kind === 'drums' ? presetsFor(ts)[0].make(ts) : undefined);
+            setParts(ps => [...ps, part]);
+            pickLane(part.id);
         },
-        /** A drum track that starts with the first starter beat for the time signature, so Play just works. */
-        addDrums: () => {
-            const track: Track = { ...newTrack(tracks, 'epiano', tracks.some(t => t.drums) ? 'Drums 2' : 'Drums'), drums: presetsFor(ts)[0].make(ts) };
-            setTracks(all => [...all, track]);
-            setSelectedTrack(track.id);
+        /** The pads need a chord part to play through, so the last one stays. */
+        canRemove: (id: string) => {
+            const part = parts.find(p => p.id === id);
+            return !!part && (part.kind !== 'chords' || chordParts.length > 1);
         },
         remove: (id: string) => {
-            const target = tracks.find(t => t.id === id);
-            // the pads need a chord track to play through, so the last one stays
-            if (!target || (!target.drums && tracks.filter(t => !t.drums).length < 2)) return;
-            const rest = tracks.filter(t => t.id !== id);
-            setTracks(ts => ts.filter(t => t.id !== id));
-            if (id === selTrack.id) pickTrack(current.id !== id ? current.id : rest.find(t => !t.drums)!.id);
+            if (!partActions.canRemove(id)) return;
+            setParts(ps => ps.filter(p => p.id !== id));
+            if (id === selectedLane) setSelectedLane(CHORD_LANE);
         },
     };
 
-    // ---- drum pattern editing (the selected drum track) ---------------------------------------
+    // ---- drum pattern editing (the selected drum part) ---------------------------------------
+    const drumPart = selPart?.kind === 'drums' ? selPart : null;
     const setPattern = (update: (p: DrumPattern) => DrumPattern, mergeKey?: string) => {
-        if (!drumTrack) return;
-        const id = drumTrack.id;
+        if (!drumPart) return;
+        const id = drumPart.id;
         editSong(sg => {
-            const tracks = sg.tracks.map(t => (t.id === id && t.drums ? { ...t, drums: update(t.drums) } : t));
+            const parts = sg.parts.map(p => (p.id === id && p.kind === 'drums' ? { ...p, drums: update(p.drums) } : p));
             // a pattern longer than the sequencer grows it by whole rows, so all of it plays
-            const bars = Math.max(...tracks.map(t => t.drums?.bars ?? 0));
+            const bars = Math.max(0, ...parts.map(p => (p.kind === 'drums' ? p.drums.bars : 0)));
             const row = stepsPerRow(sg.timeSignature);
             const steps = Math.max(sg.steps, Math.ceil((bars * sg.timeSignature.beats) / row) * row);
-            return { ...sg, tracks, steps };
+            return { ...sg, parts, steps };
         }, mergeKey);
     };
-    /** Hear a drum on the selected drum track (when tapping it on in the grid, or its name). */
+    /** Hear a drum on the selected drum part (when tapping it on in the grid, or its name). */
     const auditionDrum = async (voice: DrumVoice) => {
-        if (!drumTrack) return;
+        if (!drumPart) return;
         await startAudio();
-        getEngine().playDrum(drumTrack.id, voice);
+        getEngine().playDrum(drumPart.id, voice);
     };
     const drumActions = {
         toggle: (voice: DrumVoice, i: number) => {
-            if (!drumTrack?.drums) return;
+            if (!drumPart) return;
             // while stopped, hear what you just turned on
-            if (!playing && !hasHit(drumTrack.drums, voice, i)) auditionDrum(voice);
+            if (!playing && !hasHit(drumPart.drums, voice, i)) auditionDrum(voice);
             setPattern(p => toggleHit(p, voice, i));
         },
         bars: (bars: PatternBars) => setPattern(p => setBars(p, bars, ts)),
@@ -480,26 +474,50 @@ const App: React.FC = () => {
         },
         clear: () => setPattern(p => emptyPattern(p.bars)),
     };
+
+    // ---- melody editing (the selected melody part) --------------------------------------------
+    const melodyPart = selPart?.kind === 'melody' ? selPart : null;
+    const melodyActions = {
+        tap: (step: number, sixteenth: number, len: number) => {
+            if (!melodyPart) return;
+            const tick = sixteenth * TICKS_PER_SIXTEENTH;
+            const hit = noteAt(melodyPart.notes, tick, step);
+            if (hit) {
+                updatePart(melodyPart.id, { notes: removeNote(melodyPart.notes, hit) });
+                return;
+            }
+            const note = { start: tick, len: Math.min(len * TICKS_PER_SIXTEENTH, totalTicks - tick), step };
+            // while stopped, hear the note you just placed
+            if (!playing) getEngine().playChord([melodyMidi(melodyPart, harmony, step)], { duration: Math.min(0.4, ticksToSeconds(note.len)), track: melodyPart.id });
+            updatePart(melodyPart.id, { notes: placeNote(melodyPart.notes, note) });
+        },
+        octave: (octave: number) => melodyPart && updatePart(melodyPart.id, { octave }),
+        clear: () => melodyPart && updatePart(melodyPart.id, { notes: [] }),
+    };
+
     const starts = clips.map(c => c.start / T);
-    /** Chord edits apply to the selected chord track; with a drum track selected they do nothing. */
+    /** Chord edits apply to the chord row; with a part selected (say, typing in its grid) they do nothing. */
     const chordEdit = <A extends unknown[]>(fn: (...args: A) => unknown) => (...args: A) => {
-        if (!drumTrack) fn(...args);
+        if (onChordLane) fn(...args);
     };
     const edit = {
-        longer: chordEdit(() => selClip && setClips(setLength(clips, selClip, selClip.len + T, totalTicks))),
-        shorter: chordEdit(() => selClip && setClips(setLength(clips, selClip, selClip.len - T, totalTicks))),
-        split: chordEdit(() => selClip && setClips(split(clips, selClip, selTick))),
+        longer: chordEdit(() => selClip && setChords(setLength(clips, selClip, selClip.len + T, totalTicks))),
+        shorter: chordEdit(() => selClip && setChords(setLength(clips, selClip, selClip.len - T, totalTicks))),
+        split: chordEdit(() => selClip && setChords(split(clips, selClip, selTick))),
         copy: chordEdit(() => selClip && setClipboard(selClip)),
-        paste: chordEdit(() => clipboard && setClips(place(clips, { ...clipboard, start: selTick, len: Math.min(clipboard.len, totalTicks - selTick) }))),
+        paste: chordEdit(() => clipboard && setChords(place(clips, { ...clipboard, start: selTick, len: Math.min(clipboard.len, totalTicks - selTick) }))),
         rest: chordEdit(() => {
             const base = selClip ?? { start: selTick, len: T };
-            setClips(place(selClip ? remove(clips, selClip) : clips, { start: base.start, len: base.len, rest: true }));
+            setChords(place(selClip ? remove(clips, selClip) : clips, { start: base.start, len: base.len, rest: true }));
         }),
-        del: chordEdit(() => selClip && setClips(remove(clips, selClip))),
-        restamp: chordEdit(() => isChordClip(selClip) && setClips(place(remove(clips, selClip), { ...selClip, chord: { ...selClip.chord, ...currentSound() } }))),
+        del: chordEdit(() => selClip && setChords(remove(clips, selClip))),
         clearAll: () => {
             stopPlayback();
-            setTracks(ts => ts.map(t => ({ ...t, clips: [], ...(t.drums ? { drums: emptyPattern(t.drums.bars) } : {}) })));
+            editSong(sg => ({
+                ...sg,
+                chords: [],
+                parts: sg.parts.map(p => (p.kind === 'melody' ? { ...p, notes: [] } : p.kind === 'drums' ? { ...p, drums: emptyPattern(p.drums.bars) } : p)),
+            }));
             setSelected(0);
             setPlayhead(0);
         },
@@ -507,7 +525,12 @@ const App: React.FC = () => {
         removeRow: () => {
             if (total <= rowSteps) return;
             const next = total - rowSteps;
-            editSong(sg => ({ ...sg, steps: next, tracks: sg.tracks.map(t => ({ ...t, clips: fitTo(t.clips, next * T) })) }));
+            editSong(sg => ({
+                ...sg,
+                steps: next,
+                chords: fitTo(sg.chords, next * T),
+                parts: sg.parts.map(p => (p.kind === 'melody' ? { ...p, notes: fitNotes(p.notes, next * T) } : p)),
+            }));
             setSelected(Math.min(selected, next - 1));
             setPlayhead(Math.min(playhead, next - 1));
         },
@@ -540,7 +563,7 @@ const App: React.FC = () => {
     const snapshot = (): SavedState => ({
         version: SAVE_VERSION,
         song,
-        settings: { key: selectedKey, scale, voiceLeading, octave, inversion, playMode, arpPattern, arpRate, noteLength, loop, theme },
+        settings: { voiceLeading, octave, inversion, loop, theme },
     });
 
     // Autosave a moment after any change
@@ -554,24 +577,18 @@ const App: React.FC = () => {
         }, 400);
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [song, selectedKey, scale, voiceLeading, octave, inversion, playMode, arpPattern, arpRate, noteLength, loop, theme]);
+    }, [song, voiceLeading, octave, inversion, loop, theme]);
 
     /** Replace the song (undoable) and take over its saved settings. */
     const loadState = (state: SavedState, message: string) => {
         stopPlayback();
         editSong(() => state.song);
         const st = state.settings;
-        setSelectedKey(st.key);
-        setScale(st.scale);
         setVoiceLeading(st.voiceLeading);
         setOctave(st.octave);
         setInversion(st.inversion);
-        setPlayMode(st.playMode);
-        setArpPattern(st.arpPattern);
-        setArpRate(st.arpRate);
-        setNoteLength(st.noteLength);
         setLoop(st.loop);
-        setSelectedTrack('');
+        setSelectedLane(CHORD_LANE);
         setSelected(0);
         setPlayhead(0);
         flash(message);
@@ -596,7 +613,7 @@ const App: React.FC = () => {
         new: () => {
             stopPlayback();
             editSong(() => newSong());
-            setSelectedTrack('');
+            setSelectedLane(CHORD_LANE);
             setSelected(0);
             setPlayhead(0);
             flash('New song. Undo to get the old one back.');
@@ -718,8 +735,9 @@ const App: React.FC = () => {
 
     // While recording, the screen says where the next chord goes, so you can record from Play mode.
     // (Nothing about playback goes on the screen: it only follows what you play.)
-    const screenFlag = recording ? `● REC · ${current.name.toUpperCase()} STEP ${selected + 1}` : undefined;
-    const instrumentLabel = INSTRUMENTS.find(i => i.id === instrument)?.label ?? '';
+    const screenFlag = recording ? `● REC · CHORDS STEP ${selected + 1}` : undefined;
+    const instrumentLabel = INSTRUMENTS.find(i => i.id === padPart.instrument)?.label ?? '';
+    const status = [`${selectedKey} ${scaleLabel(scale).toUpperCase()}`, `OCT ${octave}`, `${bpm} BPM`, `${padPart.playMode} · ${instrumentLabel}`];
     const screen: ScreenView = shown
         ? {
             idle: false,
@@ -729,27 +747,33 @@ const App: React.FC = () => {
             notes: shown.chord.notes,
             stick: shown.dir,
             inversionLabel: INVERSION_LABELS[Math.min(shown.inversion, shown.chord.midi.length - 1)],
-            status: [`${selectedKey} ${scaleLabel(scale).toUpperCase()}`, `OCT ${octave}`, `${bpm} BPM`, `${playMode} · ${instrumentLabel}`],
+            status,
             flag: screenFlag,
         }
-        : {
-            idle: true, symbol: '', long: '', numeral: '', notes: [], stick: 'C', inversionLabel: '',
-            status: [`${selectedKey} ${scaleLabel(scale).toUpperCase()}`, `OCT ${octave}`, `${bpm} BPM`, `${playMode} · ${instrumentLabel}`],
-            flag: screenFlag,
-        };
+        : { idle: true, symbol: '', long: '', numeral: '', notes: [], stick: 'C', inversionLabel: '', status, flag: screenFlag };
 
     const sounding = shown && held.length > 0 ? shown.chord.midi : [];
     const maxInv = Math.min(MAX_INVERSION, Math.max(...pads.map(p =>
         resolveChord(selectedKey, paramsFor(p.degree, stickDir)).midi.length - 1)));
 
-    const labelOf = (id: InstrumentId) => INSTRUMENTS.find(i => i.id === id)?.label ?? id;
-    const soundText = (c: ClipSound & { scale?: ScaleId }) =>
-        [c.playMode === 'Arp' ? `Arp ${ARP_PATTERN_LABELS[c.arpPattern]} ${ARP_RATES.find(r => r.rate === c.arpRate)?.label ?? ''}` : null,
-            c.key !== selectedKey || (c.scale ?? 'major') !== scale ? `${c.key} ${scaleLabel(c.scale).toLowerCase()}` : null].filter(Boolean).join(' · ');
     const describe = (clip: Clip) =>
         isChordClip(clip)
-            ? { symbol: resolveChord(clip.chord.key, clip.chord).name.symbol, numeral: romanNumeral(clip.chord.degree, clip.chord.scale), sound: soundText(clip.chord) }
-            : { symbol: 'Rest', numeral: '', sound: '' };
+            ? { symbol: resolveClip(harmony, clip).name.symbol, numeral: romanNumeral(clip.chord.degree, scale) }
+            : { symbol: 'Rest', numeral: '' };
+
+    // Each part lane's miniature: what it plays, in steps, with pitch squeezed into 0..1 per part
+    const minis = useMemo(() => {
+        const out: { [id: string]: MiniNote[] } = {};
+        for (const p of parts) {
+            if (!hasInstrument(p)) continue;
+            const notes = partNotes(p, harmony, T);
+            const all = notes.flatMap(n => n.midi);
+            const lo = Math.min(...all);
+            const span = Math.max(12, Math.max(...all) - lo);
+            out[p.id] = notes.flatMap(n => n.midi.map(m => ({ start: n.start / T, len: n.len / T, y: (m - lo) / span })));
+        }
+        return out;
+    }, [parts, harmony, T]);
 
     const beatDot = metronomeOn ? metBeat : playing ? playhead % ts.beats : null;
 
@@ -791,93 +815,109 @@ const App: React.FC = () => {
     );
     const soundEl = (
         <SoundPanel
-                trackName={current.name}
-                trackColor={current.color}
-                instrument={instrument}
-                playMode={playMode}
-                arpPattern={arpPattern}
-                arpRate={arpRate}
-                noteLength={noteLength}
-                onInstrument={setInstrument}
-                onPlayMode={setPlayMode}
-                onArpPattern={setArpPattern}
-                onArpRate={setArpRate}
-                onNoteLength={setNoteLength}
-            />
+            partName={soundPart.name}
+            partColor={soundPart.color}
+            instrument={soundPart.instrument}
+            onInstrument={setInstrument}
+            chordStyle={soundPart.kind === 'chords' ? soundPart : undefined}
+            onChordStyle={patch => setChordStyle(soundPart.id, patch)}
+        />
     );
-    const progressionEl = (
-            <Progression
-                total={total}
-                stepsPerRow={rowSteps}
-                timeSignature={ts}
-                onTimeSignature={edit.timeSignature}
-                tracks={tracks.map(t => ({ ...t, clips: t.clips.map(c => ({ ...c, start: c.start / T, len: c.len / T })) }))}
-                selectedTrack={selTrack.id}
-                onSelectTrack={pickTrack}
-                onUpdateTrack={updateTrack}
-                onAddTrack={trackActions.add}
-                onAddDrums={trackActions.addDrums}
-                sixteenthsPerStep={sixteenthsPerStep(ts)}
-                sixteenthsPerBar={sixteenthsPerBar(ts)}
-                loopSteps={loop ? loopLength({ tracks, barTicks, stepTicks: T, total, loop }) / T : total}
-                padTrack={current.name}
-                drumEditor={drumTrack?.drums && (
-                    <DrumEditor
-                        name={drumTrack.name}
-                        color={drumTrack.color}
-                        pattern={drumTrack.drums}
-                        perBar={sixteenthsPerBar(ts)}
-                        perBeat={sixteenthsPerStep(ts)}
-                        playSixteenth={playSixteenth}
-                        presets={presetsFor(ts)}
-                        padTrack={current.name}
-                        onToggle={drumActions.toggle}
-                        onBars={drumActions.bars}
-                        onPreset={drumActions.preset}
-                        onClear={drumActions.clear}
-                        onAudition={auditionDrum}
-                    />
-                )}
-                onRemoveTrack={trackActions.remove}
-                selected={selected}
-                playhead={playhead}
-                playing={playing}
-                loop={loop}
-                recording={recording}
-                canPaste={!!clipboard}
-                describe={describe}
-                onSelect={select}
-                onTogglePlay={togglePlay}
-                onFirst={edit.first}
-                onPrev={edit.prev}
-                onNext={edit.next}
-                onToggleLoop={() => setLoop(l => !l)}
-                onToggleRecord={() => setRecording(r => !r)}
-                onAddRow={edit.addRow}
-                onRemoveRow={edit.removeRow}
-                onLonger={edit.longer}
-                onShorter={edit.shorter}
-                onSplit={edit.split}
-                onCopy={edit.copy}
-                onPaste={edit.paste}
-                onRest={edit.rest}
-                onDelete={edit.del}
-                onRestamp={edit.restamp}
-                currentSound={soundText(currentSound())}
-                onClearAll={edit.clearAll}
-                songMenu={(
-                    <SongMenu
-                        canUndo={history.canUndo}
-                        canRedo={history.canRedo}
-                        onUndo={history.undo}
-                        onRedo={history.redo}
-                        onNew={songActions.new}
-                        onOpenFile={songActions.open}
-                        onSaveFile={songActions.save}
-                        onShare={songActions.share}
-                    />
-                )}
+
+    const partEditor = !selPart ? null
+        : selPart.kind === 'drums' ? (
+            <DrumEditor
+                name={selPart.name}
+                color={selPart.color}
+                pattern={selPart.drums}
+                perBar={sixteenthsPerBar(ts)}
+                perBeat={sixteenthsPerStep(ts)}
+                playSixteenth={playSixteenth}
+                presets={presetsFor(ts)}
+                padTrack={padPart.name}
+                onToggle={drumActions.toggle}
+                onBars={drumActions.bars}
+                onPreset={drumActions.preset}
+                onClear={drumActions.clear}
+                onAudition={auditionDrum}
             />
+        ) : selPart.kind === 'melody' ? (
+            <MelodyEditor
+                part={selPart}
+                harmony={harmony}
+                totalSteps={total}
+                stepsPerRow={rowSteps}
+                beatsPerBar={ts.beats}
+                perBeat={sixteenthsPerStep(ts)}
+                playSixteenth={playSixteenth}
+                onTap={melodyActions.tap}
+                onOctave={melodyActions.octave}
+                onClear={melodyActions.clear}
+            />
+        ) : selPart.kind === 'bass' ? (
+            <BassEditor part={selPart} onChange={patch => updatePart(selPart.id, patch as Partial<BassPart>)} />
+        ) : (
+            <ChordPartEditor part={selPart} onChange={patch => setChordStyle(selPart.id, patch)} />
+        );
+
+    const progressionEl = (
+        <Progression
+            total={total}
+            stepsPerRow={rowSteps}
+            timeSignature={ts}
+            onTimeSignature={edit.timeSignature}
+            chords={chords.map(c => ({ ...c, start: c.start / T, len: c.len / T }))}
+            parts={parts}
+            minis={minis}
+            selectedLane={selPart ? selPart.id : CHORD_LANE}
+            onSelectLane={pickLane}
+            onUpdatePart={updatePart}
+            onAddPart={partActions.add}
+            onRemovePart={partActions.remove}
+            canRemovePart={partActions.canRemove}
+            sixteenthsPerStep={sixteenthsPerStep(ts)}
+            sixteenthsPerBar={sixteenthsPerBar(ts)}
+            loopSteps={loop ? loopLength({ chords, parts, barTicks, stepTicks: T, total, loop }) / T : total}
+            padPart={padPart.name}
+            partEditor={partEditor}
+            selected={selected}
+            playhead={playhead}
+            playing={playing}
+            loop={loop}
+            recording={recording}
+            canPaste={!!clipboard}
+            describe={describe}
+            onSelect={select}
+            onTogglePlay={togglePlay}
+            onFirst={edit.first}
+            onPrev={edit.prev}
+            onNext={edit.next}
+            onToggleLoop={() => setLoop(l => !l)}
+            onToggleRecord={() => setRecording(r => !r)}
+            onAddRow={edit.addRow}
+            onRemoveRow={edit.removeRow}
+            onLonger={edit.longer}
+            onShorter={edit.shorter}
+            onSplit={edit.split}
+            onCopy={edit.copy}
+            onPaste={edit.paste}
+            onRest={edit.rest}
+            onDelete={edit.del}
+            onClearAll={edit.clearAll}
+            canClearAll={chords.length > 0 || parts.some(p => (p.kind === 'melody' && p.notes.length > 0) || (p.kind === 'drums' && Object.values(p.drums.hits).some(h => h?.length)))}
+            songMenu={(
+                <SongMenu
+                    canUndo={history.canUndo}
+                    canRedo={history.canRedo}
+                    onUndo={history.undo}
+                    onRedo={history.redo}
+                    onNew={songActions.new}
+                    onOpenFile={songActions.open}
+                    onSaveFile={songActions.save}
+                    onShare={songActions.share}
+                />
+            )}
+        />
     );
     const voicingEl = (
         <VoicingControls inversion={inversion} maxInversion={maxInv} voiceLeading={voiceLeading} onInversion={setInversion} onVoiceLeading={setVoiceLeading} />

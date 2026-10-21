@@ -51,10 +51,6 @@ interface DeviceProps {
     compact?: boolean;
 }
 
-// Staggered like the hardware: 2 4 6 above, 1 3 5 7 below
-const TOP_ROW = [1, 3, 5];
-const BOTTOM_ROW = [0, 2, 4, 6];
-
 const DIR_VECTOR: { [d in StickDir]: [number, number] } = {
     C: [0, 0], U: [0, -1], UR: [0.71, -0.71], R: [1, 0], DR: [0.71, 0.71],
     D: [0, 1], DL: [-0.71, 0.71], L: [-1, 0], UL: [-0.71, -0.71],
@@ -62,6 +58,17 @@ const DIR_VECTOR: { [d in StickDir]: [number, number] } = {
 const DIR_ANGLE: { [d in StickDir]: number } = { C: 0, U: 0, UR: 45, R: 90, DR: 135, D: 180, DL: 225, L: 270, UL: 315 };
 const DIR_KEYS: { [d in StickDir]: string } = { UL: 'Q', U: 'W', UR: 'E', L: 'A', C: 'S', R: 'D', DL: 'Z', D: 'X', DR: 'C' };
 const RING: StickDir[] = ['U', 'UR', 'R', 'DR', 'D', 'DL', 'L', 'UL'];
+/** The ring's eight wedges, in a -50..50 box: 45° each with a small gap, around the knob. */
+const SEGMENTS: { [d in StickDir]?: string } = {
+    U: 'M-17.76 -45.67A49 49 0 0 1 17.76 -45.67L7.61 -19.57A21 21 0 0 0 -7.61 -19.57Z',
+    UR: 'M19.73 -44.85A49 49 0 0 1 44.85 -19.73L19.22 -8.46A21 21 0 0 0 8.46 -19.22Z',
+    R: 'M45.67 -17.76A49 49 0 0 1 45.67 17.76L19.57 7.61A21 21 0 0 0 19.57 -7.61Z',
+    DR: 'M44.85 19.73A49 49 0 0 1 19.73 44.85L8.46 19.22A21 21 0 0 0 19.22 8.46Z',
+    D: 'M17.76 45.67A49 49 0 0 1 -17.76 45.67L-7.61 19.57A21 21 0 0 0 7.61 19.57Z',
+    DL: 'M-19.73 44.85A49 49 0 0 1 -44.85 19.73L-19.22 8.46A21 21 0 0 0 -8.46 19.22Z',
+    L: 'M-45.67 17.76A49 49 0 0 1 -45.67 -17.76L-19.57 -7.61A21 21 0 0 0 -19.57 7.61Z',
+    UL: 'M-44.85 -19.73A49 49 0 0 1 -19.73 -44.85L-8.46 -19.22A21 21 0 0 0 -19.22 -8.46Z',
+};
 const INVERSIONS = ['Root', '1st', '2nd', '3rd'];
 
 const Screen: React.FC<{ view: ScreenView; recording: boolean }> = ({ view, recording }) => (
@@ -196,28 +203,32 @@ const Stick: React.FC<{
                 onPointerCancel={up}
                 onContextMenu={e => e.preventDefault()}
             >
-                <div className="stick-well" />
+                <svg className="stick-ring" viewBox="-50 -50 100 100" aria-hidden="true">
+                    {RING.map(d => (
+                        <path key={d} d={SEGMENTS[d]} className={`seg ${dir === d ? 'active' : ''} ${latched === d ? 'latched' : ''}`} />
+                    ))}
+                </svg>
                 {RING.map(d => {
                     const [x, y] = DIR_VECTOR[d];
                     return (
                         <button
                             key={d}
                             className={`stick-dir ${dir === d ? 'active' : ''}`}
-                            style={{ left: `calc(50% + ${x} * var(--stick-rx))`, top: `calc(50% + ${y} * var(--stick-ry))` }}
+                            style={{ left: `calc(50% + ${x} * var(--label-r))`, top: `calc(50% + ${y} * var(--label-r))` }}
                             aria-pressed={latched === d}
                             aria-label={`${chords[d]}: ${STICK_LABELS[d]} (hold ${DIR_KEYS[d]})`}
                             title={`${STICK_LABELS[d]} · hold ${DIR_KEYS[d]}`}
                             // pointer input is handled by the stick itself; this is for keyboard (Enter/Space)
                             onClick={e => { if (e.detail === 0) onStick(latched === d ? 'C' : d); }}
                         >
-                            <span className="dir-name"><span className="led" />{chords[d]}</span>
+                            <span className="dir-name">{chords[d]}</span>
                             <span className="dir-rule">{STICK_LABELS[d]}</span>
                         </button>
                     );
                 })}
                 <button
                     className={`stick-knob ${dir === 'C' ? 'active' : ''}`}
-                    style={{ transform: `translate(${vx * 10}px, ${vy * 10}px)` }}
+                    style={{ transform: `translate(${vx * 6}px, ${vy * 6}px)` }}
                     aria-label={`${chords.C}: centre the stick, plain triad`}
                     onClick={e => { if (e.detail === 0) onStick('C'); }}
                 >
@@ -245,8 +256,7 @@ const Pad: React.FC<{ pad: PadView; onDown: (d: number) => void; onUp: (d: numbe
     };
     return (
         <button
-            className={`pad ${pad.held ? 'held' : ''}`}
-            style={{ gridArea: `p${pad.degree + 1}` }}
+            className={`pad pad-${pad.degree + 1} ${pad.degree % 2 ? 'upper' : 'lower'} ${pad.held ? 'held' : ''}`}
             aria-label={`${pad.degree + 1}: ${pad.numeral}, ${pad.symbol}`}
             onPointerDown={down}
             onPointerUp={up}
@@ -310,7 +320,7 @@ const Device: React.FC<DeviceProps> = ({
         <div className="device-controls">
             <Stick dir={stickDir} latched={latchedDir} chords={stickChords} forPad={stickFor} showCaption={!compact} onStick={onStick} onHold={onStickHold} />
             <div className="pads">
-                {[...TOP_ROW, ...BOTTOM_ROW].map(d => (
+                {[0, 2, 4, 6, 1, 3, 5].map(d => (
                     <Pad key={d} pad={pads[d]} onDown={onPadDown} onUp={onPadUp} />
                 ))}
             </div>

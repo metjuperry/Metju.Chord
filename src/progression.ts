@@ -1,18 +1,4 @@
-import type { ArpPattern, ChordParams, MusicalKey } from './theory';
-import type { ArpRate } from './audio/engine';
-import type { InstrumentId } from './audio/instruments';
-import type { DrumPattern } from './drums';
-
-export type PlayMode = 'Chord' | 'Arp';
-
-/** How a recorded chord is played, captured when it was recorded. The instrument belongs to the track. */
-export interface ClipSound {
-    key: MusicalKey;
-    playMode: PlayMode;
-    arpPattern: ArpPattern;
-    arpRate: ArpRate;
-    noteLength: number;
-}
+import type { ChordParams } from './theory';
 
 export const BEATS_PER_BAR = 4;
 
@@ -35,7 +21,8 @@ export interface ChordClip {
     start: number;
     len: number;
     rest?: false;
-    chord: ChordParams & ClipSound;
+    /** Degree, chord type, inversion and octave; the key and scale are the song's. */
+    chord: Omit<ChordParams, 'scale'>;
 }
 
 /** Silence for `len` ticks. */
@@ -111,62 +98,3 @@ export const lastEnd = (clips: Clip[]) => clips.reduce((m, c) => Math.max(m, cli
 export function loopEnd(clips: Clip[], barTicks = TICKS_PER_BAR): number {
     return Math.max(barTicks, Math.ceil(lastEnd(clips) / barTicks) * barTicks);
 }
-
-// ---- tracks ----------------------------------------------------------------------------
-
-/** A lane of the sequencer with its own instrument and level. */
-export interface Track {
-    id: string;
-    name: string;
-    color: string;
-    instrument: InstrumentId;
-    /** Level in dB, 0 = as matched by `npm run levels`. */
-    volume: number;
-    mute: boolean;
-    solo: boolean;
-    clips: Clip[];
-    /** Set on a drum track: a loop of 1/16 steps instead of chord clips (its `clips` stay empty). */
-    drums?: DrumPattern;
-}
-
-export const isDrumTrack = (t: Track) => !!t.drums;
-
-export const TRACK_COLORS = ['#ffcc00', '#4fd1c5', '#7fb4ff', '#d38cff', '#ff7aa8', '#c8e06e'];
-export const MAX_TRACKS = TRACK_COLORS.length;
-
-/** The next free id, so tracks loaded from a saved song never collide with new ones. */
-const nextTrackId = (existing: Track[]) =>
-    `t${existing.reduce((m, t) => Math.max(m, parseInt(t.id.replace(/\D/g, ''), 10) || 0), 0) + 1}`;
-
-export function newTrack(existing: Track[], instrument: InstrumentId, name?: string): Track {
-    const used = new Set(existing.map(t => t.color));
-    return {
-        id: nextTrackId(existing),
-        name: name ?? `Track ${existing.length + 1}`,
-        color: TRACK_COLORS.find(c => !used.has(c)) ?? TRACK_COLORS[existing.length % TRACK_COLORS.length],
-        instrument,
-        volume: 0,
-        mute: false,
-        solo: false,
-        clips: [],
-    };
-}
-
-/** Tracks the sequencer should play: soloed ones if any are soloed, otherwise all that aren't muted. */
-export function audibleTracks(tracks: Track[]): Track[] {
-    const soloed = tracks.filter(t => t.solo);
-    return soloed.length ? soloed : tracks.filter(t => !t.mute);
-}
-
-/** How far a track reaches, in ticks: its last clip, or for a drum track one pass of its pattern. */
-const trackEnd = (t: Track, barTicks: number) => (t.drums ? t.drums.bars * barTicks : lastEnd(t.clips));
-
-/** Where all tracks together end, in ticks. */
-export const songEnd = (tracks: Track[], barTicks = TICKS_PER_BAR) => Math.max(0, ...tracks.map(t => trackEnd(t, barTicks)));
-
-/**
- * Where playback wraps for all tracks: the end of the last clip on any track (or a drum pattern's
- * length, if longer), rounded up to a bar. A drum pattern shorter than that repeats until then.
- */
-export const songLoopEnd = (tracks: Track[], barTicks = TICKS_PER_BAR) =>
-    Math.max(barTicks, Math.ceil(songEnd(tracks, barTicks) / barTicks) * barTicks);

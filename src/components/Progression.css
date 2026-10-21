@@ -164,6 +164,7 @@
 
 .track-volume input {
     width: 72px;
+    accent-color: var(--track);
 }
 
 .ms-button {
@@ -321,10 +322,15 @@
 }
 
 .cell.empty {
-    border: 1px dashed var(--line-2);
-    background: transparent;
-    color: var(--muted);
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--faint);
     font-size: 18px;
+}
+
+.cell.empty:hover {
+    color: var(--muted);
+    border-color: var(--line-2);
 }
 
 .cell.selected {
@@ -685,6 +691,53 @@
     padding: 0 8px;
     border: 1px solid var(--line);
     border-radius: 6px;
+    font-size: 11px;
+    color: var(--muted);
+}
+
+/* ---- part lanes: a miniature of what each part plays ------------------------------------------- */
+
+.part-lane .lane {
+    min-height: 40px;
+}
+
+.note-mini {
+    position: relative;
+    width: 100%;
+    height: 44px;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+    overflow: hidden;
+}
+
+.note-mini.selected {
+    border-color: var(--track);
+    box-shadow: inset 0 0 0 1px var(--track);
+}
+
+.note-mini-grid {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--line);
+}
+
+.note-mini i {
+    position: absolute;
+    height: 4px;
+    min-width: 3px;
+    border-radius: 2px;
+    background: var(--track);
+}
+
+.note-mini-empty {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
     font-size: 11px;
     color: var(--muted);
 }
