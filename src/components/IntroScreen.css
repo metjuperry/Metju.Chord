@@ -1,0 +1,162 @@
+/* The intro covers the app; when it leaves, it fades out over the app as it appears beneath. */
+.intro {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background:
+        radial-gradient(60% 50% at 50% 45%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 70%),
+        var(--bg);
+}
+
+.intro-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 22px;
+}
+
+.intro-logo {
+    font-family: var(--font-display);
+    font-size: 44px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.intro-logo span {
+    color: var(--accent);
+}
+
+/* the start button is a pad from the instrument: yellow cap with a lip */
+.intro-key {
+    width: 220px;
+    height: 96px;
+    border: 0;
+    border-radius: 12px;
+    background: var(--cap);
+    color: var(--cap-ink);
+    box-shadow: 0 5px 0 #b38f00, 0 10px 24px rgba(0, 0, 0, 0.35);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    cursor: pointer;
+    transition: transform 0.08s, box-shadow 0.08s;
+    animation: intro-breathe 2.4s ease-in-out infinite;
+}
+
+.intro-key:hover {
+    transform: translateY(-1px);
+}
+
+.intro-key:active,
+.intro.leaving .intro-key {
+    transform: translateY(4px);
+    box-shadow: 0 1px 0 #b38f00, 0 4px 10px rgba(0, 0, 0, 0.3);
+}
+
+.intro-key:disabled {
+    cursor: default;
+}
+
+.intro-key-top {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 700;
+}
+
+.intro-key-sub {
+    font-size: 11px;
+    color: var(--cap-sub);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+.intro-chord {
+    font-family: var(--font-display);
+    font-size: 34px;
+    font-weight: 700;
+    animation: intro-chord-in 0.25s ease-out both;
+}
+
+.intro-note {
+    font-size: 12px;
+    color: var(--muted);
+}
+
+/* leaving: the key holds the chord name a beat, then everything lifts and fades away */
+.intro.leaving {
+    pointer-events: none;
+    animation: intro-fade 1.4s ease-in 0.35s both;
+}
+
+.intro.leaving .intro-card {
+    animation: intro-lift 1.4s ease-in 0.35s both;
+}
+
+.intro.leaving .intro-key {
+    animation: none;
+}
+
+@keyframes intro-breathe {
+    0%, 100% { box-shadow: 0 5px 0 #b38f00, 0 10px 24px rgba(0, 0, 0, 0.35); }
+    50% { box-shadow: 0 5px 0 #b38f00, 0 10px 34px color-mix(in srgb, var(--accent) 35%, transparent); }
+}
+
+@keyframes intro-chord-in {
+    from { opacity: 0; transform: scale(0.85); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes intro-fade {
+    to { opacity: 0; }
+}
+
+@keyframes intro-lift {
+    to { transform: scale(1.08); filter: blur(2px); }
+}
+
+/* the app beneath eases in as the intro leaves */
+.app-entering {
+    animation: app-enter 1.2s ease-out 0.35s both;
+}
+
+@keyframes app-enter {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+}
+
+[data-theme='light'] .intro-key,
+[data-theme='light'] .intro-key:active {
+    box-shadow: 0 5px 0 #c79f00, 0 10px 24px rgba(70, 60, 30, 0.2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .intro-key,
+    .intro.leaving .intro-card,
+    .intro-chord,
+    .app-entering {
+        animation: none;
+    }
+
+    .intro.leaving {
+        animation: intro-fade 0.6s ease-in 0.3s both;
+    }
+}
+
+@media (max-height: 420px) {
+    .intro-card {
+        gap: 14px;
+    }
+
+    .intro-logo {
+        font-size: 34px;
+    }
+
+    .intro-key {
+        height: 80px;
+    }
+}
