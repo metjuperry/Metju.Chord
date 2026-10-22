@@ -5,6 +5,8 @@ import { FX_KEYS, Part, PartFx, fxAvailable, glideSeconds } from '../parts';
 import { DELAY_TIMES, DelayTime, Space } from '../song';
 
 const FX_LABELS: { [k in keyof PartFx]: string } = { drive: 'Drive', chorus: 'Chorus', tremolo: 'Tremolo', glide: 'Glide', reverb: '→ Reverb', delay: '→ Delay' };
+/** Column heads on narrow phones, where six columns share 330 px. */
+const FX_SHORT: { [k in keyof PartFx]: string } = { drive: 'Drive', chorus: 'Chorus', tremolo: 'Trem', glide: 'Glide', reverb: '→ Rev', delay: '→ Dly' };
 const FX_HINTS: { [k in keyof PartFx]: string } = {
     drive: 'grit and warmth, on this part only',
     chorus: 'width and shimmer, on this part only',
@@ -51,7 +53,12 @@ const FxMatrix: React.FC<FxMatrixProps> = ({ parts, space, selectedPart, onSelec
 
             <div className="fx-grid" role="grid" aria-label="Effects per part">
                 <span />
-                {FX_KEYS.map(k => <span key={k} className="fx-col" title={FX_HINTS[k]}>{FX_LABELS[k]}</span>)}
+                {FX_KEYS.map(k => (
+                    <span key={k} className="fx-col" title={FX_HINTS[k]}>
+                        <span className="fx-col-long">{FX_LABELS[k]}</span>
+                        <span className="fx-col-short" aria-hidden="true">{FX_SHORT[k]}</span>
+                    </span>
+                ))}
                 {parts.map(p => (
                     <React.Fragment key={p.id}>
                         <button
@@ -60,7 +67,7 @@ const FxMatrix: React.FC<FxMatrixProps> = ({ parts, space, selectedPart, onSelec
                             aria-pressed={p.id === selectedPart}
                             onClick={() => onSelectPart(p.id)}
                         >
-                            <i />{p.name}
+                            <i /><span className="fx-part-name">{p.name}</span>
                         </button>
                         {FX_KEYS.map(k => (fxAvailable(p.kind, k) ? (
                             <div key={k} className={`fx-cell ${p.fx[k] > 0 ? 'on' : ''}`} style={{ '--track': p.color } as React.CSSProperties}>

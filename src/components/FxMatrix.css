@@ -47,6 +47,16 @@
     white-space: nowrap;
 }
 
+.fx-part-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.fx-col-short {
+    display: none;
+}
+
 .fx-part i {
     flex: 0 0 auto;
     width: 9px;
@@ -214,6 +224,14 @@
 }
 
 @media (max-width: 560px) {
+    .fx-col-long {
+        display: none;
+    }
+
+    .fx-col-short {
+        display: inline;
+    }
+
     .fx-grid {
         grid-template-columns: 58px repeat(6, minmax(0, 1fr));
         gap: 3px;
