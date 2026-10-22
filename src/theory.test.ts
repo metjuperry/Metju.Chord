@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildChordMidi, invert, nameChord, resolveChord, toToneNotes, arpOrder, ChordType, maxInversion, stickChordType, triadQuality, romanNumeral, STICK_DIRS, SCALES, KEYS, scalePitchClasses, noteNames, voiceLead } from './theory';
+import { buildChordMidi, invert, nameChord, resolveChord, toToneNotes, arpOrder, ChordType, maxInversion, stickChordType, triadQuality, romanNumeral, STICK_DIRS, SCALES, KEYS, scalePitchClasses, noteNames, voiceLead, spreadVoicing, strumOffsets, nextChords, NEXT_DEGREES } from './theory';
 
 const TYPES: ChordType[] = ['root', 'triad', 'flip', 'minor', 'dim', 'aug', 'six', 'dom7', 'diatonic7', 'diatonic9', 'sus2', 'sus4'];
 const intervals = (m: number[]) => m.map(n => n - m[0]);
@@ -248,5 +248,133 @@ describe('voice leading', () => {
     it('is reproducible from the inversion and octave it reports', () => {
         const v = voiceLead(buildChordMidi(0, 4, 'dom7', 4), base(0));
         expect(invert(buildChordMidi(0, 4, 'dom7', 4 + v.octaveShift), v.inversion)).toEqual(v.midi);
+    });
+});
+
+describe('spreadVoicing (register-aware voicing)', () => {
+    const notes = (degree: number, type: ChordType, octave: number, inversion = 0) =>
+        resolveChord('C', { degree, type, inversion, octave }).notes.join(' ');
+    const pcs = (m: number[]) => [...new Set(m.map(n => n % 12))].sort((a, b) => a - b);
+
+    it('leaves chords from C4 up in close position', () => {
+        expect(notes(0, 'triad', 4)).toBe('C4 E4 G4');
+        expect(notes(5, 'diatonic7', 4)).toBe('A4 C5 E5 G5');
+        expect(notes(0, 'diatonic9', 4)).toBe('C4 E4 G4 B4 D5');
+    });
+
+    it('opens a low triad instead of a muddy cluster', () => {
+        expect(notes(0, 'triad', 2)).toBe('C2 G2 E3');
+        expect(notes(0, 'aug', 2)).toBe('C2 G#2 E3');
+        expect(notes(0, 'triad', 3)).toBe('C3 E3 G3');
+    });
+
+    it('drops the root of a low 7th or 9th an octave', () => {
+        expect(notes(4, 'dom7', 3)).toBe('G2 B3 D4 F4');
+        expect(notes(0, 'diatonic7', 3)).toBe('C2 E3 G3 B3');
+        expect(notes(0, 'diatonic9', 3)).toBe('C2 E3 G3 B3 D4');
+    });
+
+    it('keeps the 9th on top', () => {
+        for (const octave of [2, 3]) {
+            for (const inversion of [0, 1, 2, 3]) {
+                const m = resolveChord('C', { degree: 0, type: 'diatonic9', inversion, octave }).midi;
+                expect(m[m.length - 1] % 12).toBe(2);
+            }
+        }
+    });
+
+    it('never puts a semitone between neighbouring low notes (maj7 inversions)', () => {
+        const m = resolveChord('C', { degree: 0, type: 'diatonic7', inversion: 3, octave: 2 }).midi;
+        m.slice(1).forEach((n, i) => expect(n - m[i]).toBeGreaterThan(1));
+    });
+
+    it('keeps the bass, the notes and the name; only octaves change', () => {
+        for (const type of TYPES) {
+            for (const octave of [2, 3, 4]) {
+                for (let degree = 0; degree < 7; degree++) {
+                    const base = buildChordMidi(0, degree, type, octave);
+                    for (let inv = 0; inv < base.length; inv++) {
+                        const close = invert(base, inv);
+                        const open = spreadVoicing(close, base[0] % 12);
+                        expect(pcs(open)).toEqual(pcs(close));
+                        expect(open.length).toBe(close.length);
+                        expect(open[0] % 12).toBe(close[0] % 12);
+                        expect([...open].sort((a, b) => a - b)).toEqual(open);
+                        expect(Math.max(...open)).toBeLessThanOrEqual(108);
+                        expect(nameChord(open, base[0] % 12)).toEqual(nameChord(close, base[0] % 12));
+                    }
+                }
+            }
+        }
+    });
+
+    it('works with voice leading: what voiceLead picks is what the chord resolves to', () => {
+        let prev: number[] = resolveChord('C', { degree: 0, type: 'triad', inversion: 0, octave: 3 }).midi;
+        for (const [degree, type] of [[5, 'diatonic7'], [3, 'diatonic9'], [4, 'dom7'], [0, 'aug'], [1, 'diatonic7']] as [number, ChordType][]) {
+            const v = voiceLead(buildChordMidi(0, degree, type, 3), prev);
+            expect(resolveChord('C', { degree, type, inversion: v.inversion, octave: 3 + v.octaveShift }).midi).toEqual(v.midi);
+            prev = v.midi;
+        }
+    });
+});
+
+describe('strumOffsets', () => {
+    const c = [60, 64, 67, 72];
+    it('rolls a downstroke from the lowest note up, over the whole spread', () => {
+        expect(strumOffsets(c, 0.03, 'down')).toEqual([0, 0.01, 0.02, 0.03]);
+    });
+    it('rolls an upstroke from the top down', () => {
+        expect(strumOffsets(c, 0.03, 'up')).toEqual([0.03, 0.02, 0.01, 0]);
+    });
+    it('alternates down and up with each hit', () => {
+        expect(strumOffsets(c, 0.03, 'alternate', 0)).toEqual(strumOffsets(c, 0.03, 'down'));
+        expect(strumOffsets(c, 0.03, 'alternate', 1)).toEqual(strumOffsets(c, 0.03, 'up'));
+        expect(strumOffsets(c, 0.03, 'alternate', 2)).toEqual(strumOffsets(c, 0.03, 'down'));
+    });
+    it('follows pitch, not the order the notes come in', () => {
+        expect(strumOffsets([67, 60, 64], 0.02, 'down')).toEqual([0.02, 0, 0.01]);
+    });
+    it('leaves single notes and a zero spread unrolled', () => {
+        expect(strumOffsets([60], 0.04, 'down')).toEqual([0]);
+        expect(strumOffsets(c, 0, 'up')).toEqual([0, 0, 0, 0]);
+    });
+});
+
+describe('nextChords (what comes next)', () => {
+    const next = (key: Parameters<typeof nextChords>[0], scale: Parameters<typeof nextChords>[1], degree: number) =>
+        nextChords(key, scale, degree).map(c => `${c.numeral} ${c.symbol}`).join(' · ');
+
+    it('follows the usual flow in major', () => {
+        expect(next('C', 'major', 0)).toBe('IV F · V G · vi Am');
+        expect(next('C', 'major', 4)).toBe('I C · vi Am · IV F');
+        expect(next('C', 'major', 1)).toBe('V G · vii° B°');
+        expect(next('C', 'major', 6)).toBe('I C · iii Em');
+    });
+
+    it('spells chords for the key, with flats in flat keys', () => {
+        expect(next('F', 'major', 0)).toBe('IV B♭ · V C · vi Dm');
+        expect(next('D#', 'major', 4)).toBe('I E♭ · vi Cm · IV A♭');
+    });
+
+    it('gives minor and the modes their own moves', () => {
+        expect(next('A', 'minor', 5)).toBe('VII G · iv Dm · ii° B°');
+        expect(next('A', 'harmonicMinor', 0)).toBe('iv Dm · V E · VI F');
+        expect(next('D', 'dorian', 0)).toBe('IV G · VII C · v Am');
+        expect(next('E', 'phrygian', 0)).toBe('II F · vii Dm · iv Am');
+        expect(next('G', 'mixolydian', 0)).toBe('VII F · IV C · v Dm');
+        expect(next('F', 'lydian', 0)).toBe('II G · V C · vi Dm');
+    });
+
+    it('has two or three sensible follow-ups for every degree of every scale', () => {
+        for (const scale of SCALES.map(s => s.id)) {
+            expect(NEXT_DEGREES[scale]).toHaveLength(7);
+            NEXT_DEGREES[scale].forEach((targets, degree) => {
+                expect(targets.length).toBeGreaterThanOrEqual(2);
+                expect(targets.length).toBeLessThanOrEqual(3);
+                expect(new Set(targets).size).toBe(targets.length);
+                expect(targets).not.toContain(degree);
+                targets.forEach(t => expect(t >= 0 && t < 7).toBe(true));
+            });
+        }
     });
 });

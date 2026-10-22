@@ -1,9 +1,10 @@
 import React from 'react';
 import './SoundPanel.css';
-import { ArpPattern } from '../theory';
+import { ArpPattern, StrumDirection } from '../theory';
 import { ArpRate } from '../audio/engine';
 import { INSTRUMENTS, InstrumentId } from '../audio/instruments';
-import { PlayMode } from '../parts';
+import { PartTone, PlayMode, STRUM_DIRECTIONS, STRUM_SPREADS, TONE_KEYS, shapeBrightness, shapePan } from '../parts';
+import Knob from './Knob';
 
 export const ARP_RATES: { rate: ArpRate; label: string }[] = [
     { rate: '4n', label: '1/4' },
@@ -22,6 +23,7 @@ const ARP_PATTERNS: { id: ArpPattern; label: string }[] = [
 ];
 
 const WAVES: { [id in InstrumentId]: string } = {
+    piano: 'M2 11 V2 M6 11 V2 M10 11 V2 M14 11 V2 M18 11 V2 M22 11 V2 M4 2 V7 M8 2 V7 M16 2 V7 M20 2 V7',
     pad: 'M1 9 L7 3 L7 9 L13 3 L13 9 L19 3 L19 9 L25 3',
     epiano: 'M1 6 Q2 0 3 6 T5 6 Q8 0 11 6 T17 6 Q20 0 21 6 T25 6',
     organ: 'M1 6 Q3 1 5 6 T9 6 Q11 3 13 6 T17 6 Q19 1 21 6 T25 6',
@@ -37,15 +39,25 @@ const WAVES: { [id in InstrumentId]: string } = {
     bass: 'M1 11 L7 3 V11 L13 3 V11 L19 3 V11 L25 3',
 };
 
-/** How a chord part plays the chords: held, or arpeggiated. */
+/** How a chord part plays the chords: held, strummed, or arpeggiated. */
 export interface ChordStyle {
     playMode: PlayMode;
     arpPattern: ArpPattern;
     arpRate: ArpRate;
     noteLength: number;
+    strumSpread: number;
+    strumDirection: StrumDirection;
 }
 
-/** Play as Chord / Arp, and the arpeggiator's settings. Used in the Sound panel and the chord part editor. */
+const STRUM_LABELS: { [d in StrumDirection]: string } = { down: 'Down ↓', up: 'Up ↑', alternate: 'Alternate ↕' };
+const STRUM_HINTS: { [d in StrumDirection]: string } = {
+    down: 'low note first, like a downstroke',
+    up: 'high note first, like an upstroke',
+    alternate: 'down, then up, then down… every chord hit',
+};
+const ms = (s: number) => `${Math.round(s * 1000)} ms`;
+
+/** Play as Chord / Strum / Arp, and the strum's or arpeggiator's settings. Used in the Sound panel and the chord part editor. */
 export const ChordStyleControls: React.FC<{ style: ChordStyle; onChange: (patch: Partial<ChordStyle>) => void }> = ({ style, onChange }) => {
     const rateIndex = Math.max(0, ARP_RATES.findIndex(r => r.rate === style.arpRate));
     return (
@@ -53,11 +65,29 @@ export const ChordStyleControls: React.FC<{ style: ChordStyle; onChange: (patch:
             <div className="sound-row">
                 <span>Play as</span>
                 <div className="segmented" role="group" aria-label="Play as">
-                    {(['Chord', 'Arp'] as PlayMode[]).map(m => (
+                    {(['Chord', 'Strum', 'Arp'] as PlayMode[]).map(m => (
                         <button key={m} aria-pressed={style.playMode === m} onClick={() => onChange({ playMode: m })}>{m}</button>
                     ))}
                 </div>
             </div>
+            {style.playMode === 'Strum' && (
+                <div className="arp-box">
+                    <span className="arp-title">Strum</span>
+                    <div className="sound-row">
+                        <span>Spread</span>
+                        <div className="segmented" role="group" aria-label="Strum spread">
+                            {STRUM_SPREADS.map(sp => (
+                                <button key={sp} aria-pressed={Math.abs(style.strumSpread - sp) < 0.001} onClick={() => onChange({ strumSpread: sp })}>{ms(sp)}</button>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="arp-patterns strum-dirs" role="group" aria-label="Strum direction">
+                        {STRUM_DIRECTIONS.map(d => (
+                            <button key={d} aria-pressed={style.strumDirection === d} title={STRUM_HINTS[d]} onClick={() => onChange({ strumDirection: d })}>{STRUM_LABELS[d]}</button>
+                        ))}
+                    </div>
+                </div>
+            )}
             {style.playMode === 'Arp' && (
                 <div className="arp-box">
                     <span className="arp-title">Arpeggiator</span>
@@ -74,12 +104,54 @@ export const ChordStyleControls: React.FC<{ style: ChordStyle; onChange: (patch:
     );
 };
 
+const TONE_LABELS: { [k in keyof PartTone]: string } = { attack: 'Attack', release: 'Release', brightness: 'Bright', pan: 'Pan' };
+const TONE_HINTS: { [k in keyof PartTone]: string } = {
+    attack: 'how fast notes come in: left snappy, right a slow swell',
+    release: 'how long notes ring after you let go',
+    brightness: 'left darker, right brighter',
+    pan: 'left to right',
+};
+
+/** What a tone knob reads as. The middle is always the instrument as designed. */
+function toneText(k: keyof PartTone, v: number): string {
+    const off = Math.round((v - 0.5) * 200);
+    if (k === 'pan') {
+        const p = shapePan(v);
+        return Math.abs(p) < 0.02 ? 'centre' : `${Math.round(Math.abs(p) * 100)}% ${p < 0 ? 'L' : 'R'}`;
+    }
+    if (Math.abs(off) < 2) return 'as is';
+    if (k === 'brightness') {
+        const { cutoff, shelfDb } = shapeBrightness(v);
+        return shelfDb > 0 ? `+${shelfDb.toFixed(1)} dB` : `${cutoff >= 1000 ? `${(cutoff / 1000).toFixed(1)}k` : Math.round(cutoff)} Hz`;
+    }
+    return off < 0 ? `shorter ${-off}%` : `longer ${off}%`;
+}
+
+/** Attack, release, brightness and pan for one part: knobs, 12 o'clock = the instrument as designed. */
+export const ToneControls: React.FC<{ tone: PartTone; color: string; partName: string; onChange: (key: keyof PartTone, value: number) => void }> =
+    ({ tone, color, partName, onChange }) => (
+        <div className="tone-strip" role="group" aria-label={`${partName} tone`}>
+            {TONE_KEYS.map(k => (
+                <div key={k} className={`tone-cell ${Math.abs(tone[k] - 0.5) > 0.01 ? "on" : ""}`} title={TONE_HINTS[k]} style={{ "--track": color } as React.CSSProperties}>
+                    <Knob value={tone[k]} onChange={v => onChange(k, v)} color={color} label={`${partName} ${TONE_LABELS[k]}`} display={toneText(k, tone[k])} size={34} resetTo={0.5} />
+                    <span className="tone-label">{TONE_LABELS[k]}</span>
+                    <span className="tone-value">{toneText(k, tone[k])}</span>
+                </div>
+            ))}
+        </div>
+    );
+
 interface SoundPanelProps {
     /** The part whose sound this panel sets. */
     partName: string;
     partColor: string;
     instrument: InstrumentId;
     onInstrument: (id: InstrumentId) => void;
+    tone: PartTone;
+    onTone: (key: keyof PartTone, value: number) => void;
+    /** Show what commonly comes next on the screen. */
+    nextHint: boolean;
+    onNextHint: (on: boolean) => void;
     /** For a chord part: how it plays the chords. */
     chordStyle?: ChordStyle;
     onChordStyle: (patch: Partial<ChordStyle>) => void;
@@ -94,7 +166,7 @@ const Slider: React.FC<{ label: string; value: number; min: number; max: number;
         </label>
     );
 
-const SoundPanel: React.FC<SoundPanelProps> = ({ partName, partColor, instrument, onInstrument, chordStyle, onChordStyle }) => (
+const SoundPanel: React.FC<SoundPanelProps> = ({ partName, partColor, instrument, onInstrument, tone, onTone, nextHint, onNextHint, chordStyle, onChordStyle }) => (
     <aside className="sound-panel" aria-label="Sound">
         <section className="panel sound-section" aria-labelledby="inst-title">
             <div className="section-head">
@@ -109,12 +181,29 @@ const SoundPanel: React.FC<SoundPanelProps> = ({ partName, partColor, instrument
                     </button>
                 ))}
             </div>
+            <div className="section-head">
+                <h3 className="eyebrow">Tone</h3>
+                <span className="section-note">double-tap a knob: as designed</span>
+            </div>
+            <ToneControls tone={tone} color={partColor} partName={partName} onChange={onTone} />
             {chordStyle && <ChordStyleControls style={chordStyle} onChange={onChordStyle} />}
             <p className="section-note">
                 {chordStyle
-                    ? `${chordStyle.playMode === 'Chord' ? 'Chords ring while you hold a pad. ' : ''}${partName} plays the whole chord row this way, and so do the pads.`
+                    ? `${chordStyle.playMode !== 'Arp' ? 'Chords ring while you hold a pad. ' : ''}${partName} plays the whole chord row this way, and so do the pads.`
                     : `Select a part in the sequencer to change its sound.`}
             </p>
+        </section>
+
+        <section className="panel sound-section learn-card" aria-label="Learning">
+            <label className="sound-row learn-row">
+                <span>
+                    <span className="learn-title">Next chords on the screen</span>
+                    <span className="section-note">after each chord, the ones that often follow it in this key</span>
+                </span>
+                <button className="switch" role="switch" aria-checked={nextHint} aria-label="Show next chords on the screen" onClick={() => onNextHint(!nextHint)}>
+                    <span />
+                </button>
+            </label>
         </section>
 
     </aside>

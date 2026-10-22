@@ -1,4 +1,4 @@
-import { ArpPattern, MusicalKey, ResolvedChord, SCALES, ScaleId, arpOrder, keyPitchClass, resolveChord } from './theory';
+import { ArpPattern, MusicalKey, ResolvedChord, SCALES, ScaleId, StrumDirection, arpOrder, keyPitchClass, resolveChord, strumOffsets } from './theory';
 import type { ArpRate } from './audio/engine';
 import type { InstrumentId } from './audio/instruments';
 import { ChordClip, Clip, PPQ, RestClip, clipEnd, isChordClip, lastEnd, TICKS_PER_BAR } from './progression';
@@ -7,7 +7,11 @@ import type { DrumPattern } from './drums';
 // ---- parts: everything that plays the song's one chord row, each in its own way -----------------
 
 export type PartKind = 'chords' | 'bass' | 'melody' | 'drums';
-export type PlayMode = 'Chord' | 'Arp';
+export type PlayMode = 'Chord' | 'Strum' | 'Arp';
+
+/** Strum spreads offered (first to last note), in seconds. */
+export const STRUM_SPREADS = [0.012, 0.025, 0.04, 0.06] as const;
+export const STRUM_DIRECTIONS: StrumDirection[] = ['down', 'up', 'alternate'];
 export type BassStyle =
     | 'hold' | 'pulse' | 'eighths' | 'octaves' | 'offbeat' | 'rootFifth' | 'arp' | 'tresillo' | 'walk' | 'kick';
 
@@ -40,14 +44,67 @@ export const MELODY_STEPS = 15;
 export interface PartFx {
     drive: number;
     chorus: number;
+    /** Depth of a volume wobble at 1/8 notes of the song's tempo. */
+    tremolo: number;
+    /** Portamento: single notes slide in from the part's previous note (see `glideSeconds`). */
+    glide: number;
     reverb: number;
     delay: number;
 }
 
-export const FX_KEYS: (keyof PartFx)[] = ['drive', 'chorus', 'reverb', 'delay'];
-export const noFx = (): PartFx => ({ drive: 0, chorus: 0, reverb: 0, delay: 0 });
-/** Drive and chorus would smear a beat, so drum parts only get the reverb and delay sends. */
+export const FX_KEYS: (keyof PartFx)[] = ['drive', 'chorus', 'tremolo', 'glide', 'reverb', 'delay'];
+export const noFx = (): PartFx => ({ drive: 0, chorus: 0, tremolo: 0, glide: 0, reverb: 0, delay: 0 });
+/** Drive, chorus, tremolo and glide would smear a beat, so drum parts only get the reverb and delay sends. */
 export const fxAvailable = (kind: PartKind, key: keyof PartFx) => kind !== 'drums' || key === 'reverb' || key === 'delay';
+
+/** Glide time in seconds for knob value `v`: 0 off, then up to half a second (fine control at the short end). */
+export const glideSeconds = (v: number) => (v <= 0 ? 0 : 0.5 * v * v);
+
+/**
+ * Whether a note event glides in from the part's previous note: only single notes do (a bass or
+ * melody line, an arpeggio). Block chords never glide: there's no telling which note of one
+ * chord should slide to which note of the next.
+ */
+export const glides = (fx: PartFx, notes: number) => fx.glide > 0 && notes === 1;
+
+/**
+ * How an instrument part's notes are shaped, each 0..1 with 0.5 meaning "as the instrument is
+ * designed": Attack and Release scale its envelope times, Brightness darkens (below 0.5, a low-pass)
+ * or brightens it (above, a high shelf), Pan places it left to right. Works the same for synths and samples.
+ */
+export interface PartTone {
+    attack: number;
+    release: number;
+    brightness: number;
+    pan: number;
+}
+
+export const TONE_KEYS: (keyof PartTone)[] = ['attack', 'release', 'brightness', 'pan'];
+export const neutralTone = (): PartTone => ({ attack: 0.5, release: 0.5, brightness: 0.5, pan: 0.5 });
+
+/** `preset` scaled by knob `v`: v = 0.5 keeps it, 0 goes down to `lo`, 1 up to `hi` (geometrically, as ears hear time). */
+function scaleTime(preset: number, v: number, lo: number, hi: number): number {
+    const p = Math.min(hi, Math.max(lo, preset));
+    return v <= 0.5 ? lo * Math.pow(p / lo, v / 0.5) : p * Math.pow(hi / p, (v - 0.5) / 0.5);
+}
+
+/** Attack time in seconds for an instrument whose own attack is `preset`: from 1 ms (snappy) up to a 2 s swell. */
+export const shapeAttack = (preset: number, v: number) => scaleTime(preset, v, 0.001, Math.max(2, preset * 4));
+
+/** Release time in seconds for an instrument whose own release is `preset`: from 20 ms (dry stop) up to 5 s (ringing out). */
+export const shapeRelease = (preset: number, v: number) => scaleTime(preset, v, 0.02, Math.max(5, preset * 4));
+
+/**
+ * Brightness as filter settings: below 0.5 a low-pass closes from fully open (20 kHz) down to
+ * 300 Hz; above 0.5 a high shelf at 2.5 kHz lifts the top by up to 9 dB.
+ */
+export function shapeBrightness(v: number): { cutoff: number; shelfDb: number } {
+    if (v >= 0.5) return { cutoff: 20000, shelfDb: Math.round(((v - 0.5) / 0.5) * 9 * 10) / 10 };
+    return { cutoff: 300 * Math.pow(20000 / 300, v / 0.5), shelfDb: 0 };
+}
+
+/** Pan position -1 (left) .. 1 (right). */
+export const shapePan = (v: number) => Math.max(-1, Math.min(1, (v - 0.5) * 2));
 
 interface PartBase {
     id: string;
@@ -64,17 +121,22 @@ interface PartBase {
 export interface ChordPart extends PartBase {
     kind: 'chords';
     instrument: InstrumentId;
+    tone: PartTone;
     playMode: PlayMode;
     arpPattern: ArpPattern;
     arpRate: ArpRate;
     /** Gate of each arp note, in seconds. */
     noteLength: number;
+    /** Strum: seconds from the first note of a chord to the last, and which way it rolls. */
+    strumSpread: number;
+    strumDirection: StrumDirection;
 }
 
 /** Follows the chord roots in a chosen rhythm. */
 export interface BassPart extends PartBase {
     kind: 'bass';
     instrument: InstrumentId;
+    tone: PartTone;
     style: BassStyle;
     octave: number;
 }
@@ -83,6 +145,7 @@ export interface BassPart extends PartBase {
 export interface MelodyPart extends PartBase {
     kind: 'melody';
     instrument: InstrumentId;
+    tone: PartTone;
     octave: number;
     notes: Note[];
 }
@@ -124,11 +187,11 @@ export function newPart(kind: PartKind, existing: Part[], drums?: DrumPattern): 
     };
     switch (kind) {
         case 'chords':
-            return { ...base, kind, instrument: same ? 'warmpad' : 'epiano', playMode: 'Chord', arpPattern: 'up', arpRate: '8n', noteLength: 0.3 };
+            return { ...base, kind, instrument: same ? 'warmpad' : 'epiano', tone: neutralTone(), playMode: 'Chord', arpPattern: 'up', arpRate: '8n', noteLength: 0.3, strumSpread: 0.025, strumDirection: 'down' };
         case 'bass':
-            return { ...base, kind, instrument: 'bass', style: 'pulse', octave: 2 };
+            return { ...base, kind, instrument: 'bass', tone: neutralTone(), style: 'pulse', octave: 2 };
         case 'melody':
-            return { ...base, kind, instrument: 'lead', octave: 4, notes: [] };
+            return { ...base, kind, instrument: 'lead', tone: neutralTone(), octave: 4, notes: [] };
         case 'drums':
             return { ...base, kind, drums: drums ?? { bars: 1, hits: {} } };
     }
@@ -194,6 +257,8 @@ export interface NoteEvent {
     midi: number[];
     /** How long the notes sound, in seconds, when shorter than `len` (arp gates). */
     gate?: number;
+    /** Strummed: each note's start delay in seconds, in the order of `midi`. */
+    strum?: number[];
 }
 
 export const resolveClip = (h: Harmony, clip: ChordClip): ResolvedChord =>
@@ -232,10 +297,16 @@ function arpCycle(midi: number[], pattern: ArpPattern, rand: () => number): numb
 
 export function chordPartNotes(part: ChordPart, h: Harmony): NoteEvent[] {
     const out: NoteEvent[] = [];
+    let hit = 0;
     for (const clip of chordsFor(part, h.chords)) {
         const midi = resolveClip(h, clip).midi;
         if (part.playMode === 'Chord') {
             out.push({ start: clip.start, len: clip.len, midi });
+            continue;
+        }
+        if (part.playMode === 'Strum') {
+            // alternating strums count hits along the row, so the pattern doesn't depend on where playback starts
+            out.push({ start: clip.start, len: clip.len, midi, strum: strumOffsets(midi, part.strumSpread, part.strumDirection, hit++) });
             continue;
         }
         const step = ARP_RATE_TICKS[part.arpRate];

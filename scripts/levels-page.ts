@@ -1,6 +1,6 @@
 // Runs in the browser: renders each instrument offline and reports peak / RMS.
 import * as Tone from 'tone';
-import { INSTRUMENTS, createInstrument } from '../src/audio/instruments';
+import { INSTRUMENTS, InstrumentId, createInstrument, createSynth, isSampled, loadBank, setSampleBase } from '../src/audio/instruments';
 import { Engine } from '../src/audio/engine';
 
 const MASTER_GAIN = 0.8;
@@ -10,34 +10,39 @@ const FX_CHORDS = [[60, 64, 67, 71, 74], [57, 60, 64, 67, 71], [62, 65, 69, 72, 
 
 const db = (x: number) => 20 * Math.log10(Math.max(x, 1e-9));
 
+/** Peak over all channels, and RMS (0.1–1.0 s) of the louder channel. */
 function measure(buffer: Tone.ToneAudioBuffer) {
-    const data = buffer.getChannelData(0);
     const rate = buffer.sampleRate;
-    let peak = 0;
-    for (const v of data) peak = Math.max(peak, Math.abs(v));
-    const from = Math.floor(0.1 * rate), to = Math.min(data.length, Math.floor(1.0 * rate));
-    let sum = 0;
-    for (let i = from; i < to; i++) sum += data[i] * data[i];
-    return { peak: db(peak), rms: db(Math.sqrt(sum / (to - from))) };
+    let peak = 0, rms = 0;
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+        const data = buffer.getChannelData(c);
+        for (const v of data) peak = Math.max(peak, Math.abs(v));
+        const from = Math.floor(0.1 * rate), to = Math.min(data.length, Math.floor(1.0 * rate));
+        let sum = 0;
+        for (let i = from; i < to; i++) sum += data[i] * data[i];
+        rms = Math.max(rms, Math.sqrt(sum / (to - from)));
+    }
+    return { peak: db(peak), rms: db(rms) };
 }
 
-async function dry(id: string, midi: number[]) {
+async function dry(id: InstrumentId, midi: number[], synth: boolean) {
     const buffer = await Tone.Offline(() => {
-        const inst = createInstrument(id as any);
+        const inst = synth ? createSynth(id) : createInstrument(id);
         const master = new Tone.Gain(MASTER_GAIN).toDestination();
         inst.output.connect(master);
-        inst.synth.triggerAttackRelease(
-            midi.map(m => Tone.Frequency(m, 'midi').toFrequency()), 1.2, 0, 1 / Math.sqrt(midi.length));
+        inst.attack(midi, 0, 1 / Math.sqrt(midi.length));
+        inst.release(midi, 1.2);
     }, 1.5);
     return measure(buffer);
 }
 
 /** The full engine (limiter included) with every effect and send at max, chords retriggered every half second. */
-async function withFx(id: string) {
+async function withFx(id: InstrumentId) {
     const buffer = await Tone.Offline(async () => {
         const engine = new Engine();
         // every effect at its maximum: drive, chorus, full sends into a long reverb and a high-feedback delay
-        engine.setTrack('t', { instrument: id as any, volume: 0, fx: { drive: 1, chorus: 1, reverb: 1, delay: 1 } });
+        // ...and the tone at its loudest: brightest, longest release, hard-panned
+        engine.setTrack('t', { instrument: id, volume: 0, fx: { drive: 1, chorus: 1, tremolo: 1, glide: 1, reverb: 1, delay: 1 }, tone: { attack: 0, release: 1, brightness: 1, pan: 1 } });
         engine.selectTrack('t');
         engine.setSpace({ reverb: { size: 3, ret: 1 }, delay: { time: '8n', feedback: 0.9, ret: 1 }, out: { level: 1 } });
         await engine.ready();
@@ -46,10 +51,14 @@ async function withFx(id: string) {
     return measure(buffer);
 }
 
-(window as any).runLevels = async () => {
+(window as any).runLevels = async (base: string) => {
+    setSampleBase(base);
     const rows: any[] = [];
-    for (const { id } of INSTRUMENTS) {
-        rows.push({ id, triad: await dry(id, TRIAD), ninth: await dry(id, NINTH), fx: await withFx(id) });
+    for (const { id, sampled } of INSTRUMENTS) {
+        if (sampled) await loadBank(id as any);
+        rows.push({ id, triad: await dry(id, TRIAD, false), ninth: await dry(id, NINTH, false), fx: await withFx(id) });
+        // a sampled instrument's stand-in synth plays until its samples load, so it is matched too
+        if (isSampled(id)) rows.push({ id: `${id}~synth`, standIn: true, triad: await dry(id, TRIAD, true), ninth: await dry(id, NINTH, true), fx: { peak: -99, rms: -99 } });
     }
     return rows;
 };

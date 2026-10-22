@@ -1,0 +1,19 @@
+{
+    "name": "Metju.Chord",
+    "short_name": "Metju.Chord",
+    "description": "A chord instrument and song sketchpad: seven chord pads, a chord stick, a sequencer.",
+    "id": "./",
+    "start_url": "./",
+    "scope": "./",
+    "display": "standalone",
+    "orientation": "any",
+    "background_color": "#0d0d0b",
+    "theme_color": "#0d0d0b",
+    "categories": ["music", "entertainment"],
+    "icons": [
+        { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+        { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+        { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+        { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+    ]
+}

@@ -118,8 +118,46 @@
     text-shadow: 0 0 6px rgba(255, 107, 31, 0.6);
 }
 
-.oled-foot span:last-child {
+.oled-foot .oled-inv {
     margin-left: auto;
+}
+
+/* "NEXT IV F · V G": a quiet hint on the screen, dimmer than the chord itself */
+.oled-next {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-left: auto;
+    color: var(--oled-text);
+    white-space: nowrap;
+    /* chord names keep their case: Dm is not DM */
+    text-transform: none;
+}
+
+.oled-next + .oled-inv {
+    margin-left: 0;
+}
+
+.oled-next-label {
+    text-transform: uppercase;
+    color: var(--oled-dim);
+    font-size: 0.8em;
+    letter-spacing: 0.08em;
+}
+
+.oled-next-chord {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+}
+
+.oled-next-numeral {
+    color: var(--oled-dim);
+}
+
+.oled-next-dot {
+    color: var(--oled-dim);
+    margin-right: 2px;
 }
 
 .oled-main {
@@ -709,6 +747,21 @@
         overflow: hidden;
     }
 
+    /* one line of screen: the notes give way to the hint, and the inversion label goes */
+    .device.compact .oled-foot:has(.oled-next) .oled-inv {
+        display: none;
+    }
+
+    .device.compact .oled-notes {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .device.compact .oled-next {
+        flex: 0 0 auto;
+    }
+
     .device.compact .oled-status {
         order: 3;
         min-height: 0;
@@ -732,7 +785,7 @@
     }
 
     .device.compact .stick {
-        --stick-size: min(232px, calc(100dvh - 140px));
+        --stick-size: min(232px, calc(100dvh - 140px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)));
     }
 
     .device.compact .dir-name {

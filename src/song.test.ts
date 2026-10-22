@@ -42,7 +42,7 @@ describe('saving songs', () => {
                 { start: 2 * S, len: S, chord: { type: 'nonsense' } },             // unknown chord type: dropped
             ],
             parts: [
-                { kind: 'chords', id: 'a', name: '', instrument: 'kazoo', volume: 50, color: 'pink', playMode: 'Strum' },
+                { kind: 'chords', id: 'a', name: '', instrument: 'kazoo', volume: 50, color: 'pink', playMode: 'Shred' },
                 { kind: 'chords', id: 'a', name: 'Dup' },
                 { kind: 'bass', style: 'slap', octave: 9 },
                 { kind: 'melody', notes: [{ start: 0, len: 48, step: 99 }, { start: 24, len: 24, step: 2 }, { start: 9999, len: 24, step: 1 }] },
@@ -155,14 +155,14 @@ describe('effects in the song', () => {
             chords: [],
             parts: [
                 { kind: 'bass', fx: { drive: 0.6, chorus: 7, reverb: -1, delay: 'x' } },
-                { kind: 'drums', fx: { drive: 1, chorus: 1, reverb: 0.2, delay: 0.1 } },
+                { kind: 'drums', fx: { drive: 1, chorus: 1, tremolo: 1, glide: 1, reverb: 0.2, delay: 0.1 } },
             ],
             space: { reverb: { size: 99, ret: 0.5 }, delay: { time: '3n', feedback: 2, ret: 0.4 }, out: { level: 0.6 } },
         })!;
         const bass = song.parts.find(p => p.kind === 'bass')!;
         const drums = song.parts.find(p => p.kind === 'drums')!;
-        expect(bass.fx).toEqual({ drive: 0.6, chorus: 1, reverb: 0, delay: 0 });
-        expect(drums.fx).toEqual({ drive: 0, chorus: 0, reverb: 0.2, delay: 0.1 });
+        expect(bass.fx).toEqual({ drive: 0.6, chorus: 1, tremolo: 0, glide: 0, reverb: 0, delay: 0 });
+        expect(drums.fx).toEqual({ drive: 0, chorus: 0, tremolo: 0, glide: 0, reverb: 0.2, delay: 0.1 });
         expect(song.space).toEqual({ reverb: { size: 8, ret: 0.5 }, delay: { time: '8n', feedback: 0.9, ret: 0.4 }, out: { level: 0.6 } });
     });
 
@@ -173,5 +173,57 @@ describe('effects in the song', () => {
         const song = readSong(old)!;
         expect(song.parts.every(p => p.fx.reverb === 0)).toBe(true);
         expect(song.space.out.level).toBe(1);
+    });
+});
+
+describe('part tone (attack, release, brightness, pan)', () => {
+    it('new instrument parts start as designed', () => {
+        const song = newSong();
+        for (const p of song.parts) if (p.kind !== 'drums') expect(p.tone).toEqual({ attack: 0.5, release: 0.5, brightness: 0.5, pan: 0.5 });
+    });
+
+    it('reads tone back clamped, and fills it in for songs saved before it existed', () => {
+        const song = readSong({
+            chords: [],
+            parts: [
+                { kind: 'chords', tone: { attack: 0.1, release: 3, brightness: 'x', pan: -2 } },
+                { kind: 'bass' },
+                { kind: 'drums', tone: { attack: 0 } },
+            ],
+        })!;
+        const [keys, bass, drums] = song.parts;
+        expect(keys.kind === 'chords' && keys.tone).toEqual({ attack: 0.1, release: 1, brightness: 0.5, pan: 0 });
+        expect(bass.kind === 'bass' && bass.tone).toEqual({ attack: 0.5, release: 0.5, brightness: 0.5, pan: 0.5 });
+        expect('tone' in drums).toBe(false);
+    });
+});
+
+describe('tremolo and glide', () => {
+    it('are read back clamped; older songs get them off', () => {
+        const song = readSong({ chords: [], parts: [{ kind: 'melody', fx: { tremolo: 0.4, glide: 3 } }, { kind: 'bass', fx: { drive: 0.2 } }] })!;
+        const of = (kind: string) => song.parts.find(p => p.kind === kind)!.fx;
+        expect(of('melody')).toMatchObject({ tremolo: 0.4, glide: 1 });
+        expect(of('bass')).toMatchObject({ drive: 0.2, tremolo: 0, glide: 0 });
+    });
+});
+
+describe('strum settings', () => {
+    it('are saved with the part, clamped, with defaults for older songs', () => {
+        const song = readSong({ chords: [], parts: [
+            { kind: 'chords', playMode: 'Strum', strumSpread: 5, strumDirection: 'sideways' },
+            { kind: 'chords', playMode: 'Arp' },
+        ] })!;
+        const [a, b] = song.parts;
+        expect(a.kind === 'chords' && [a.playMode, a.strumSpread, a.strumDirection]).toEqual(['Strum', 0.1, 'down']);
+        expect(b.kind === 'chords' && [b.playMode, b.strumSpread, b.strumDirection]).toEqual(['Arp', 0.025, 'down']);
+    });
+});
+
+describe('next-chord hint setting', () => {
+    it('is on by default, and kept when saved off', () => {
+        expect(defaultSettings().nextHint).toBe(true);
+        expect(readSettings({}).nextHint).toBe(true);
+        expect(readSettings({ nextHint: false }).nextHint).toBe(false);
+        expect(readSettings({ nextHint: 'no' }).nextHint).toBe(true);
     });
 });

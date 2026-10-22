@@ -30,6 +30,25 @@ export type ChordType =
 
 export type ArpPattern = 'up' | 'down' | 'upDown' | 'random';
 
+/** Which way a strum rolls through the chord: low to high, high to low, or switching every hit. */
+export type StrumDirection = 'down' | 'up' | 'alternate';
+
+/**
+ * When each note of a strummed chord starts, in seconds after the first, in the order of `midi`.
+ * A guitarist's downstroke starts on the low string, so 'down' rolls from the lowest note up and
+ * 'up' from the highest down; 'alternate' is down on even hits and up on odd ones (`hit` counts
+ * the chord's strikes). `spread` is the time from the first note to the last.
+ */
+export function strumOffsets(midi: number[], spread: number, direction: StrumDirection, hit = 0): number[] {
+    if (midi.length < 2 || spread <= 0) return midi.map(() => 0);
+    const up = direction === 'up' || (direction === 'alternate' && hit % 2 === 1);
+    const order = midi.map((m, i) => [m, i] as const).sort((a, b) => (up ? b[0] - a[0] : a[0] - b[0]));
+    const step = spread / (midi.length - 1);
+    const out = new Array<number>(midi.length);
+    order.forEach(([, i], k) => (out[i] = k * step));
+    return out;
+}
+
 export function keyPitchClass(key: MusicalKey): number {
     return NOTE_NAMES.indexOf(key);
 }
@@ -155,11 +174,75 @@ export interface ResolvedChord {
 export const maxInversion = (type: ChordType): number =>
     buildChordMidi(0, 0, type, 4).length - 1;
 
+// ---- register-aware voicing ------------------------------------------------------------
+
+/**
+ * The smallest gap (semitones) that still sounds clear above a note: low down, thirds turn to mud
+ * (the "low interval limit"), so they need a fifth or a fourth; from F3 up anything goes.
+ */
+const minGapAbove = (note: number) => (note < 43 ? 7 : note < 48 ? 4 : note < 53 ? 3 : 0);
+
+/** Chords whose bass is below this (C4) get spread. */
+const SPREAD_BELOW = 60;
+
+/** Notes are never raised past this (C8), so a voicing can't run off the top of an instrument. */
+const VOICING_CEILING = 108;
+
+/**
+ * Spread a chord so it sounds clear in any register. The bass note always stays where it is;
+ * only the notes above it move, by whole octaves, so the chord, its inversion and its name stay
+ * the same.
+ *
+ * - A 7th or 9th with its root in the bass below A3 drops the root an octave (left-hand root,
+ *   the rest above), unless that would go below C2.
+ * - Low down, a note too close to the one under it (see `minGapAbove`) moves up an octave:
+ *   C2 E2 G2 becomes C2 G2 E3, A2 C3 E3 G3 becomes A2 E3 G3 C4.
+ * - A 9th keeps the 9th as the top note, and below C4 no two neighbouring notes clash a semitone
+ *   apart (B C in a maj7 inversion): the upper one moves up an octave.
+ * - Chords whose bass is C4 or higher are left in close position.
+ *
+ * Pure: `midi` is any voicing of the chord (from `buildChordMidi` and `invert`), `rootPc` its root.
+ */
+export function spreadVoicing(midi: number[], rootPc: number): number[] {
+    let notes = [...midi].sort((a, b) => a - b);
+    // from C4 up chords already sound clear in close position: leave them as played
+    if (notes.length < 3 || notes[0] >= SPREAD_BELOW) return notes;
+    const pc = (m: number) => (((m - rootPc) % 12) + 12) % 12;
+    const raise = (i: number) => {
+        if (notes[i] + 12 > VOICING_CEILING) return false;
+        notes[i] += 12;
+        notes = [notes[0], ...notes.slice(1).sort((a, b) => a - b)];
+        return true;
+    };
+
+    // a low 7th or 9th in root position: the root goes down an octave, under the rest
+    if (notes.length >= 4 && pc(notes[0]) === 0 && notes[0] < 57 && notes[0] - 12 >= 36) {
+        notes[0] -= 12;
+    }
+
+    // a 9th (five notes) keeps its 9th on top, unless the 9th is the bass
+    if (notes.length >= 5) {
+        const ninth = notes.findIndex((m, i) => i > 0 && pc(m) === 2);
+        if (ninth > 0) {
+            const top = notes[notes.length - 1];
+            while (notes[ninth] < top && notes[ninth] + 12 <= VOICING_CEILING) notes[ninth] += 12;
+            notes = [notes[0], ...notes.slice(1).sort((a, b) => a - b)];
+        }
+    }
+
+    // open up anything too close for its register, and semitone clashes anywhere (bounded: each pass moves a note up)
+    for (let pass = 0; pass < 12; pass++) {
+        const i = notes.findIndex((m, k) => k > 0 && (m - notes[k - 1] < minGapAbove(notes[k - 1]) || (m - notes[k - 1] === 1 && m < SPREAD_BELOW)));
+        if (i < 0 || !raise(i)) break;
+    }
+    return notes;
+}
+
 /** The single path from chord parameters to notes and name, shared by pads, keyboard and sequencer. */
 export function resolveChord(key: MusicalKey, params: ChordParams): ResolvedChord {
     const keyPc = keyPitchClass(key);
     const base = buildChordMidi(keyPc, params.degree, params.type, params.octave, params.scale);
-    const midi = invert(base, Math.min(params.inversion, base.length - 1));
+    const midi = spreadVoicing(invert(base, Math.min(params.inversion, base.length - 1)), base[0] % 12);
     const rootPc = base[0] % 12;
     const names = noteNames(key, params.scale);
     return { midi, rootPc, notes: toToneNotes(midi, names), name: nameChord(midi, rootPc, names) };
@@ -286,16 +369,55 @@ function movement(next: number[], prev: number[]): number {
  * the chord stays as it is.
  */
 export function voiceLead(base: number[], prev: number[] | null, low = 40, high = 76): Voicing {
-    if (!prev || prev.length === 0) return { midi: base, inversion: 0, octaveShift: 0 };
+    if (!prev || prev.length === 0) return { midi: spreadVoicing(base, base[0] % 12), inversion: 0, octaveShift: 0 };
     let best: Voicing & { cost: number } | null = null;
     for (let inversion = 0; inversion < base.length; inversion++) {
         for (const octaveShift of [0, -1, 1]) {
-            const midi = invert(base, inversion).map(n => n + 12 * octaveShift);
-            if (midi[0] < low || midi[0] > high) continue;
+            const close = invert(base, inversion).map(n => n + 12 * octaveShift);
+            if (close[0] < low || close[0] > high) continue;
+            // judged as it will sound: spread the same way resolveChord spreads it
+            const midi = spreadVoicing(close, base[0] % 12);
             // a small nudge towards root position and the pad's own octave, so ties stay predictable
             const cost = movement(midi, prev) + 0.25 * inversion + 0.5 * Math.abs(octaveShift);
             if (!best || cost < best.cost) best = { midi, inversion, octaveShift, cost };
         }
     }
-    return best ? { midi: best.midi, inversion: best.inversion, octaveShift: best.octaveShift } : { midi: base, inversion: 0, octaveShift: 0 };
+    return best ? { midi: best.midi, inversion: best.inversion, octaveShift: best.octaveShift } : { midi: spreadVoicing(base, base[0] % 12), inversion: 0, octaveShift: 0 };
+}
+
+// ---- what comes next: common follow-ups per scale degree ----------------------------------
+
+/**
+ * Chords that commonly follow each degree's chord, most common first (degree indices, 0 = I).
+ * Major follows the textbook flow (iii → vi → ii/IV → V/vii° → I, plus V → vi and IV → I); the
+ * minor scales follow the same functions with their own colour (VI → VII → i); the modes lean on
+ * the chord that gives them their sound (Dorian IV, Phrygian ♭II, Lydian II, Mixolydian ♭VII).
+ */
+export const NEXT_DEGREES: { [s in ScaleId]: number[][] } = {
+    major: [[3, 4, 5], [4, 6], [5, 3, 1], [4, 0, 1], [0, 5, 3], [1, 3, 4], [0, 2]],
+    minor: [[3, 5, 6], [4, 6], [5, 3, 6], [4, 0, 6], [0, 5], [6, 3, 1], [2, 0, 5]],
+    harmonicMinor: [[3, 4, 5], [4, 6], [5, 3], [4, 0, 6], [0, 5], [3, 4, 1], [0, 4]],
+    melodicMinor: [[3, 4, 1], [4, 6], [3, 5], [4, 0, 1], [0, 3], [1, 4], [0, 4]],
+    dorian: [[3, 6, 4], [4, 0], [3, 6], [0, 6, 4], [0, 3], [4, 6], [0, 3]],
+    phrygian: [[1, 6, 3], [0, 2], [1, 5, 3], [0, 1, 6], [0, 5], [1, 6, 0], [0, 2]],
+    lydian: [[1, 4, 5], [0, 4], [5, 1], [0, 4], [0, 5], [1, 0, 4], [0, 2]],
+    mixolydian: [[6, 3, 4], [4, 6], [5, 3], [0, 6, 4], [0, 5, 3], [1, 3, 6], [3, 0]],
+};
+
+export interface NextChord {
+    degree: number;
+    /** Roman numeral of the degree's chord in the scale, written as on the pads ("IV", "vi", "vii°"). */
+    numeral: string;
+    /** Its plain diatonic triad, spelled for the key (flats in flat keys), e.g. "B♭". */
+    symbol: string;
+}
+
+/** The chords that commonly follow `degree` in `key` and `scale`, as the pads would name them. */
+export function nextChords(key: MusicalKey, scale: ScaleId, degree: number): NextChord[] {
+    const table = NEXT_DEGREES[scale] ?? NEXT_DEGREES.major;
+    return (table[((degree % 7) + 7) % 7] ?? []).map(d => ({
+        degree: d,
+        numeral: romanNumeral(d, scale),
+        symbol: resolveChord(key, { degree: d, type: 'triad', inversion: 0, octave: 4, scale }).name.symbol,
+    }));
 }

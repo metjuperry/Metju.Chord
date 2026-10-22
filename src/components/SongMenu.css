@@ -55,7 +55,7 @@
 .toast {
     position: fixed;
     left: 50%;
-    bottom: 24px;
+    bottom: calc(24px + env(safe-area-inset-bottom));
     transform: translateX(-50%);
     z-index: 20;
     padding: 10px 16px;

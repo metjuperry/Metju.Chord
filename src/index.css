@@ -67,6 +67,15 @@
     box-sizing: border-box;
 }
 
+html {
+    /* the background runs under the notch and home indicator */
+    background: var(--bg);
+    /* no rubber-band scrolling or tap-zoom while playing */
+    overscroll-behavior: none;
+    -webkit-text-size-adjust: 100%;
+    touch-action: manipulation;
+}
+
 body {
     margin: 0;
     font-family: var(--font-ui);

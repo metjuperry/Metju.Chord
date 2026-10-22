@@ -1,7 +1,8 @@
 // Usage: npm run levels
 // Bundles scripts/levels-page.ts with esbuild, runs it in headless Chromium and prints
 // per-instrument peak and RMS (0.1-1.0 s) for a C4 triad and a diatonic 9th, plus the
-// limiter output with every effect at max.
+// limiter output with every effect at max. Sampled instruments are measured with their samples
+// and again as the synth that stands in for them until the samples have loaded (`~synth`).
 import { build } from 'esbuild';
 import { chromium } from 'playwright-core';
 import * as fs from 'fs';
@@ -9,7 +10,7 @@ import * as path from 'path';
 import { INSTRUMENTS } from '../src/audio/instruments';
 
 interface Level { peak: number; rms: number }
-interface Row { id: string; triad: Level; ninth: Level; fx: Level }
+interface Row { id: string; standIn?: boolean; triad: Level; ninth: Level; fx: Level }
 
 const fmt = (n: number) => n.toFixed(1).padStart(6);
 
@@ -31,20 +32,30 @@ async function main() {
     try {
         const page = await browser.newPage();
         page.on('pageerror', e => console.error('page error:', e));
-        await page.setContent('<html><body></body></html>');
+        page.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') console.error('page:', m.text()); });
+        // a fake origin, so the page can fetch the bundled samples like the app does
+        const samples = path.join(__dirname, '../public/samples');
+        await page.route('http://levels.local/**', route => {
+            const url = new URL(route.request().url());
+            if (url.pathname.startsWith('/samples/')) {
+                return route.fulfill({ body: fs.readFileSync(path.join(samples, url.pathname.slice(9))), contentType: 'audio/mpeg' });
+            }
+            return route.fulfill({ body: '<html><body></body></html>', contentType: 'text/html' });
+        });
+        await page.goto('http://levels.local/');
         await page.addScriptTag({ content: result.outputFiles[0].text });
-        const rows: Row[] = await page.evaluate(() => (window as any).runLevels());
+        const rows: Row[] = await page.evaluate(() => (window as any).runLevels('/samples/'));
 
-        console.log('dBFS            triad peak  triad RMS | 9th peak  9th RMS | all-fx limiter peak');
+        console.log('dBFS           triad peak  triad RMS | 9th peak  9th RMS | all-fx limiter peak');
         for (const r of rows) {
-            console.log(`${r.id.padEnd(12)}  ${fmt(r.triad.peak)}  ${fmt(r.triad.rms)}   | ${fmt(r.ninth.peak)}  ${fmt(r.ninth.rms)} | ${fmt(r.fx.peak)}`);
+            console.log(`${r.id.padEnd(14)}${fmt(r.triad.peak)}  ${fmt(r.triad.rms)}   | ${fmt(r.ninth.peak)}  ${fmt(r.ninth.rms)} | ${r.standIn ? '  (stand-in until samples load)' : fmt(r.fx.peak)}`);
         }
 
         const sustains = new Set(INSTRUMENTS.filter(i => i.sustains).map(i => i.id as string));
-        const sustaining = rows.filter(r => sustains.has(r.id)).map(r => r.triad.rms);
+        const sustaining = rows.filter(r => sustains.has(r.id.replace('~synth', ''))).map(r => r.triad.rms);
         const spread = Math.max(...sustaining) - Math.min(...sustaining);
         const peaksOk = rows.every(r => r.triad.peak >= -10 && r.triad.peak <= -3);
-        const fxOk = rows.every(r => r.fx.peak <= -0.5);
+        const fxOk = rows.every(r => r.standIn || r.fx.peak <= -0.5);
         console.log(`\nsustaining RMS spread: ${spread.toFixed(1)} dB (limit 6)`);
         console.log(`triad peaks within -10..-3 dBFS: ${peaksOk ? 'yes' : 'NO'}`);
         console.log(`all-fx limiter output <= -0.5 dBFS: ${fxOk ? 'yes' : 'NO'}`);

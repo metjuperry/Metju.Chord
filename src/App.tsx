@@ -16,11 +16,12 @@ import { BassEditor, ChordPartEditor } from './components/PartEditors';
 import {
     ChordParams, KEYS, ResolvedChord, StickDir,
     STICK_DIRS, ScaleId, buildChordMidi, keyPitchClass, resolveChord, romanNumeral, scaleLabel, scalePitchClasses,
-    noteNames, stickChordType, triadQuality, voiceLead,
+    nextChords, noteNames, stickChordType, strumOffsets, triadQuality, voiceLead,
 } from './theory';
 import { getEngine } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
 import { useHistory } from './useHistory';
+import { keepScreenOn } from './pwa';
 import SongMenu from './components/SongMenu';
 import {
     STORAGE_KEY, SAVE_VERSION, SavedState, Song, TimeSignature, changeTimeSignature, decodeShare, defaultSettings, encodeShare,
@@ -28,7 +29,7 @@ import {
 } from './song';
 import { Clip, clipAt, fitTo, isChordClip, place, remove, setLength, split } from './progression';
 import {
-    BassPart, ChordPart, Harmony, InstrumentPart, MAX_PARTS, MelodyPart, Part, PartFx, PartKind, noFx,
+    BassPart, ChordPart, Harmony, InstrumentPart, MAX_PARTS, MelodyPart, Part, PartFx, PartKind, PartTone, noFx,
     audibleParts, fitNotes, hasInstrument, melodyMidi, musicEnd, musicLoopEnd, newPart, noteAt, outsideRests, partNotes, placeNote, removeNote, resolveClip,
     restSpans,
 } from './parts';
@@ -49,7 +50,7 @@ const MAX_INVERSION = 3;
 
 /** What the sequencer schedules: some notes or a drum hit, and the part that plays them. */
 type Scheduled =
-    | { midi: number[]; gate?: number; legato: number; part: string; drum?: undefined }
+    | { midi: number[]; gate?: number; strum?: number[]; legato: number; part: string; drum?: undefined }
     | { drum: DrumVoice; part: string };
 
 /** How much of each note's length it actually sounds, so repeated notes are struck rather than smeared. */
@@ -58,7 +59,7 @@ const LEGATO: { [k in Exclude<PartKind, 'drums'>]: number } = { chords: 0.98, ba
 /** Keep the engine's strips in step with the parts: an instrument per instrument part, a kit per drum part. */
 function syncParts(engine: ReturnType<typeof getEngine>, parts: Part[]) {
     parts.forEach(p => (hasInstrument(p)
-        ? engine.setTrack(p.id, { instrument: p.instrument, volume: p.volume, fx: p.fx })
+        ? engine.setTrack(p.id, { instrument: p.instrument, volume: p.volume, fx: p.fx, tone: p.tone })
         : engine.setDrumTrack(p.id, { volume: p.volume, fx: p.fx })));
 }
 
@@ -140,6 +141,7 @@ const App: React.FC = () => {
     const [voiceLeading, setVoiceLeading] = useState(initial.voiceLeading);
     const [octave, setOctave] = useState(initial.octave);
     const [inversion, setInversion] = useState(initial.inversion);
+    const [nextHint, setNextHint] = useState(initial.nextHint);
     const [notice, setNotice] = useState<string | null>(null);
     const [helpOpen, setHelpOpen] = useState(false);
 
@@ -218,6 +220,9 @@ const App: React.FC = () => {
         // dragging a volume slider is one undo step, not one per pixel
         setParts(ps => ps.map(p => (p.id === id ? { ...p, ...patch } as Part : p)), 'volume' in patch ? `vol:${id}` : undefined);
     const setInstrument = (id: InstrumentId) => updatePart(soundPart.id, { instrument: id });
+    // turning one tone knob is one undo step
+    const setTone = (id: string, key: keyof PartTone, value: number) =>
+        setParts(ps => ps.map(p => (p.id === id && hasInstrument(p) ? { ...p, tone: { ...p.tone, [key]: value } } : p)), `tone:${id}:${key}`);
     const setChordStyle = (id: string, patch: Partial<ChordStyle>) => updatePart(id, patch as Partial<Part>);
     const clips = chords;
     const [selected, setSelected] = useState(0);
@@ -244,7 +249,12 @@ const App: React.FC = () => {
 
     useEffect(() => {
         document.documentElement.setAttribute('data-theme', theme);
+        // the browser bar / status bar takes the app's background colour
+        document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'light' ? '#f4f2ec' : '#0d0d0b');
     }, [theme]);
+
+    // Keep the screen awake while the app is open and being played (from the first tap on)
+    useEffect(() => (audioReady ? keepScreenOn() : undefined), [audioReady]);
 
     // ---- audio start --------------------------------------------------------------
 
@@ -296,6 +306,8 @@ const App: React.FC = () => {
 
     /** The last chord played live, which voice leading moves from. */
     const lastVoicing = useRef<number[] | null>(null);
+    /** Chords strummed live, so an alternating strum goes down, up, down... */
+    const strumHits = useRef(0);
 
     /** The melody row a pad plays in Notes mode: its scale degree, an octave up with the stick pushed up. */
     const noteStep = (degree: number, dir: StickDir) => degree + (dir === 'U' ? 7 : 0);
@@ -328,6 +340,8 @@ const App: React.FC = () => {
         let stop: () => void;
         if (style.playMode === 'Arp') {
             stop = engine.startArp(chord.midi, { pattern: style.arpPattern, rate: style.arpRate, noteLength: style.noteLength });
+        } else if (style.playMode === 'Strum') {
+            stop = engine.attack(chord.midi, undefined, undefined, strumOffsets(chord.midi, style.strumSpread, style.strumDirection, strumHits.current++));
         } else {
             stop = engine.attack(chord.midi);
         }
@@ -412,7 +426,7 @@ const App: React.FC = () => {
             holds.current.set(id, { degree: hold.degree, stop: sound(hold.degree).stop });
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [stickDir, inversion, octave, selectedKey, scale, voiceLeading, padPart.instrument, padPart.playMode, padPart.arpPattern, padPart.arpRate, padMode, padMelody?.id, padMelody?.octave]);
+    }, [stickDir, inversion, octave, selectedKey, scale, voiceLeading, padPart.instrument, padPart.playMode, padPart.arpPattern, padPart.arpRate, padPart.strumSpread, padPart.strumDirection, padMode, padMelody?.id, padMelody?.octave]);
 
     // ---- progression playback (Transport) --------------------------------------------
 
@@ -427,7 +441,7 @@ const App: React.FC = () => {
                     .filter(hit => outsideRests(restSpans(s.chords, p), hit.tick))
                     .map(hit => ({ tick: hit.tick, duration: TICKS_PER_SIXTEENTH, data: { drum: hit.voice, part: p.id } }))
                 : partNotes(p, h, { beatTicks: s.stepTicks, kicks: kickTicks(s.parts, s.ts, s.total * s.stepTicks) }).map(n => ({
-                    tick: n.start, duration: n.len, data: { midi: n.midi, gate: n.gate, legato: LEGATO[p.kind], part: p.id },
+                    tick: n.start, duration: n.len, data: { midi: n.midi, gate: n.gate, strum: n.strum, legato: LEGATO[p.kind], part: p.id },
                 })))),
             opts: { loop: s.loop, loopEnd: loopLength(s), end: musicEnd(s.chords, s.parts, s.barTicks) },
         };
@@ -444,7 +458,7 @@ const App: React.FC = () => {
         }
         const seconds = ticksToSeconds(event.duration);
         const duration = data.gate !== undefined ? Math.min(data.gate, seconds) : seconds * data.legato;
-        engine.playChord(data.midi, { duration, time, track: data.part });
+        engine.playChord(data.midi, { duration, time, track: data.part, strum: data.strum });
     };
     const playEventRef = useRef(playEvent);
     playEventRef.current = playEvent;
@@ -706,7 +720,7 @@ const App: React.FC = () => {
     const snapshot = (): SavedState => ({
         version: SAVE_VERSION,
         song,
-        settings: { voiceLeading, octave, inversion, loop, theme },
+        settings: { voiceLeading, octave, inversion, loop, theme, nextHint },
     });
 
     // Autosave a moment after any change
@@ -720,7 +734,7 @@ const App: React.FC = () => {
         }, 400);
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [song, voiceLeading, octave, inversion, loop, theme]);
+    }, [song, voiceLeading, octave, inversion, loop, theme, nextHint]);
 
     /** Replace the song (undoable) and take over its saved settings. */
     const loadState = (state: SavedState, message: string) => {
@@ -731,6 +745,7 @@ const App: React.FC = () => {
         setOctave(st.octave);
         setInversion(st.inversion);
         setLoop(st.loop);
+        setNextHint(st.nextHint);
         setSelectedLane(CHORD_LANE);
         setSelected(0);
         setPlayhead(0);
@@ -911,6 +926,8 @@ const App: React.FC = () => {
             inversionLabel: shown.note ? `${padMelody?.name.toUpperCase() ?? ''}` : INVERSION_LABELS[Math.min(shown.inversion, shown.chord.midi.length - 1)],
             status,
             flag: screenFlag,
+            // what usually follows the chord just played, in the song's key (chords only, live playing only)
+            next: nextHint && !shown.note ? nextChords(selectedKey, scale, shown.degree) : undefined,
         }
         : { idle: true, symbol: '', long: '', numeral: '', notes: [], stick: 'C', inversionLabel: '', status, flag: screenFlag };
 
@@ -988,6 +1005,10 @@ const App: React.FC = () => {
             partColor={soundPart.color}
             instrument={soundPart.instrument}
             onInstrument={setInstrument}
+            tone={soundPart.tone}
+            onTone={(k, v) => setTone(soundPart.id, k, v)}
+            nextHint={nextHint}
+            onNextHint={setNextHint}
             chordStyle={soundPart.kind === 'chords' ? soundPart : undefined}
             onChordStyle={patch => setChordStyle(soundPart.id, patch)}
         />

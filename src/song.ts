@@ -3,7 +3,7 @@ import type { ArpRate } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
 import { Clip, PPQ, STEPS_PER_ROW } from './progression';
 import { DRUM_VOICES, DrumPattern, PATTERN_BARS, PatternBars, TICKS_PER_SIXTEENTH, fitPattern, sixteenthsPerBar } from './drums';
-import { BASS_STYLES, BassStyle, FX_KEYS, MAX_PARTS, MELODY_STEPS, Note, PART_COLORS, Part, PartFx, PartKind, PlayMode, fxAvailable, newPart } from './parts';
+import { BASS_STYLES, BassStyle, FX_KEYS, MAX_PARTS, MELODY_STEPS, Note, PART_COLORS, Part, PartFx, PartKind, PartTone, PlayMode, STRUM_DIRECTIONS, TONE_KEYS, fxAvailable, neutralTone, newPart } from './parts';
 
 // ---- the song: everything undo/redo, saving and sharing cover ---------------------------
 
@@ -103,6 +103,8 @@ export interface Settings {
     inversion: number;
     loop: boolean;
     theme: 'dark' | 'light';
+    /** Show the chords that commonly come next on the screen. */
+    nextHint: boolean;
 }
 
 export interface SavedState {
@@ -131,7 +133,7 @@ export function newSong(): Song {
 }
 
 export const defaultSettings = (): Settings => ({
-    voiceLeading: false, octave: 4, inversion: 0, loop: true, theme: 'dark',
+    voiceLeading: false, octave: 4, inversion: 0, loop: true, theme: 'dark', nextHint: true,
 });
 
 // ---- reading saved data: anything malformed is dropped or replaced with a default --------
@@ -215,6 +217,14 @@ function readFx(v: unknown, kind: PartKind): PartFx {
     return fx;
 }
 
+function readTone(v: unknown): PartTone {
+    const src = isObj(v) ? v : {};
+    const d = neutralTone();
+    const tone = {} as PartTone;
+    for (const k of TONE_KEYS) tone[k] = num(src[k], 0, 1, d[k]);
+    return tone;
+}
+
 function readSpace(v: unknown): Space {
     const d = defaultSpace();
     const src = isObj(v) ? v : {};
@@ -242,23 +252,26 @@ function readPart(v: unknown, index: number, existing: Part[], maxTick: number, 
         fx: readFx(v.fx, kind),
     };
     const instrument = () => oneOf(v.instrument, INSTRUMENT_IDS, (base as { instrument: string }).instrument) as InstrumentId;
+    const tone = readTone(v.tone);
     switch (kind) {
         case 'chords':
             return {
-                ...common, kind, instrument: instrument(),
-                playMode: oneOf<PlayMode>(v.playMode, ['Chord', 'Arp'], 'Chord'),
+                ...common, kind, instrument: instrument(), tone,
+                playMode: oneOf<PlayMode>(v.playMode, ['Chord', 'Strum', 'Arp'], 'Chord'),
                 arpPattern: oneOf(v.arpPattern, ARP_PATTERNS, 'up'),
                 arpRate: oneOf(v.arpRate, ARP_RATES, '8n'),
                 noteLength: num(v.noteLength, 0.05, 2, 0.3),
+                strumSpread: num(v.strumSpread, 0.005, 0.1, 0.025),
+                strumDirection: oneOf(v.strumDirection, STRUM_DIRECTIONS, 'down'),
             };
         case 'bass':
             return {
-                ...common, kind, instrument: instrument(),
+                ...common, kind, instrument: instrument(), tone,
                 style: oneOf<BassStyle>(v.style, BASS_STYLES.map(b => b.id), 'pulse'),
                 octave: int(v.octave, 1, 3, 2),
             };
         case 'melody':
-            return { ...common, kind, instrument: instrument(), octave: int(v.octave, 3, 5, 4), notes: readNotes(v.notes, maxTick) };
+            return { ...common, kind, instrument: instrument(), tone, octave: int(v.octave, 3, 5, 4), notes: readNotes(v.notes, maxTick) };
         case 'drums':
             return { ...common, kind, drums: readPattern(v.drums, barLen) };
     }
@@ -302,6 +315,7 @@ export function readSettings(v: unknown): Settings {
         inversion: int(v.inversion, 0, 3, d.inversion),
         loop: bool(v.loop, d.loop),
         theme: oneOf<'dark' | 'light'>(v.theme, ['dark', 'light'], d.theme),
+        nextHint: bool(v.nextHint, d.nextHint),
     };
 }
 
