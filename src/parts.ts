@@ -8,14 +8,20 @@ import type { DrumPattern } from './drums';
 
 export type PartKind = 'chords' | 'bass' | 'melody' | 'drums';
 export type PlayMode = 'Chord' | 'Arp';
-export type BassStyle = 'hold' | 'pulse' | 'eighths' | 'rootFifth' | 'walk';
+export type BassStyle =
+    | 'hold' | 'pulse' | 'eighths' | 'octaves' | 'offbeat' | 'rootFifth' | 'arp' | 'tresillo' | 'walk' | 'kick';
 
 export const BASS_STYLES: { id: BassStyle; label: string; hint: string }[] = [
     { id: 'hold', label: 'Hold', hint: 'the root, held for the whole chord' },
     { id: 'pulse', label: 'Beats', hint: 'the root on every beat' },
     { id: 'eighths', label: '8ths', hint: 'driving 1/8 roots' },
+    { id: 'octaves', label: 'Octaves', hint: 'root and the octave above, bouncing in 1/8s (disco)' },
+    { id: 'offbeat', label: 'Off-beat', hint: 'the root between the beats, leaving room for the kick (house)' },
     { id: 'rootFifth', label: 'Root–5th', hint: 'root and fifth, beat by beat' },
+    { id: 'arp', label: 'Arpeggio', hint: 'up through the chord: root, 3rd, 5th, octave' },
+    { id: 'tresillo', label: '3-3-2', hint: 'the 3-3-2 groove: two long notes and a short one' },
     { id: 'walk', label: 'Walk', hint: 'roots, stepping into the next chord on the last beat' },
+    { id: 'kick', label: 'Follow kick', hint: 'a note on every kick of the drums, so bass and kick lock together' },
 ];
 
 /** A melody note: `step` counts scale notes up from the key's root in the part's octave (0–14 is two octaves). */
@@ -211,29 +217,81 @@ function approach(target: number, from: number, pcs: number[]): number {
     return target + dir;
 }
 
-export function bassNotes(part: BassPart, h: Harmony, beatTicks: number): NoteEvent[] {
+/** What a bass line can lock to besides the chords: the beat length and the drums' kick hits (song ticks). */
+export interface Groove {
+    beatTicks: number;
+    kicks?: number[];
+}
+
+const SIXTEENTH = PPQ / 4;
+
+export function bassNotes(part: BassPart, h: Harmony, groove: Groove): NoteEvent[] {
+    const { beatTicks, kicks = [] } = groove;
     const chords = h.chords.filter(isChordClip);
     const pcs = scalePcs(h);
     const rootMidi = (c: ChordClip) => 12 * (part.octave + 1) + resolveClip(h, c).rootPc;
     const out: NoteEvent[] = [];
     chords.forEach((clip, i) => {
+        const chord = resolveClip(h, clip);
         const root = rootMidi(clip);
         const end = clipEnd(clip);
-        if (part.style === 'hold') {
-            out.push({ start: clip.start, len: clip.len, midi: [root] });
-            return;
-        }
-        const every = part.style === 'eighths' ? PPQ / 2 : beatTicks;
-        const fifth = fifthOf(resolveClip(h, clip));
+        const note = (t: number, len: number, midi: number) => {
+            if (t < end) out.push({ start: t, len: Math.min(len, end - t), midi: [midi] });
+        };
+        const fifth = fifthOf(chord);
         // keep the fifth below the root when the root sits high, so the line stays low
         const fifthMidi = root + fifth > 12 * (part.octave + 1) + 16 ? root + fifth - 12 : root + fifth;
         const next = chords[i + 1];
-        const leadsIn = part.style === 'walk' && next && next.start === end && clip.len >= 2 * beatTicks;
-        for (let t = clip.start, k = 0; t < end; t += every, k++) {
-            let note = root;
-            if (part.style === 'rootFifth' && k % 2 === 1) note = fifthMidi;
-            if (leadsIn && t + every >= end) note = approach(rootMidi(next!), root, pcs);
-            out.push({ start: t, len: Math.min(every, end - t), midi: [note] });
+        const approachNext = next && next.start === end ? approach(rootMidi(next), root, pcs) : null;
+
+        switch (part.style) {
+            case 'hold':
+                note(clip.start, clip.len, root);
+                break;
+            case 'octaves':
+                for (let t = clip.start, k = 0; t < end; t += PPQ / 2, k++) note(t, PPQ / 2, k % 2 ? root + 12 : root);
+                break;
+            case 'offbeat':
+                for (let t = clip.start; t < end; t += beatTicks) note(t + beatTicks / 2, beatTicks / 2, root);
+                break;
+            case 'arp': {
+                // the chord's own 3rd (or sus note) and 5th, then the octave
+                const tones = [...new Set(chord.midi.map(m => (((m - chord.rootPc) % 12) + 12) % 12))].filter(x => x > 0).sort((a, b) => a - b);
+                const third = tones.find(x => x >= 2 && x <= 5) ?? 4;
+                const cycle = [0, third, fifth, 12];
+                for (let t = clip.start, k = 0; t < end; t += PPQ / 2, k++) note(t, PPQ / 2, root + cycle[k % 4]);
+                break;
+            }
+            case 'tresillo': {
+                // 3-3-2 in 1/16s, counted from the top of the song so it lines up across chords
+                const cycle = 8 * SIXTEENTH;
+                const hits: [number, number, boolean][] = [[0, 3, false], [3, 3, false], [6, 2, true]];
+                for (let base = Math.floor(clip.start / cycle) * cycle; base < end; base += cycle) {
+                    for (const [at, len, high] of hits) {
+                        const t = base + at * SIXTEENTH;
+                        if (t >= clip.start) note(t, len * SIXTEENTH, high ? fifthMidi : root);
+                    }
+                }
+                break;
+            }
+            case 'kick': {
+                const here = kicks.filter(k => k >= clip.start && k < end).sort((a, b) => a - b);
+                // no drums (or no kick under this chord): hold the root instead
+                if (here.length === 0) note(clip.start, clip.len, root);
+                here.forEach((t, k) => note(t, Math.min((here[k + 1] ?? end) - t, beatTicks), root));
+                break;
+            }
+            default: {
+                // hold handled above; pulse, eighths, root-5th and walk step through the chord
+                const every = part.style === 'eighths' ? PPQ / 2 : beatTicks;
+                const leadsIn = part.style === 'walk' && approachNext !== null && clip.len >= 2 * beatTicks;
+                for (let t = clip.start, k = 0; t < end; t += every, k++) {
+                    let m = root;
+                    if (part.style === 'rootFifth' && k % 2 === 1) m = fifthMidi;
+                    if (leadsIn && t + every >= end) m = approachNext!;
+                    note(t, every, m);
+                }
+            }
         }
     });
     return out;
@@ -249,10 +307,10 @@ export const melodyNotes = (part: MelodyPart, h: Harmony): NoteEvent[] =>
     part.notes.map(n => ({ start: n.start, len: n.len, midi: [melodyMidi(part, h, n.step)] }));
 
 /** Everything an instrument part plays, in song ticks. */
-export function partNotes(part: InstrumentPart, h: Harmony, beatTicks: number): NoteEvent[] {
+export function partNotes(part: InstrumentPart, h: Harmony, groove: Groove): NoteEvent[] {
     switch (part.kind) {
         case 'chords': return chordPartNotes(part, h);
-        case 'bass': return bassNotes(part, h, beatTicks);
+        case 'bass': return bassNotes(part, h, groove);
         case 'melody': return melodyNotes(part, h);
     }
 }

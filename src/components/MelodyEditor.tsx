@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import './PartEditors.css';
 import { TICKS_PER_SIXTEENTH } from '../drums';
 import { Harmony, MELODY_STEPS, MelodyPart, chordAt, melodyMidi, resolveClip } from '../parts';
@@ -25,6 +25,11 @@ interface MelodyEditorProps {
     playSixteenth: number;
     /** Tap on a cell: add a note of `len` 1/16s there, or remove the note already covering it. */
     onTap: (step: number, sixteenth: number, len: number) => void;
+    /** Length of new notes in 1/16s, for taps and for recording from the pads. */
+    len: number;
+    onLen: (len: number) => void;
+    /** Where the next recorded note goes (1/16s), or -1 when not step recording. */
+    cursor: number;
     onOctave: (octave: number) => void;
     onClear: () => void;
 }
@@ -35,8 +40,7 @@ interface MelodyEditorProps {
  * well before you hear it.
  */
 const MelodyEditor: React.FC<MelodyEditorProps> = p => {
-    const [len, setLen] = useState(2);
-    const { part, harmony } = p;
+    const { part, harmony, len } = p;
     const names = noteNames(harmony.key, harmony.scale);
     const blockCols = p.stepsPerRow * p.perBeat;
     const blocks = Math.ceil(p.totalSteps / p.stepsPerRow);
@@ -97,11 +101,11 @@ const MelodyEditor: React.FC<MelodyEditorProps> = p => {
                 <span className="sel-label">
                     <span className="track-dot" style={{ background: part.color }} />
                     {part.name}
-                    <span className="section-note"> · tap to add a note, tap a note to remove it</span>
+                    <span className="section-note"> · tap to add a note, tap a note to remove it, or play the pads in Notes mode (N)</span>
                 </span>
                 <div className="segmented" role="group" aria-label="New note length">
                     {LENGTHS.map(l => (
-                        <button key={l.sixteenths} aria-pressed={len === l.sixteenths} onClick={() => setLen(l.sixteenths)}>{l.label}</button>
+                        <button key={l.sixteenths} aria-pressed={len === l.sixteenths} onClick={() => p.onLen(l.sixteenths)}>{l.label}</button>
                     ))}
                 </div>
                 <div className="segmented" role="group" aria-label="Melody octave">
@@ -148,6 +152,7 @@ const MelodyEditor: React.FC<MelodyEditorProps> = p => {
                                                         beat % 2 ? 'alt' : '',
                                                         cover ? 'on' : '', cover?.head ? 'head' : '', cover?.tail ? 'tail' : '',
                                                         c === now ? 'now' : '',
+                                                        c === p.cursor ? 'cursor' : '',
                                                     ].filter(Boolean).join(' ')}
                                                     aria-pressed={!!cover}
                                                     aria-label={`${row.label}, beat ${beat + 1}${c % p.perBeat ? `, 1/16 ${(c % p.perBeat) + 1}` : ''}`}

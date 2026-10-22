@@ -15,7 +15,7 @@ import { BassEditor, ChordPartEditor } from './components/PartEditors';
 import {
     ChordParams, KEYS, ResolvedChord, StickDir,
     STICK_DIRS, ScaleId, buildChordMidi, keyPitchClass, resolveChord, romanNumeral, scaleLabel, scalePitchClasses,
-    stickChordType, triadQuality, voiceLead,
+    noteNames, stickChordType, triadQuality, voiceLead,
 } from './theory';
 import { getEngine } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
@@ -27,7 +27,7 @@ import {
 } from './song';
 import { Clip, clipAt, fitTo, isChordClip, place, remove, setLength, split } from './progression';
 import {
-    BassPart, ChordPart, Harmony, InstrumentPart, MAX_PARTS, Part, PartKind,
+    BassPart, ChordPart, Harmony, InstrumentPart, MAX_PARTS, MelodyPart, Part, PartKind,
     audibleParts, fitNotes, hasInstrument, melodyMidi, musicEnd, musicLoopEnd, newPart, noteAt, partNotes, placeNote, removeNote, resolveClip,
 } from './parts';
 import { SeqEvent, SeqOptions, SequencerPlayer, ticksToSeconds } from './audio/sequencer';
@@ -58,6 +58,14 @@ function syncParts(engine: ReturnType<typeof getEngine>, parts: Part[]) {
     parts.forEach(p => (hasInstrument(p)
         ? engine.setTrack(p.id, { instrument: p.instrument, volume: p.volume })
         : engine.setDrumTrack(p.id, { volume: p.volume })));
+}
+
+/**
+ * Every kick hit of the song's drum parts, in song ticks up to `end`, for a bass that follows the
+ * kick. Muted drums still count: muting the drums shouldn't rewrite the bass line.
+ */
+function kickTicks(parts: Part[], ts: TimeSignature, end: number): number[] {
+    return parts.flatMap(p => (p.kind === 'drums' ? expandPattern(p.drums, ts, end).filter(h => h.voice === 'kick').map(h => h.tick) : []));
 }
 
 interface PlayState { chords: Clip[]; parts: Part[]; barTicks: number; stepTicks: number; total: number; loop: boolean }
@@ -96,12 +104,28 @@ interface Shown {
     scale: ScaleId;
     dir: StickDir;
     inversion: number;
+    /** A single melody note (Notes mode) rather than a chord. */
+    note?: boolean;
+}
+
+/** A note being recorded live (while the song plays): where it started, in 1/16s, and what it is. */
+interface LiveNote {
+    start16: number;
+    step: number;
+    part: string;
 }
 
 interface Hold {
     degree: number;
     stop: () => void;
+    rec?: LiveNote;
 }
+
+/** What the pads play: chords (with the stick), or single melody notes on the melody part. */
+export type PadMode = 'chords' | 'notes';
+
+/** A melody note's name with its octave, e.g. "E4". */
+const noteLabel = (midi: number, names: string[]) => `${names[midi % 12]}${Math.floor(midi / 12) - 1}`;
 
 const App: React.FC = () => {
     // ---- settings ---------------------------------------------------------------
@@ -163,9 +187,30 @@ const App: React.FC = () => {
         ?? chordParts[0];
     // The Sound panel edits the selected part's instrument, or the pads' part while the chords or drums are selected
     const soundPart: InstrumentPart = selPart && hasInstrument(selPart) ? selPart : padPart;
+    // Notes mode: the pads play single scale notes on a melody part and record into it
+    const [padModeSetting, setPadMode] = useState<PadMode>('chords');
+    const [melodyPartId, setMelodyPartId] = useState('');
+    const melodyParts = parts.filter((p): p is MelodyPart => p.kind === 'melody');
+    const padMelody: MelodyPart | null = (selPart?.kind === 'melody' ? selPart : undefined)
+        ?? melodyParts.find(p => p.id === melodyPartId)
+        ?? melodyParts[0]
+        ?? null;
+    const padMode: PadMode = padModeSetting === 'notes' && padMelody ? 'notes' : 'chords';
+    /** Length of new melody notes, in 1/16s (shared by the grid and step recording). */
+    const [melodyLen, setMelodyLen] = useState(2);
+    /** Where the next step-recorded note goes, in 1/16s from the top. */
+    const [melCursor, setMelCursor] = useState(0);
     const pickLane = (lane: string) => {
         setSelectedLane(lane);
-        if (parts.find(p => p.id === lane)?.kind === 'chords') setPadPartId(lane);
+        const kind = parts.find(p => p.id === lane)?.kind;
+        if (kind === 'chords') setPadPartId(lane);
+        // the pads follow what you're editing: notes for a melody, chords for the chord row or a chord part
+        if (kind === 'melody') {
+            setMelodyPartId(lane);
+            setPadMode('notes');
+        } else if (kind === 'chords' || lane === CHORD_LANE) {
+            setPadMode('chords');
+        }
     };
     const updatePart = (id: string, patch: PartPatch | Partial<Part>) =>
         // dragging a volume slider is one undo step, not one per pixel
@@ -188,7 +233,10 @@ const App: React.FC = () => {
     const [metBeat, setMetBeat] = useState<number | null>(null);
 
     // Latest state for Transport callbacks and the global key handler
-    const liveState = { ts, stepTicks: T, barTicks, selectedKey, scale, voiceLeading, octave, inversion, stickDir, padPart, chords, parts, total, selected, loop, recording };
+    const liveState = {
+        ts, stepTicks: T, barTicks, selectedKey, scale, voiceLeading, octave, inversion, stickDir, padPart, chords, parts, total, selected, loop, recording,
+        padMode, padMelody, melodyLen, melCursor, playing,
+    };
     const live = useRef(liveState);
     live.current = liveState;
 
@@ -242,9 +290,23 @@ const App: React.FC = () => {
     /** The last chord played live, which voice leading moves from. */
     const lastVoicing = useRef<number[] | null>(null);
 
-    /** Start a chord sounding; returns how to stop it. */
-    const sound = (degree: number) => {
+    /** The melody row a pad plays in Notes mode: its scale degree, an octave up with the stick pushed up. */
+    const noteStep = (degree: number, dir: StickDir) => degree + (dir === 'U' ? 7 : 0);
+
+    /** Start a chord (or, in Notes mode, a melody note) sounding; returns how to stop it. */
+    const sound = (degree: number): { params?: ChordParams; step?: number; stop: () => void } => {
         const s = live.current;
+        if (s.padMode === 'notes' && s.padMelody) {
+            const step = noteStep(degree, s.stickDir);
+            const midi = melodyMidi(s.padMelody, { key: s.selectedKey, scale: s.scale }, step);
+            const name = noteLabel(midi, noteNames(s.selectedKey, s.scale));
+            const stop = getEngine().attack([midi], undefined, s.padMelody.id);
+            setShown({
+                chord: { midi: [midi], rootPc: midi % 12, notes: [name], name: { symbol: name, long: `Note ${name}` } },
+                degree, scale: s.scale, dir: s.stickDir, inversion: 0, note: true,
+            });
+            return { step, stop };
+        }
         let params = paramsFor(degree, s.stickDir, s);
         if (s.voiceLeading) {
             // choose the inversion and octave that move least from the last chord, and record exactly that
@@ -268,14 +330,40 @@ const App: React.FC = () => {
 
     const syncHeld = () => setHeld(Array.from(holds.current.values()).map(h => h.degree));
 
+    /** Write a melody note into a melody part (newest wins: it trims or replaces what it lands on). */
+    const writeNote = (partId: string, start16: number, len16: number, step: number) => {
+        const total16 = live.current.total * live.current.stepTicks / TICKS_PER_SIXTEENTH;
+        const len = Math.min(len16, total16 - start16);
+        if (len <= 0) return;
+        const note = { start: start16 * TICKS_PER_SIXTEENTH, len: len * TICKS_PER_SIXTEENTH, step };
+        setParts(ps => ps.map(p => (p.id === partId && p.kind === 'melody' ? { ...p, notes: placeNote(p.notes, note) } : p)));
+    };
+
     const pressPad = (id: string, degree: number) => {
         if (!audioReady || holds.current.has(id)) return;
-        const { params, stop } = sound(degree);
-        holds.current.set(id, { degree, stop });
+        const { params, step, stop } = sound(degree);
+        const hold: Hold = { degree, stop };
+        holds.current.set(id, hold);
         syncHeld();
 
         const s = live.current;
-        if (s.recording) {
+        if (!s.recording) return;
+        if (step !== undefined && s.padMelody) {
+            const perStep = s.stepTicks / TICKS_PER_SIXTEENTH;
+            const total16 = s.total * perStep;
+            const pos = s.playing ? player.current?.position() : null;
+            if (pos !== null && pos !== undefined) {
+                // live: the note starts on the nearest 1/16 and lasts until the pad is let go
+                hold.rec = { start16: Math.round(pos / TICKS_PER_SIXTEENTH) % total16, step, part: s.padMelody.id };
+            } else {
+                // step recording: a note of the chosen length at the cursor, then the cursor moves on
+                writeNote(s.padMelody.id, s.melCursor, s.melodyLen, step);
+                const next = Math.min(s.melCursor + s.melodyLen, total16 - 1);
+                setMelCursor(next);
+                setSelected(Math.floor(next / perStep));
+                setPlayhead(Math.floor(next / perStep));
+            }
+        } else if (params) {
             const { scale: _scale, ...chord } = params;
             setChords(place(s.chords, { start: s.selected * s.stepTicks, len: s.stepTicks, chord }));
             setSelected(Math.min(s.selected + 1, s.total - 1));
@@ -289,6 +377,19 @@ const App: React.FC = () => {
         holds.current.delete(id);
         hold.stop();
         syncHeld();
+        if (hold.rec) {
+            // a live note ends where the pad was let go, rounded to the 1/16 (at least one 1/16 long)
+            const s = live.current;
+            const pos = player.current?.position();
+            let len16 = s.melodyLen;
+            if (pos !== null && pos !== undefined) {
+                const loop16 = loopLength(s) / TICKS_PER_SIXTEENTH;
+                let end16 = Math.round(pos / TICKS_PER_SIXTEENTH);
+                if (end16 < hold.rec.start16) end16 += loop16; // the loop wrapped while the pad was held
+                len16 = Math.max(1, end16 - hold.rec.start16);
+            }
+            writeNote(hold.rec.part, hold.rec.start16, len16, hold.rec.step);
+        }
     };
 
     const releaseAll = () => {
@@ -304,7 +405,7 @@ const App: React.FC = () => {
             holds.current.set(id, { degree: hold.degree, stop: sound(hold.degree).stop });
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [stickDir, inversion, octave, selectedKey, scale, voiceLeading, padPart.instrument, padPart.playMode, padPart.arpPattern, padPart.arpRate]);
+    }, [stickDir, inversion, octave, selectedKey, scale, voiceLeading, padPart.instrument, padPart.playMode, padPart.arpPattern, padPart.arpRate, padMode, padMelody?.id, padMelody?.octave]);
 
     // ---- progression playback (Transport) --------------------------------------------
 
@@ -316,7 +417,7 @@ const App: React.FC = () => {
             events: audibleParts(s.parts).flatMap((p): SeqEvent<Scheduled>[] => (p.kind === 'drums'
                 // a drum pattern repeats from the top until the loop (or the song) ends
                 ? expandPattern(p.drums, s.ts, playLength(s)).map(hit => ({ tick: hit.tick, duration: TICKS_PER_SIXTEENTH, data: { drum: hit.voice, part: p.id } }))
-                : partNotes(p, h, s.stepTicks).map(n => ({
+                : partNotes(p, h, { beatTicks: s.stepTicks, kicks: kickTicks(s.parts, s.ts, s.total * s.stepTicks) }).map(n => ({
                     tick: n.start, duration: n.len, data: { midi: n.midi, gate: n.gate, legato: LEGATO[p.kind], part: p.id },
                 })))),
             opts: { loop: s.loop, loopEnd: loopLength(s), end: musicEnd(s.chords, s.parts, s.barTicks) },
@@ -432,6 +533,7 @@ const App: React.FC = () => {
     const selClip = clipAt(clips, selTick);
     const select = (step: number, lane?: string) => {
         setSelected(step);
+        setMelCursor(step * sixteenthsPerStep(ts));
         if (lane) pickLane(lane);
         if (!playing) setPlayhead(step);
     };
@@ -495,6 +597,7 @@ const App: React.FC = () => {
     const melodyPart = selPart?.kind === 'melody' ? selPart : null;
     const melodyActions = {
         tap: (step: number, sixteenth: number, len: number) => {
+            setMelCursor(sixteenth);
             if (!melodyPart) return;
             const tick = sixteenth * TICKS_PER_SIXTEENTH;
             const hit = noteAt(melodyPart.notes, tick, step);
@@ -708,6 +811,7 @@ const App: React.FC = () => {
                 case 'ArrowDown': handled(); setOctave(o => Math.max(OCTAVE_MIN, o - 1)); break;
                 case 'Space': handled(); if (!e.repeat) a.togglePlay(); break;
                 case 'KeyR': if (!e.repeat) setRecording(r => !r); break;
+                case 'KeyN': if (!e.repeat) setPadMode(m => (m === 'notes' ? 'chords' : 'notes')); break;
                 case 'BracketLeft': a.edit.shorter(); break;
                 case 'BracketRight': a.edit.longer(); break;
                 case 'Slash': handled(); a.edit.split(); break;
@@ -736,33 +840,50 @@ const App: React.FC = () => {
 
     // ---- views ------------------------------------------------------------------------
 
-    const pads: PadView[] = useMemo(() => [0, 1, 2, 3, 4, 5, 6].map(degree => ({
-        degree,
-        numeral: romanNumeral(degree, scale),
-        symbol: resolveChord(selectedKey, { degree, type: stickChordType(stickDir, triadQuality(degree, scale)), inversion, octave, scale }).name.symbol,
-        held: held.includes(degree),
-    })), [selectedKey, scale, stickDir, inversion, octave, held]);
+    const names = noteNames(selectedKey, scale);
+    const notesOn = padMode === 'notes' && padMelody !== null;
+    /** In Notes mode, the note a pad plays with the stick in `dir`. */
+    const padNote = (degree: number, dir: StickDir) => noteLabel(melodyMidi(padMelody!, harmony, noteStep(degree, dir)), names);
+    const pads: PadView[] = useMemo(() => [0, 1, 2, 3, 4, 5, 6].map(degree => (notesOn
+        ? { degree, numeral: '', symbol: padNote(degree, stickDir), held: held.includes(degree) }
+        : {
+            degree,
+            numeral: romanNumeral(degree, scale),
+            symbol: resolveChord(selectedKey, { degree, type: stickChordType(stickDir, triadQuality(degree, scale)), inversion, octave, scale }).name.symbol,
+            held: held.includes(degree),
+        })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selectedKey, scale, stickDir, inversion, octave, held, notesOn, padMelody?.octave]);
 
-    // The stick labels follow the pad you're using: a held pad, else the last chord played, else 1
+    // The stick labels follow the pad you're using: a held pad, else the last chord played, else 1.
+    // In Notes mode only up does something: the same note an octave higher.
     const refDegree = held.length ? held[held.length - 1] : shown ? shown.degree : 0;
-    const stickChords = Object.fromEntries(STICK_DIRS.map(d => [d,
-        resolveChord(selectedKey, { degree: refDegree, type: stickChordType(d, triadQuality(refDegree, scale)), inversion, octave, scale }).name.symbol,
+    const stickChords = Object.fromEntries(STICK_DIRS.map(d => [d, notesOn
+        ? (d === 'C' || d === 'U' ? padNote(refDegree, d) : '')
+        : resolveChord(selectedKey, { degree: refDegree, type: stickChordType(d, triadQuality(refDegree, scale)), inversion, octave, scale }).name.symbol,
     ])) as { [d in StickDir]: string };
+    const stickRules: Partial<Record<StickDir, string>> | undefined = notesOn ? { C: 'Note', U: 'Octave up' } : undefined;
 
     // While recording, the screen says where the next chord goes, so you can record from Play mode.
     // (Nothing about playback goes on the screen: it only follows what you play.)
-    const screenFlag = recording ? `● REC · CHORDS STEP ${selected + 1}` : undefined;
-    const instrumentLabel = INSTRUMENTS.find(i => i.id === padPart.instrument)?.label ?? '';
-    const status = [`${selectedKey} ${scaleLabel(scale).toUpperCase()}`, `OCT ${octave}`, `${bpm} BPM`, `${padPart.playMode} · ${instrumentLabel}`];
+    const perBeat = sixteenthsPerStep(ts);
+    const screenFlag = !recording ? undefined
+        : notesOn ? (playing ? `● REC · ${padMelody!.name.toUpperCase()} LIVE` : `● REC · ${padMelody!.name.toUpperCase()} BEAT ${Math.floor(melCursor / perBeat) + 1}`)
+            : `● REC · CHORDS STEP ${selected + 1}`;
+    const playingPart: InstrumentPart = notesOn ? padMelody! : padPart;
+    const instrumentLabel = INSTRUMENTS.find(i => i.id === playingPart.instrument)?.label ?? '';
+    const status = [`${selectedKey} ${scaleLabel(scale).toUpperCase()}`, `OCT ${notesOn ? padMelody!.octave : octave}`, `${bpm} BPM`,
+        `${notesOn ? 'Notes' : padPart.playMode} · ${instrumentLabel}`];
     const screen: ScreenView = shown
         ? {
             idle: false,
             symbol: shown.chord.name.symbol,
             long: shown.chord.name.long,
-            numeral: romanNumeral(shown.degree, shown.scale),
+            numeral: shown.note ? `${shown.degree + 1}` : romanNumeral(shown.degree, shown.scale),
+            stickLabel: shown.note ? (shown.dir === 'U' ? 'Octave up' : 'Note') : undefined,
             notes: shown.chord.notes,
             stick: shown.dir,
-            inversionLabel: INVERSION_LABELS[Math.min(shown.inversion, shown.chord.midi.length - 1)],
+            inversionLabel: shown.note ? `${padMelody?.name.toUpperCase() ?? ''}` : INVERSION_LABELS[Math.min(shown.inversion, shown.chord.midi.length - 1)],
             status,
             flag: screenFlag,
         }
@@ -780,16 +901,17 @@ const App: React.FC = () => {
     // Each part lane's miniature: what it plays, in steps, with pitch squeezed into 0..1 per part
     const minis = useMemo(() => {
         const out: { [id: string]: MiniNote[] } = {};
+        const groove = { beatTicks: T, kicks: kickTicks(parts, ts, total * T) };
         for (const p of parts) {
             if (!hasInstrument(p)) continue;
-            const notes = partNotes(p, harmony, T);
+            const notes = partNotes(p, harmony, groove);
             const all = notes.flatMap(n => n.midi);
             const lo = Math.min(...all);
             const span = Math.max(12, Math.max(...all) - lo);
             out[p.id] = notes.flatMap(n => n.midi.map(m => ({ start: n.start / T, len: n.len / T, y: (m - lo) / span })));
         }
         return out;
-    }, [parts, harmony, T]);
+    }, [parts, harmony, T, ts, total]);
 
     const beatDot = metronomeOn ? metBeat : playing ? playhead % ts.beats : null;
 
@@ -817,7 +939,11 @@ const App: React.FC = () => {
                 stickDir={stickDir}
                 latchedDir={latchedDir}
                 stickChords={stickChords}
-                stickFor={`${refDegree + 1} · ${romanNumeral(refDegree, scale)}`}
+                stickRules={stickRules}
+                padMode={notesOn ? 'notes' : 'chords'}
+                notesPart={padMelody?.name}
+                onPadMode={setPadMode}
+                stickFor={notesOn ? `${refDegree + 1}` : `${refDegree + 1} · ${romanNumeral(refDegree, scale)}`}
                 voiceLeading={voiceLeading}
                 onVoiceLeading={setVoiceLeading}
                 inversion={inversion}
@@ -869,6 +995,9 @@ const App: React.FC = () => {
                 perBeat={sixteenthsPerStep(ts)}
                 playSixteenth={playSixteenth}
                 onTap={melodyActions.tap}
+                len={melodyLen}
+                onLen={setMelodyLen}
+                cursor={recording && !playing && notesOn && padMelody?.id === selPart.id ? melCursor : -1}
                 onOctave={melodyActions.octave}
                 onClear={melodyActions.clear}
             />
@@ -897,6 +1026,7 @@ const App: React.FC = () => {
             sixteenthsPerBar={sixteenthsPerBar(ts)}
             loopSteps={loop ? loopLength({ chords, parts, barTicks, stepTicks: T, total, loop }) / T : total}
             padPart={padPart.name}
+            recordInto={notesOn ? padMelody!.name : undefined}
             partEditor={partEditor}
             selected={selected}
             playhead={playhead}

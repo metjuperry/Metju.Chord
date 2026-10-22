@@ -213,3 +213,62 @@
         padding-right: 3px;
     }
 }
+
+/* ---- bass style cards: name plus a little piano roll of the pattern ----------------------------- */
+
+.bass-styles {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+    gap: 6px;
+}
+
+.style-card {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+    color: var(--muted);
+    text-align: left;
+}
+
+.style-card:hover {
+    border-color: var(--line-2);
+    color: var(--text);
+}
+
+.style-card[aria-checked='true'] {
+    border-color: var(--track);
+    background: color-mix(in srgb, var(--track) 12%, var(--panel-2));
+    color: var(--text);
+}
+
+.style-preview {
+    width: 100%;
+    height: 28px;
+    fill: var(--faint);
+}
+
+.style-card[aria-checked='true'] .style-preview,
+.style-card:hover .style-preview {
+    fill: var(--track);
+}
+
+.style-preview .style-bar {
+    stroke: var(--line-2);
+    stroke-width: 0.6;
+    vector-effect: non-scaling-stroke;
+}
+
+.style-name {
+    font-size: 12px;
+    font-weight: 700;
+}
+
+/* where the next step-recorded note lands */
+.mel-cell.cursor {
+    box-shadow: inset 2px 0 0 var(--hot);
+}

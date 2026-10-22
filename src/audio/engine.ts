@@ -178,9 +178,12 @@ export class Engine {
             this.toFreqs(midi), opts.duration, opts.time ?? Tone.now(), velocityFor(midi.length));
     }
 
-    /** Start a chord on the selected track; returns how to release it (on that same synth, even if the selection changes). */
-    attack(midi: number[], time?: number): () => void {
-        const synth = this.voice().synth;
+    /**
+     * Start a chord on `track` (default: the selected one); returns how to release it, on that same
+     * synth even if the selection changes.
+     */
+    attack(midi: number[], time?: number, track?: string): () => void {
+        const synth = this.voice(track).synth;
         const freqs = this.toFreqs(midi);
         synth.triggerAttack(freqs, time ?? Tone.now(), velocityFor(midi.length));
         return () => synth.triggerRelease(freqs, Tone.now());

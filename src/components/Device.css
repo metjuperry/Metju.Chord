@@ -14,6 +14,40 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 12px;
+}
+
+/* Chords / Notes: what the pads play */
+.device-top .pad-mode {
+    margin-left: auto;
+}
+
+.pad-mode > button {
+    min-height: 28px;
+    padding: 0 12px;
+    font-size: 11px;
+}
+
+/* phones: the switch sits at the end of the screen line */
+.screen-row {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+}
+
+.screen-row > .oled {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.screen-row > .pad-mode {
+    flex: 0 0 auto;
+    align-self: center;
+}
+
+/* a stick direction that does nothing in this mode */
+.stick-ring .seg.off {
+    opacity: 0.45;
 }
 
 .device-label {

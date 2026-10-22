@@ -26,6 +26,7 @@ const SHORTCUTS: [string, string][] = [
     ['↑ ↓', 'Octave'],
     ['Space', 'Play / stop the progression'],
     ['R', 'Arm recording'],
+    ['N', 'Pads play chords / single notes on the melody'],
     ['[  ]', 'Shorten / lengthen the selected chord'],
     ['/', 'Split the selected chord at the cursor'],
     ['.', 'Make the selected beat a rest'],
@@ -76,6 +77,13 @@ const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose }) => {
                     </tbody>
                 </table>
                 <p className="section-note">On 7 (B°) the directions that don’t make sense for a diminished chord leave it alone, and ← makes it minor.</p>
+
+                <h3 className="eyebrow">Notes mode</h3>
+                <p className="section-note">
+                    Switch the pads from Chords to Notes (or press N) and they play single notes of the key on your Melody part,
+                    1–7 up the scale; push the stick up for the octave above. With Record on, a stopped song writes each note at the
+                    cursor (length set in the Melody editor) and moves on; a playing song records notes where you play them, snapped to 1/16.
+                </p>
 
                 <h3 className="eyebrow">Keyboard</h3>
                 <dl className="help-keys">
