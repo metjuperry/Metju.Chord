@@ -160,3 +160,43 @@
     display: flex;
     gap: 8px;
 }
+
+/*
+ * Sections: logo | key and scale | octave | tempo | click | help and theme, split by thin rules.
+ * Only when the bar fits on one line; narrower windows keep the plain wrapping layout,
+ * where a rule would land at the start of a wrapped line.
+ */
+@media (min-width: 1360px) {
+    .top-bar {
+        flex-wrap: nowrap;
+        column-gap: 0;
+    }
+
+    .top-bar > * {
+        flex: 0 0 auto;
+        padding: 0 10px;
+    }
+
+    .top-bar > * + * {
+        border-left: 1px solid var(--line);
+    }
+
+    .top-bar > .brand {
+        margin-right: 0;
+        padding-left: 0;
+    }
+
+    .top-bar > .top-actions {
+        margin-left: auto;
+        padding-right: 0;
+    }
+
+    .top-group {
+        flex-wrap: nowrap;
+    }
+
+    /* a little narrower keys buy the room the rules take */
+    .key-strip button {
+        min-width: 26px;
+    }
+}

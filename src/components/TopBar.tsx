@@ -74,17 +74,19 @@ const TopBar: React.FC<TopBarProps> = ({
             <button className="step-button" aria-label="Faster" disabled={bpm >= BPM_MAX} onClick={() => onBpmChange(bpm + 1)}>+</button>
         </div>
 
-        <button className="metronome-toggle" aria-pressed={metronomeOn} onClick={onToggleMetronome}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-                <path d="M5 2h6l2.5 12h-11zM8 11l4-7" />
-            </svg>
-            <span>Click</span>
-            <span className="beat-dots" aria-hidden="true">
-                {Array.from({ length: beats }, (_, i) => i).map(i => (
-                    <span key={i} className={`beat-dot ${beat === i ? (i === 0 ? 'down' : 'on') : ''}`} />
-                ))}
-            </span>
-        </button>
+        <div className="top-group">
+            <button className="metronome-toggle" aria-pressed={metronomeOn} onClick={onToggleMetronome}>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                    <path d="M5 2h6l2.5 12h-11zM8 11l4-7" />
+                </svg>
+                <span>Click</span>
+                <span className="beat-dots" aria-hidden="true">
+                    {Array.from({ length: beats }, (_, i) => i).map(i => (
+                        <span key={i} className={`beat-dot ${beat === i ? (i === 0 ? 'down' : 'on') : ''}`} />
+                    ))}
+                </span>
+            </button>
+        </div>
 
         <div className="top-actions">
             <button className="icon-button" aria-label="Keyboard shortcuts and help" onClick={onOpenHelp}>
