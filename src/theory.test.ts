@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildChordMidi, invert, nameChord, resolveChord, toToneNotes, arpOrder, ChordType, maxInversion, stickChordType, triadQuality, romanNumeral, STICK_DIRS, SCALES, KEYS, scalePitchClasses, noteNames, voiceLead } from './theory';
+import { buildChordMidi, invert, nameChord, resolveChord, toToneNotes, arpOrder, ChordType, maxInversion, stickChordType, triadQuality, romanNumeral, STICK_DIRS, SCALES, KEYS, scalePitchClasses, noteNames, voiceLead, spreadVoicing } from './theory';
 
 const TYPES: ChordType[] = ['root', 'triad', 'flip', 'minor', 'dim', 'aug', 'six', 'dom7', 'diatonic7', 'diatonic9', 'sus2', 'sus4'];
 const intervals = (m: number[]) => m.map(n => n - m[0]);
@@ -248,5 +248,72 @@ describe('voice leading', () => {
     it('is reproducible from the inversion and octave it reports', () => {
         const v = voiceLead(buildChordMidi(0, 4, 'dom7', 4), base(0));
         expect(invert(buildChordMidi(0, 4, 'dom7', 4 + v.octaveShift), v.inversion)).toEqual(v.midi);
+    });
+});
+
+describe('spreadVoicing (register-aware voicing)', () => {
+    const notes = (degree: number, type: ChordType, octave: number, inversion = 0) =>
+        resolveChord('C', { degree, type, inversion, octave }).notes.join(' ');
+    const pcs = (m: number[]) => [...new Set(m.map(n => n % 12))].sort((a, b) => a - b);
+
+    it('leaves chords from C4 up in close position', () => {
+        expect(notes(0, 'triad', 4)).toBe('C4 E4 G4');
+        expect(notes(5, 'diatonic7', 4)).toBe('A4 C5 E5 G5');
+        expect(notes(0, 'diatonic9', 4)).toBe('C4 E4 G4 B4 D5');
+    });
+
+    it('opens a low triad instead of a muddy cluster', () => {
+        expect(notes(0, 'triad', 2)).toBe('C2 G2 E3');
+        expect(notes(0, 'aug', 2)).toBe('C2 G#2 E3');
+        expect(notes(0, 'triad', 3)).toBe('C3 E3 G3');
+    });
+
+    it('drops the root of a low 7th or 9th an octave', () => {
+        expect(notes(4, 'dom7', 3)).toBe('G2 B3 D4 F4');
+        expect(notes(0, 'diatonic7', 3)).toBe('C2 E3 G3 B3');
+        expect(notes(0, 'diatonic9', 3)).toBe('C2 E3 G3 B3 D4');
+    });
+
+    it('keeps the 9th on top', () => {
+        for (const octave of [2, 3]) {
+            for (const inversion of [0, 1, 2, 3]) {
+                const m = resolveChord('C', { degree: 0, type: 'diatonic9', inversion, octave }).midi;
+                expect(m[m.length - 1] % 12).toBe(2);
+            }
+        }
+    });
+
+    it('never puts a semitone between neighbouring low notes (maj7 inversions)', () => {
+        const m = resolveChord('C', { degree: 0, type: 'diatonic7', inversion: 3, octave: 2 }).midi;
+        m.slice(1).forEach((n, i) => expect(n - m[i]).toBeGreaterThan(1));
+    });
+
+    it('keeps the bass, the notes and the name; only octaves change', () => {
+        for (const type of TYPES) {
+            for (const octave of [2, 3, 4]) {
+                for (let degree = 0; degree < 7; degree++) {
+                    const base = buildChordMidi(0, degree, type, octave);
+                    for (let inv = 0; inv < base.length; inv++) {
+                        const close = invert(base, inv);
+                        const open = spreadVoicing(close, base[0] % 12);
+                        expect(pcs(open)).toEqual(pcs(close));
+                        expect(open.length).toBe(close.length);
+                        expect(open[0] % 12).toBe(close[0] % 12);
+                        expect([...open].sort((a, b) => a - b)).toEqual(open);
+                        expect(Math.max(...open)).toBeLessThanOrEqual(108);
+                        expect(nameChord(open, base[0] % 12)).toEqual(nameChord(close, base[0] % 12));
+                    }
+                }
+            }
+        }
+    });
+
+    it('works with voice leading: what voiceLead picks is what the chord resolves to', () => {
+        let prev: number[] = resolveChord('C', { degree: 0, type: 'triad', inversion: 0, octave: 3 }).midi;
+        for (const [degree, type] of [[5, 'diatonic7'], [3, 'diatonic9'], [4, 'dom7'], [0, 'aug'], [1, 'diatonic7']] as [number, ChordType][]) {
+            const v = voiceLead(buildChordMidi(0, degree, type, 3), prev);
+            expect(resolveChord('C', { degree, type, inversion: v.inversion, octave: 3 + v.octaveShift }).midi).toEqual(v.midi);
+            prev = v.midi;
+        }
     });
 });
