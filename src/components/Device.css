@@ -785,7 +785,7 @@
     }
 
     .device.compact .stick {
-        --stick-size: min(232px, calc(100dvh - 140px));
+        --stick-size: min(232px, calc(100dvh - 140px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)));
     }
 
     .device.compact .dir-name {

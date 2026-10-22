@@ -51,6 +51,8 @@ Live at <https://metjuperry.github.io/Metju.Chord/> (deployed from `master`).
 
 ### On a phone
 
+- **Install it**: in Safari, Share → Add to Home Screen. It then opens full screen as its own app (no browser bars, the notch and home indicator kept clear), works **offline** (everything, samples included, is stored on the phone on first visit), and keeps the screen awake while you play. A new version is picked up the next time it's opened with a connection: straight away if you haven't played yet, otherwise when you next switch away and back, so a jam is never cut off.
+
 One mode at a time, from the top bar: **Play** (the instrument, no scrolling; sideways = stick left, pads right), **Seq** (chord row, parts, editors), **Sound** (instrument, chord/arp, voicing, click, theme, help) and **FX** (the effects matrix).
 
 ---
@@ -77,7 +79,9 @@ Deployment: every push to `master` builds and publishes to GitHub Pages (`.githu
 
 ```text
 src/
-  index.tsx              entry
+  index.tsx              entry; registers the service worker
+  pwa.ts                 service-worker registration and update reload, screen wake lock
+  sw.js                  the service worker (plain JS; webpack fills in the build's file list and version)
   App.tsx                owns all state: song (with undo), live settings, selection, playback, recording; wires everything
   theory.ts              pure music theory: keys, scales, chord building (MIDI), inversions, naming, stick→chord type, voice leading,
                          register-aware spreading, strum timing, the "what comes next" table (NEXT_DEGREES, nextChords)
@@ -104,6 +108,7 @@ src/
 scripts/levels*.ts       the level-matching check (npm run levels)
 scripts/samples/         prepare.py: builds public/samples/ from the original sample libraries
 public/samples/          the bundled samples, <instrument>/<midi>.mp3 (copied into dist/ by webpack)
+public/icons/, manifest.webmanifest   app icons (scripts/icons.cjs renders them from the favicon design) and the web app manifest
 ```
 
 ### Data model (`song.ts`, `parts.ts`)
@@ -127,11 +132,19 @@ public/samples/          the bundled samples, <instrument>/<midi>.mp3 (copied in
 - Instruments (`instruments.ts`) all implement `Voice`: `attack(midi[], time, velocity, glide?)`, `release(midi[], time)`, `releaseAll(time)`, plus `output`, `ready` and `dispose`. Synths are a `SynthPool` of monophonic Tone voices handed out by audio time (unlike `Tone.PolySynth`, so notes scheduled ahead never steal a voice that's still sounding). Sampled instruments are a `SamplePlayer` (one `ToneBufferSource` + gain envelope per note, pitched from the nearest recording; sustained sets loop a baked crossfade loop) behind their synth stand-in until `loadBank` has decoded the samples. Velocity is still scaled by 1/sqrt(voices).
 - Samples are fetched relative to the page (`samples/<id>/<midi>.mp3`), so they work under the Pages subpath. Webpack's `publicPath` is `''` for the same reason, and everything in `public/` besides `index.html` is copied into `dist/`.
 
+### PWA (`pwa.ts`, `sw.js`, `webpack.config.js`)
+
+- Webpack copies `public/` into `dist/` (`PublicFilesPlugin`), hashes the bundle (`bundle.[contenthash].js`) and writes `sw.js` from `src/sw.js` with the list of every built file and a version hashed from their contents (`ServiceWorkerPlugin`). All URLs are relative, so it works at `/` and under `/Metju.Chord/`.
+- The worker precaches the build on install (page, code, icons, manifest must succeed; samples are best-effort and also cached the first time they're fetched), deletes older caches on activate, and serves pages network-first (offline: the cached page) and everything else cache-first. It only registers in production builds.
+- Updates: a new deploy = a new `sw.js` = a new worker that takes over at once (`skipWaiting` + `clients.claim`). `registerServiceWorker` reloads the page on `controllerchange` if no pad or stick has been touched yet, otherwise on the next time the page is hidden. It also checks for updates whenever the app comes back to the front.
+- Wake lock: `keepScreenOn()` (from the intro tap on) asks for a screen lock on interaction and again on `visibilitychange`; it's a no-op where `navigator.wakeLock` doesn't exist and ignores refusals.
+- iOS: `apple-mobile-web-app-capable`, `black-translucent` status bar, `viewport-fit=cover`; the compact layout pads itself with `env(safe-area-inset-*)`. `theme-color` follows the app's theme. Orientation isn't locked (portrait Seq mode still works).
+
 ### UI conventions (keep these when changing anything visible)
 
 - **Yellow means "on/active"** (`--accent`/`--cap`): selected options in toggle groups, the pushed stick wedge, a held pad. A locked/selected item gets a yellow *edge*. Parts never use yellow; their colours are `PART_COLORS` and they colour lanes, sliders and effect cells.
 - Flat dark tiles with a thin edge (`--panel-2`, `--line`); only the instrument's own keys (pads, knob, intro key) get the keycap lip. No dashed outlines.
-- Phones: `compact = (max-width: 1023px), (max-height: 560px)`. Play mode must fit without scrolling (check 844×390, 667×375, 932×430, 390×844). Landscape is the main phone layout: stick left, pads right.
+- Phones: `compact = (max-width: 1023px), (max-height: 560px)`. Play mode must fit without scrolling (check 844×390, 667×375, 932×430, 390×844), also with safe-area insets (installed: notch 47–59 px on the side, home indicator 21 px landscape / 34 px portrait, status bar 47 px portrait). Landscape is the main phone layout: stick left, pads right.
 - Light theme is driven by tokens in `index.css`; check new UI in both (`data-theme="light"` on `<html>`).
 - Everything has a keyboard path and an aria label; global shortcuts live in App's keydown handler, which ignores inputs, selects and `role="slider"`.
 
@@ -140,7 +153,8 @@ public/samples/          the bundled samples, <instrument>/<midi>.mp3 (copied in
 - `npm test` and `npm run build` before every commit; `npm run levels` after any change to instruments, drums or the engine.
 - Browser checks with Playwright against the built app: `npx http-server dist -p 8124 -s`, then a script using `playwright-core` with Chromium (`executablePath: '/opt/pw-browsers/chromium'` in the cloud sandbox). The intro must be dismissed first (`click('.intro-key')`, then wait ~2.1 s). A saved song can be injected with `localStorage.setItem('metju.chord.v2', json)` before reload. Multi-touch (stick + pad) was tested through CDP `Input.dispatchTouchEvent`.
 - Audio behaviour (routing, levels) was checked offline with `Tone.Offline` in headless Chromium, the same way `scripts/levels-page.ts` does.
-- Not verifiable in the sandbox: how things sound on real speakers, and real-phone feel (touch latency, live-recording timing).
+- PWA checks in Playwright (Chromium): worker registers under `/Metju.Chord/`, the cache holds the whole build, an offline reload starts the app and plays cached samples, and a changed build is picked up and reloads. Standalone layout was checked by replacing `env(safe-area-inset-*)` with iPhone values.
+- Not verifiable in the sandbox: how things sound on real speakers, and real-phone feel (touch latency, live-recording timing); iOS Add to Home Screen, its offline cache and wake lock on a real iPhone (Chromium behaves the same per spec, but iOS has its own storage limits and quirks).
 
 ### Samples: sources and licences
 
@@ -172,3 +186,4 @@ CC BY requires credit: the piano is by Alexander Holm (Salamander Grand Piano), 
 - **Samples**: one velocity layer each, no round-robins, so fast repeated notes sound alike. More layers would mean more megabytes. The tonejs-instruments set (CC BY 3.0) has guitar, harp and other instruments if more are wanted.
 - Desktop header shows section dividers only at ≥1360px; narrower windows wrap without them.
 - Live recording timing on real phones is untested.
+- **PWA on iOS** is untested on a device: if iOS evicts the cache (it can after weeks without opening the app), samples come back from the network next time, and until then the synth stand-ins play.

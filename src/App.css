@@ -29,11 +29,22 @@
     }
 }
 
+.app:not(.compact) {
+    padding-left: max(24px, env(safe-area-inset-left));
+    padding-right: max(24px, env(safe-area-inset-right));
+}
+
 /* ---- compact layout (phones, small windows): one mode at a time ---------------------- */
 
+/* The page runs edge to edge (viewport-fit=cover, translucent status bar when installed), so it keeps
+   clear of the notch, the rounded corners, the status bar and the home indicator itself. */
 .app.compact {
     max-width: none;
-    padding: 8px;
+    padding:
+        max(8px, env(safe-area-inset-top))
+        max(8px, env(safe-area-inset-right))
+        max(8px, env(safe-area-inset-bottom))
+        max(8px, env(safe-area-inset-left));
     gap: 8px;
 }
 

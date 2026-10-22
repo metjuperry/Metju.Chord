@@ -21,6 +21,7 @@ import {
 import { getEngine } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
 import { useHistory } from './useHistory';
+import { keepScreenOn } from './pwa';
 import SongMenu from './components/SongMenu';
 import {
     STORAGE_KEY, SAVE_VERSION, SavedState, Song, TimeSignature, changeTimeSignature, decodeShare, defaultSettings, encodeShare,
@@ -248,7 +249,12 @@ const App: React.FC = () => {
 
     useEffect(() => {
         document.documentElement.setAttribute('data-theme', theme);
+        // the browser bar / status bar takes the app's background colour
+        document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'light' ? '#f4f2ec' : '#0d0d0b');
     }, [theme]);
+
+    // Keep the screen awake while the app is open and being played (from the first tap on)
+    useEffect(() => (audioReady ? keepScreenOn() : undefined), [audioReady]);
 
     // ---- audio start --------------------------------------------------------------
 
