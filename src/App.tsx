@@ -13,7 +13,7 @@ import IntroScreen, { IntroPhase } from './components/IntroScreen';
 import MelodyEditor from './components/MelodyEditor';
 import { BassEditor, ChordPartEditor } from './components/PartEditors';
 import {
-    ChordParams, ResolvedChord, StickDir,
+    ChordParams, KEYS, ResolvedChord, StickDir,
     STICK_DIRS, ScaleId, buildChordMidi, keyPitchClass, resolveChord, romanNumeral, scaleLabel, scalePitchClasses,
     stickChordType, triadQuality, voiceLead,
 } from './theory';
@@ -67,12 +67,15 @@ const loopLength = (s: PlayState) => Math.min(musicLoopEnd(s.chords, s.parts, s.
 const playLength = (s: PlayState) => (s.loop ? loopLength(s) : musicEnd(s.chords, s.parts, s.barTicks));
 
 /**
- * A chord for the intro, from the song's key: the I, IV, V or vi chord as a 9th (whatever the
- * scale makes of those degrees), with its root doubled two octaves down.
+ * A chord for the intro: a random press on the instrument itself. Any key, any of the 7 pads,
+ * any of the 9 stick positions (in the song's scale), with the root doubled two octaves down.
  */
-function introChord(key: Song['key'], scale: ScaleId): { name: string; midi: number[] } {
-    const degree = [0, 3, 4, 5][Math.floor(Math.random() * 4)];
-    const chord = resolveChord(key, { degree, type: 'diatonic9', inversion: 0, octave: 4, scale });
+function introChord(scale: ScaleId): { name: string; midi: number[] } {
+    const pick = <T,>(list: readonly T[]) => list[Math.floor(Math.random() * list.length)];
+    const key = pick(KEYS);
+    const degree = Math.floor(Math.random() * 7);
+    const dir = pick(STICK_DIRS);
+    const chord = resolveChord(key, { degree, type: stickChordType(dir, triadQuality(degree, scale)), inversion: 0, octave: 4, scale });
     return { name: chord.name.symbol, midi: [36 + chord.rootPc, ...chord.midi] };
 }
 
@@ -793,7 +796,7 @@ const App: React.FC = () => {
     /** The start tap: ring a chord from the song's key and fade from the intro into the app. */
     const begin = async () => {
         if (intro !== 'idle') return;
-        const chord = introChord(selectedKey, scale);
+        const chord = introChord(scale);
         setIntroName(chord.name);
         setIntro('leaving');
         await startAudio();
