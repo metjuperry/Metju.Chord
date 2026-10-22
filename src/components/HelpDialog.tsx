@@ -29,7 +29,7 @@ const SHORTCUTS: [string, string][] = [
     ['N', 'Pads play chords / single notes on the melody'],
     ['[  ]', 'Shorten / lengthen the selected chord'],
     ['/', 'Split the selected chord at the cursor'],
-    ['.', 'Make the selected beat a rest'],
+    ['.', 'Make the selected beat a rest (then pick which parts keep playing through it)'],
     ['⌫', 'Delete the selected chord'],
     ['Ctrl/⌘ Z', 'Undo'],
     ['Shift Ctrl/⌘ Z  ·  Ctrl Y', 'Redo'],

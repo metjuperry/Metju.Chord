@@ -1,7 +1,7 @@
 import { ArpPattern, MusicalKey, ResolvedChord, SCALES, ScaleId, arpOrder, keyPitchClass, resolveChord } from './theory';
 import type { ArpRate } from './audio/engine';
 import type { InstrumentId } from './audio/instruments';
-import { ChordClip, Clip, PPQ, clipEnd, isChordClip, lastEnd, TICKS_PER_BAR } from './progression';
+import { ChordClip, Clip, PPQ, RestClip, clipEnd, isChordClip, lastEnd, TICKS_PER_BAR } from './progression';
 import type { DrumPattern } from './drums';
 
 // ---- parts: everything that plays the song's one chord row, each in its own way -----------------
@@ -140,6 +140,44 @@ export function audibleParts(parts: Part[]): Part[] {
     return soloed.length ? soloed : parts.filter(p => !p.mute);
 }
 
+// ---- rests: each rest on the chord row says which parts it silences -----------------------------
+
+/** What a rest does to a part it doesn't mention: the parts that follow the chords stop, melody and drums play on. */
+export const REST_PLAYS: { [k in PartKind]: boolean } = { chords: false, bass: false, melody: true, drums: true };
+
+export const playsThroughRest = (rest: RestClip, part: Part) => rest.plays?.[part.id] ?? REST_PLAYS[part.kind];
+
+export type Span = [start: number, end: number];
+
+/** Where rests silence `part`, as [start, end) in ticks. */
+export const restSpans = (chords: Clip[], part: Part): Span[] =>
+    chords.filter((c): c is RestClip => !!c.rest && !playsThroughRest(c, part)).map(c => [c.start, clipEnd(c)]);
+
+export const outsideRests = (spans: Span[], tick: number) => spans.every(([a, b]) => tick < a || tick >= b);
+
+/** `events` without what falls in `spans`: an event starting inside one is dropped, one running into one is cut short. */
+export function silence<E extends { start: number; len: number }>(events: E[], spans: Span[]): E[] {
+    return events.flatMap(e => {
+        if (!outsideRests(spans, e.start)) return [];
+        const end = spans.reduce((m, [a]) => (a > e.start && a < m ? a : m), e.start + e.len);
+        return [end < e.start + e.len ? { ...e, len: end - e.start } : e];
+    });
+}
+
+/** The chords `part` follows: a rest it plays through keeps the chord before it going. */
+export function chordsFor(part: Part, chords: Clip[]): ChordClip[] {
+    const out: ChordClip[] = [];
+    for (const c of chords) {
+        if (isChordClip(c)) {
+            out.push(c);
+            continue;
+        }
+        const last = out[out.length - 1];
+        if (last && clipEnd(last) === c.start && playsThroughRest(c, part)) out[out.length - 1] = { ...last, len: last.len + c.len };
+    }
+    return out;
+}
+
 // ---- what a part plays ------------------------------------------------------------------------
 
 /** The harmony everything follows: the song's chord row, key and scale. */
@@ -194,7 +232,7 @@ function arpCycle(midi: number[], pattern: ArpPattern, rand: () => number): numb
 
 export function chordPartNotes(part: ChordPart, h: Harmony): NoteEvent[] {
     const out: NoteEvent[] = [];
-    for (const clip of h.chords.filter(isChordClip)) {
+    for (const clip of chordsFor(part, h.chords)) {
         const midi = resolveClip(h, clip).midi;
         if (part.playMode === 'Chord') {
             out.push({ start: clip.start, len: clip.len, midi });
@@ -245,7 +283,7 @@ const SIXTEENTH = PPQ / 4;
 
 export function bassNotes(part: BassPart, h: Harmony, groove: Groove): NoteEvent[] {
     const { beatTicks, kicks = [] } = groove;
-    const chords = h.chords.filter(isChordClip);
+    const chords = chordsFor(part, h.chords);
     const pcs = scalePcs(h);
     const rootMidi = (c: ChordClip) => 12 * (part.octave + 1) + resolveClip(h, c).rootPc;
     const out: NoteEvent[] = [];
@@ -322,7 +360,7 @@ export function melodyMidi(part: { octave: number }, h: { key: MusicalKey; scale
 }
 
 export const melodyNotes = (part: MelodyPart, h: Harmony): NoteEvent[] =>
-    part.notes.map(n => ({ start: n.start, len: n.len, midi: [melodyMidi(part, h, n.step)] }));
+    silence(part.notes, restSpans(h.chords, part)).map(n => ({ start: n.start, len: n.len, midi: [melodyMidi(part, h, n.step)] }));
 
 /** Everything an instrument part plays, in song ticks. */
 export function partNotes(part: InstrumentPart, h: Harmony, groove: Groove): NoteEvent[] {

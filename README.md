@@ -31,7 +31,7 @@ Live at <https://metjuperry.github.io/Metju.Chord/> (deployed from `master`).
   - **Melody**: a scale-locked grid, two octaves of the key, one column per 1/16, one note at a time, 1/16 to 1/2 long. The chord under each column is shaded (root darker). Or record from the pads in Notes mode: when stopped, each note goes at the cursor; while playing, notes land where you play them, snapped to 1/16.
   - **Drums**: a synthesised 808/909-style kit (kick, snare, clap, closed/open hat, two toms, rim) on a 1/16 grid of 1, 2 or 4 bars that loops under the song, with starter beats per time signature.
 - Each part's lane shows a miniature of what it plays; selecting a lane opens that part's editor below.
-- Sequencer: grows a row at a time (SEQ-8, SEQ-16…), one step per beat; held chords show strike dot and sustain; lengthen with the grip or **[ ]**, split **/**, rest **.**, copy/paste, loop. Time signatures 2/4–12/8; the click accents the downbeat (and every third beat in compound meters).
+- Sequencer: grows a row at a time (SEQ-8, SEQ-16…), one step per beat; held chords show strike dot and sustain; lengthen with the grip or **[ ]**, split **/**, rest **.** (each rest picks which parts it silences; by default chords and bass stop, melody and drums play on), copy/paste, loop. Time signatures 2/4–12/8; the click accents the downbeat (and every third beat in compound meters).
 - Playback never touches the screen or stick: they only follow what you play live.
 
 ### Sound and effects
@@ -103,6 +103,7 @@ scripts/levels*.ts       the level-matching check (npm run levels)
 - `Song = { key, scale, chords: Clip[], parts: Part[], steps, bpm, timeSignature, space }`. Everything in `Song` is undoable and saved; `Settings` (voiceLeading, octave, inversion, loop, theme) is saved but not undoable.
 - Time is in **ticks, 96 per quarter note** (`PPQ`). A sequencer step is one beat of the time signature (`ticksPerStep(ts)`: 96 in x/4, 48 in x/8). Melody and drums work in 1/16s (`TICKS_PER_SIXTEENTH` = 24).
 - A chord clip stores only `{ degree, type, inversion, octave }`; key and scale come from the song, so `resolveClip(harmony, clip)` turns it into notes.
+- A rest clip may carry `plays: { [partId]: boolean }`, saying whether each part keeps playing through it; parts not listed use `REST_PLAYS` for their kind (chords and bass stop, melody and drums play on). A chord or bass part that plays through holds the chord before the rest (`chordsFor`); melody notes and drum hits under a silencing rest are dropped (`restSpans`, `silence`, `outsideRests`).
 - `Part = ChordPart | BassPart | MelodyPart | DrumPart`, all with `{ id, name, color, volume, mute, solo, fx }`. Melody notes store a **scale step** (0–14 from the key's root in the part's octave), not a MIDI note, so they follow key and scale changes.
 - `fx = { drive, chorus, reverb, delay }` (0–1, 0 = off); drums only use reverb/delay. `space = { reverb: { size, ret }, delay: { time, feedback, ret }, out: { level } }`.
 - Saves: `SavedState { version: 2, song, settings }` in localStorage key `metju.chord.v2`, JSON files, and `#song=` share links (deflate-raw + base64url). `readSong` repairs anything malformed (clamps, drops overlaps, fills defaults) so new fields must get a default there. No migration from v1 (there were no v1 users).
