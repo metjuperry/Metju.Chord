@@ -236,3 +236,15 @@ describe('glide', () => {
         expect(glides(noFx(), 1)).toBe(false);
     });
 });
+
+describe('strummed chord parts', () => {
+    it('play each chord once, strummed, alternating along the row', () => {
+        const part = { ...(newPart('chords', []) as ChordPart), playMode: 'Strum' as const, strumSpread: 0.04, strumDirection: 'alternate' as const };
+        const notes = chordPartNotes(part, song);
+        expect(notes.map(n => n.start)).toEqual([0, 4 * S, 8 * S, 12 * S]);
+        const first = notes[0], second = notes[1];
+        expect(first.strum![first.midi.indexOf(Math.min(...first.midi))]).toBe(0);
+        expect(second.strum![second.midi.indexOf(Math.max(...second.midi))]).toBe(0);
+        expect(Math.max(...first.strum!)).toBeCloseTo(0.04);
+    });
+});

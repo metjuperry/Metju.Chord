@@ -203,3 +203,11 @@
     color: var(--muted);
     white-space: nowrap;
 }
+
+.strum-dirs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.sound-row .segmented > button {
+    padding: 0 8px;
+}

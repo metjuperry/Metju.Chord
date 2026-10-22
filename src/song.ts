@@ -3,7 +3,7 @@ import type { ArpRate } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
 import { Clip, PPQ, STEPS_PER_ROW } from './progression';
 import { DRUM_VOICES, DrumPattern, PATTERN_BARS, PatternBars, TICKS_PER_SIXTEENTH, fitPattern, sixteenthsPerBar } from './drums';
-import { BASS_STYLES, BassStyle, FX_KEYS, MAX_PARTS, MELODY_STEPS, Note, PART_COLORS, Part, PartFx, PartKind, PartTone, PlayMode, TONE_KEYS, fxAvailable, neutralTone, newPart } from './parts';
+import { BASS_STYLES, BassStyle, FX_KEYS, MAX_PARTS, MELODY_STEPS, Note, PART_COLORS, Part, PartFx, PartKind, PartTone, PlayMode, STRUM_DIRECTIONS, TONE_KEYS, fxAvailable, neutralTone, newPart } from './parts';
 
 // ---- the song: everything undo/redo, saving and sharing cover ---------------------------
 
@@ -255,10 +255,12 @@ function readPart(v: unknown, index: number, existing: Part[], maxTick: number, 
         case 'chords':
             return {
                 ...common, kind, instrument: instrument(), tone,
-                playMode: oneOf<PlayMode>(v.playMode, ['Chord', 'Arp'], 'Chord'),
+                playMode: oneOf<PlayMode>(v.playMode, ['Chord', 'Strum', 'Arp'], 'Chord'),
                 arpPattern: oneOf(v.arpPattern, ARP_PATTERNS, 'up'),
                 arpRate: oneOf(v.arpRate, ARP_RATES, '8n'),
                 noteLength: num(v.noteLength, 0.05, 2, 0.3),
+                strumSpread: num(v.strumSpread, 0.005, 0.1, 0.025),
+                strumDirection: oneOf(v.strumDirection, STRUM_DIRECTIONS, 'down'),
             };
         case 'bass':
             return {

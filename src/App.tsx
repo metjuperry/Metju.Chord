@@ -16,7 +16,7 @@ import { BassEditor, ChordPartEditor } from './components/PartEditors';
 import {
     ChordParams, KEYS, ResolvedChord, StickDir,
     STICK_DIRS, ScaleId, buildChordMidi, keyPitchClass, resolveChord, romanNumeral, scaleLabel, scalePitchClasses,
-    noteNames, stickChordType, triadQuality, voiceLead,
+    noteNames, stickChordType, strumOffsets, triadQuality, voiceLead,
 } from './theory';
 import { getEngine } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
@@ -49,7 +49,7 @@ const MAX_INVERSION = 3;
 
 /** What the sequencer schedules: some notes or a drum hit, and the part that plays them. */
 type Scheduled =
-    | { midi: number[]; gate?: number; legato: number; part: string; drum?: undefined }
+    | { midi: number[]; gate?: number; strum?: number[]; legato: number; part: string; drum?: undefined }
     | { drum: DrumVoice; part: string };
 
 /** How much of each note's length it actually sounds, so repeated notes are struck rather than smeared. */
@@ -299,6 +299,8 @@ const App: React.FC = () => {
 
     /** The last chord played live, which voice leading moves from. */
     const lastVoicing = useRef<number[] | null>(null);
+    /** Chords strummed live, so an alternating strum goes down, up, down... */
+    const strumHits = useRef(0);
 
     /** The melody row a pad plays in Notes mode: its scale degree, an octave up with the stick pushed up. */
     const noteStep = (degree: number, dir: StickDir) => degree + (dir === 'U' ? 7 : 0);
@@ -331,6 +333,8 @@ const App: React.FC = () => {
         let stop: () => void;
         if (style.playMode === 'Arp') {
             stop = engine.startArp(chord.midi, { pattern: style.arpPattern, rate: style.arpRate, noteLength: style.noteLength });
+        } else if (style.playMode === 'Strum') {
+            stop = engine.attack(chord.midi, undefined, undefined, strumOffsets(chord.midi, style.strumSpread, style.strumDirection, strumHits.current++));
         } else {
             stop = engine.attack(chord.midi);
         }
@@ -415,7 +419,7 @@ const App: React.FC = () => {
             holds.current.set(id, { degree: hold.degree, stop: sound(hold.degree).stop });
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [stickDir, inversion, octave, selectedKey, scale, voiceLeading, padPart.instrument, padPart.playMode, padPart.arpPattern, padPart.arpRate, padMode, padMelody?.id, padMelody?.octave]);
+    }, [stickDir, inversion, octave, selectedKey, scale, voiceLeading, padPart.instrument, padPart.playMode, padPart.arpPattern, padPart.arpRate, padPart.strumSpread, padPart.strumDirection, padMode, padMelody?.id, padMelody?.octave]);
 
     // ---- progression playback (Transport) --------------------------------------------
 
@@ -430,7 +434,7 @@ const App: React.FC = () => {
                     .filter(hit => outsideRests(restSpans(s.chords, p), hit.tick))
                     .map(hit => ({ tick: hit.tick, duration: TICKS_PER_SIXTEENTH, data: { drum: hit.voice, part: p.id } }))
                 : partNotes(p, h, { beatTicks: s.stepTicks, kicks: kickTicks(s.parts, s.ts, s.total * s.stepTicks) }).map(n => ({
-                    tick: n.start, duration: n.len, data: { midi: n.midi, gate: n.gate, legato: LEGATO[p.kind], part: p.id },
+                    tick: n.start, duration: n.len, data: { midi: n.midi, gate: n.gate, strum: n.strum, legato: LEGATO[p.kind], part: p.id },
                 })))),
             opts: { loop: s.loop, loopEnd: loopLength(s), end: musicEnd(s.chords, s.parts, s.barTicks) },
         };
@@ -447,7 +451,7 @@ const App: React.FC = () => {
         }
         const seconds = ticksToSeconds(event.duration);
         const duration = data.gate !== undefined ? Math.min(data.gate, seconds) : seconds * data.legato;
-        engine.playChord(data.midi, { duration, time, track: data.part });
+        engine.playChord(data.midi, { duration, time, track: data.part, strum: data.strum });
     };
     const playEventRef = useRef(playEvent);
     playEventRef.current = playEvent;

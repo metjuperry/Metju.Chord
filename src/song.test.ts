@@ -42,7 +42,7 @@ describe('saving songs', () => {
                 { start: 2 * S, len: S, chord: { type: 'nonsense' } },             // unknown chord type: dropped
             ],
             parts: [
-                { kind: 'chords', id: 'a', name: '', instrument: 'kazoo', volume: 50, color: 'pink', playMode: 'Strum' },
+                { kind: 'chords', id: 'a', name: '', instrument: 'kazoo', volume: 50, color: 'pink', playMode: 'Shred' },
                 { kind: 'chords', id: 'a', name: 'Dup' },
                 { kind: 'bass', style: 'slap', octave: 9 },
                 { kind: 'melody', notes: [{ start: 0, len: 48, step: 99 }, { start: 24, len: 24, step: 2 }, { start: 9999, len: 24, step: 1 }] },
@@ -204,5 +204,17 @@ describe('tremolo and glide', () => {
         const of = (kind: string) => song.parts.find(p => p.kind === kind)!.fx;
         expect(of('melody')).toMatchObject({ tremolo: 0.4, glide: 1 });
         expect(of('bass')).toMatchObject({ drive: 0.2, tremolo: 0, glide: 0 });
+    });
+});
+
+describe('strum settings', () => {
+    it('are saved with the part, clamped, with defaults for older songs', () => {
+        const song = readSong({ chords: [], parts: [
+            { kind: 'chords', playMode: 'Strum', strumSpread: 5, strumDirection: 'sideways' },
+            { kind: 'chords', playMode: 'Arp' },
+        ] })!;
+        const [a, b] = song.parts;
+        expect(a.kind === 'chords' && [a.playMode, a.strumSpread, a.strumDirection]).toEqual(['Strum', 0.1, 'down']);
+        expect(b.kind === 'chords' && [b.playMode, b.strumSpread, b.strumDirection]).toEqual(['Arp', 0.025, 'down']);
     });
 });

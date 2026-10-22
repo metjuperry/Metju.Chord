@@ -1,4 +1,4 @@
-import { ArpPattern, MusicalKey, ResolvedChord, SCALES, ScaleId, arpOrder, keyPitchClass, resolveChord } from './theory';
+import { ArpPattern, MusicalKey, ResolvedChord, SCALES, ScaleId, StrumDirection, arpOrder, keyPitchClass, resolveChord, strumOffsets } from './theory';
 import type { ArpRate } from './audio/engine';
 import type { InstrumentId } from './audio/instruments';
 import { ChordClip, Clip, PPQ, RestClip, clipEnd, isChordClip, lastEnd, TICKS_PER_BAR } from './progression';
@@ -7,7 +7,11 @@ import type { DrumPattern } from './drums';
 // ---- parts: everything that plays the song's one chord row, each in its own way -----------------
 
 export type PartKind = 'chords' | 'bass' | 'melody' | 'drums';
-export type PlayMode = 'Chord' | 'Arp';
+export type PlayMode = 'Chord' | 'Strum' | 'Arp';
+
+/** Strum spreads offered (first to last note), in seconds. */
+export const STRUM_SPREADS = [0.012, 0.025, 0.04, 0.06] as const;
+export const STRUM_DIRECTIONS: StrumDirection[] = ['down', 'up', 'alternate'];
 export type BassStyle =
     | 'hold' | 'pulse' | 'eighths' | 'octaves' | 'offbeat' | 'rootFifth' | 'arp' | 'tresillo' | 'walk' | 'kick';
 
@@ -123,6 +127,9 @@ export interface ChordPart extends PartBase {
     arpRate: ArpRate;
     /** Gate of each arp note, in seconds. */
     noteLength: number;
+    /** Strum: seconds from the first note of a chord to the last, and which way it rolls. */
+    strumSpread: number;
+    strumDirection: StrumDirection;
 }
 
 /** Follows the chord roots in a chosen rhythm. */
@@ -180,7 +187,7 @@ export function newPart(kind: PartKind, existing: Part[], drums?: DrumPattern): 
     };
     switch (kind) {
         case 'chords':
-            return { ...base, kind, instrument: same ? 'warmpad' : 'epiano', tone: neutralTone(), playMode: 'Chord', arpPattern: 'up', arpRate: '8n', noteLength: 0.3 };
+            return { ...base, kind, instrument: same ? 'warmpad' : 'epiano', tone: neutralTone(), playMode: 'Chord', arpPattern: 'up', arpRate: '8n', noteLength: 0.3, strumSpread: 0.025, strumDirection: 'down' };
         case 'bass':
             return { ...base, kind, instrument: 'bass', tone: neutralTone(), style: 'pulse', octave: 2 };
         case 'melody':
@@ -250,6 +257,8 @@ export interface NoteEvent {
     midi: number[];
     /** How long the notes sound, in seconds, when shorter than `len` (arp gates). */
     gate?: number;
+    /** Strummed: each note's start delay in seconds, in the order of `midi`. */
+    strum?: number[];
 }
 
 export const resolveClip = (h: Harmony, clip: ChordClip): ResolvedChord =>
@@ -288,10 +297,16 @@ function arpCycle(midi: number[], pattern: ArpPattern, rand: () => number): numb
 
 export function chordPartNotes(part: ChordPart, h: Harmony): NoteEvent[] {
     const out: NoteEvent[] = [];
+    let hit = 0;
     for (const clip of chordsFor(part, h.chords)) {
         const midi = resolveClip(h, clip).midi;
         if (part.playMode === 'Chord') {
             out.push({ start: clip.start, len: clip.len, midi });
+            continue;
+        }
+        if (part.playMode === 'Strum') {
+            // alternating strums count hits along the row, so the pattern doesn't depend on where playback starts
+            out.push({ start: clip.start, len: clip.len, midi, strum: strumOffsets(midi, part.strumSpread, part.strumDirection, hit++) });
             continue;
         }
         const step = ARP_RATE_TICKS[part.arpRate];

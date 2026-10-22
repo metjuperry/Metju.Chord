@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildChordMidi, invert, nameChord, resolveChord, toToneNotes, arpOrder, ChordType, maxInversion, stickChordType, triadQuality, romanNumeral, STICK_DIRS, SCALES, KEYS, scalePitchClasses, noteNames, voiceLead, spreadVoicing } from './theory';
+import { buildChordMidi, invert, nameChord, resolveChord, toToneNotes, arpOrder, ChordType, maxInversion, stickChordType, triadQuality, romanNumeral, STICK_DIRS, SCALES, KEYS, scalePitchClasses, noteNames, voiceLead, spreadVoicing, strumOffsets } from './theory';
 
 const TYPES: ChordType[] = ['root', 'triad', 'flip', 'minor', 'dim', 'aug', 'six', 'dom7', 'diatonic7', 'diatonic9', 'sus2', 'sus4'];
 const intervals = (m: number[]) => m.map(n => n - m[0]);
@@ -315,5 +315,27 @@ describe('spreadVoicing (register-aware voicing)', () => {
             expect(resolveChord('C', { degree, type, inversion: v.inversion, octave: 3 + v.octaveShift }).midi).toEqual(v.midi);
             prev = v.midi;
         }
+    });
+});
+
+describe('strumOffsets', () => {
+    const c = [60, 64, 67, 72];
+    it('rolls a downstroke from the lowest note up, over the whole spread', () => {
+        expect(strumOffsets(c, 0.03, 'down')).toEqual([0, 0.01, 0.02, 0.03]);
+    });
+    it('rolls an upstroke from the top down', () => {
+        expect(strumOffsets(c, 0.03, 'up')).toEqual([0.03, 0.02, 0.01, 0]);
+    });
+    it('alternates down and up with each hit', () => {
+        expect(strumOffsets(c, 0.03, 'alternate', 0)).toEqual(strumOffsets(c, 0.03, 'down'));
+        expect(strumOffsets(c, 0.03, 'alternate', 1)).toEqual(strumOffsets(c, 0.03, 'up'));
+        expect(strumOffsets(c, 0.03, 'alternate', 2)).toEqual(strumOffsets(c, 0.03, 'down'));
+    });
+    it('follows pitch, not the order the notes come in', () => {
+        expect(strumOffsets([67, 60, 64], 0.02, 'down')).toEqual([0.02, 0, 0.01]);
+    });
+    it('leaves single notes and a zero spread unrolled', () => {
+        expect(strumOffsets([60], 0.04, 'down')).toEqual([0]);
+        expect(strumOffsets(c, 0, 'up')).toEqual([0, 0, 0, 0]);
     });
 });

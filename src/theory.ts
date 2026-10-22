@@ -30,6 +30,25 @@ export type ChordType =
 
 export type ArpPattern = 'up' | 'down' | 'upDown' | 'random';
 
+/** Which way a strum rolls through the chord: low to high, high to low, or switching every hit. */
+export type StrumDirection = 'down' | 'up' | 'alternate';
+
+/**
+ * When each note of a strummed chord starts, in seconds after the first, in the order of `midi`.
+ * A guitarist's downstroke starts on the low string, so 'down' rolls from the lowest note up and
+ * 'up' from the highest down; 'alternate' is down on even hits and up on odd ones (`hit` counts
+ * the chord's strikes). `spread` is the time from the first note to the last.
+ */
+export function strumOffsets(midi: number[], spread: number, direction: StrumDirection, hit = 0): number[] {
+    if (midi.length < 2 || spread <= 0) return midi.map(() => 0);
+    const up = direction === 'up' || (direction === 'alternate' && hit % 2 === 1);
+    const order = midi.map((m, i) => [m, i] as const).sort((a, b) => (up ? b[0] - a[0] : a[0] - b[0]));
+    const step = spread / (midi.length - 1);
+    const out = new Array<number>(midi.length);
+    order.forEach(([, i], k) => (out[i] = k * step));
+    return out;
+}
+
 export function keyPitchClass(key: MusicalKey): number {
     return NOTE_NAMES.indexOf(key);
 }

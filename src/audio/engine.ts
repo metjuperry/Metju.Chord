@@ -290,11 +290,17 @@ export class Engine {
     // ---- playing -----------------------------------------------------------
 
     /** Play a chord for `duration` (seconds or Tone time) at an audio-clock `time`, on `track` (default: the selected one). */
-    playChord(midi: number[], opts: { duration: Tone.Unit.Time; time?: number; track?: string }) {
+    playChord(midi: number[], opts: { duration: Tone.Unit.Time; time?: number; track?: string; strum?: number[] }) {
         const strip = this.strip(opts.track);
         const time = opts.time ?? Tone.now();
         const seconds = Tone.Time(opts.duration).toSeconds();
-        this.start(strip, midi, time, velocityFor(midi.length), 0.8 * seconds);
+        if (opts.strum) {
+            // each note starts a little later; all of them stop together
+            const velocity = velocityFor(midi.length);
+            midi.forEach((m, i) => strip.voice.attack([m], time + Math.min(opts.strum![i] ?? 0, 0.8 * seconds), velocity));
+        } else {
+            this.start(strip, midi, time, velocityFor(midi.length), 0.8 * seconds);
+        }
         strip.voice.release(midi, time + seconds);
     }
 
@@ -302,11 +308,19 @@ export class Engine {
      * Start a chord on `track` (default: the selected one); returns how to release it, on that same
      * synth even if the selection changes.
      */
-    attack(midi: number[], time?: number, track?: string): () => void {
+    attack(midi: number[], time?: number, track?: string, strum?: number[]): () => void {
         const strip = this.strip(track);
         const voice = strip.voice;
-        this.start(strip, midi, time ?? Tone.now(), velocityFor(midi.length));
-        return () => voice.release(midi, Tone.now());
+        const at = time ?? Tone.now();
+        if (strum) {
+            const velocity = velocityFor(midi.length);
+            midi.forEach((m, i) => voice.attack([m], at + (strum[i] ?? 0), velocity));
+        } else {
+            this.start(strip, midi, at, velocityFor(midi.length));
+        }
+        // a quick tap still lets the whole strum sound before it lets go
+        const last = strum ? Math.max(0, ...strum) : 0;
+        return () => voice.release(midi, Math.max(Tone.now(), at + last + 0.01));
     }
 
     /**
