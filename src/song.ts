@@ -3,7 +3,7 @@ import type { ArpRate } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
 import { Clip, PPQ, STEPS_PER_ROW } from './progression';
 import { DRUM_VOICES, DrumPattern, PATTERN_BARS, PatternBars, TICKS_PER_SIXTEENTH, fitPattern, sixteenthsPerBar } from './drums';
-import { BASS_STYLES, BassStyle, MAX_PARTS, MELODY_STEPS, Note, PART_COLORS, Part, PartKind, PlayMode, newPart } from './parts';
+import { BASS_STYLES, BassStyle, FX_KEYS, MAX_PARTS, MELODY_STEPS, Note, PART_COLORS, Part, PartFx, PartKind, PlayMode, fxAvailable, newPart } from './parts';
 
 // ---- the song: everything undo/redo, saving and sharing cover ---------------------------
 
@@ -61,6 +61,26 @@ export function changeTimeSignature(song: Song, next: TimeSignature): Song {
     };
 }
 
+/** Delay times offered for the shared delay, synced to the tempo. */
+export const DELAY_TIMES = ['16n', '8n', '8t', '4n', '2n'] as const;
+export type DelayTime = (typeof DELAY_TIMES)[number];
+
+/** The shared effects every part can send into, and the output. */
+export interface Space {
+    /** Reverb length in seconds, and how loud the reverb comes back (0..1). */
+    reverb: { size: number; ret: number };
+    /** Delay time (tempo-synced), feedback (0..0.9) and how loud it comes back (0..1). */
+    delay: { time: DelayTime; feedback: number; ret: number };
+    /** Overall level into the limiter (0..1; 1 is the level the instruments are matched at). */
+    out: { level: number };
+}
+
+export const defaultSpace = (): Space => ({
+    reverb: { size: 2.5, ret: 0.8 },
+    delay: { time: '8n', feedback: 0.35, ret: 0.7 },
+    out: { level: 1 },
+});
+
 export interface Song {
     /** Key and scale of the whole song: changing them transposes or re-harmonises every part. */
     key: MusicalKey;
@@ -72,6 +92,7 @@ export interface Song {
     steps: number;
     bpm: number;
     timeSignature: TimeSignature;
+    space: Space;
 }
 
 /** Live playing settings, saved with the song but not part of undo. */
@@ -105,6 +126,7 @@ export function newSong(): Song {
         steps: stepsPerRow({ beats: 4, unit: 4 }),
         bpm: 100,
         timeSignature: { beats: 4, unit: 4 },
+        space: defaultSpace(),
     };
 }
 
@@ -183,6 +205,26 @@ function readNotes(v: unknown, maxTick: number): Note[] {
 
 const PART_KINDS: PartKind[] = ['chords', 'bass', 'melody', 'drums'];
 
+function readFx(v: unknown, kind: PartKind): PartFx {
+    const src = isObj(v) ? v : {};
+    const fx = {} as PartFx;
+    for (const k of FX_KEYS) fx[k] = fxAvailable(kind, k) ? num(src[k], 0, 1, 0) : 0;
+    return fx;
+}
+
+function readSpace(v: unknown): Space {
+    const d = defaultSpace();
+    const src = isObj(v) ? v : {};
+    const rev = isObj(src.reverb) ? src.reverb : {};
+    const dly = isObj(src.delay) ? src.delay : {};
+    const out = isObj(src.out) ? src.out : {};
+    return {
+        reverb: { size: num(rev.size, 0.3, 8, d.reverb.size), ret: num(rev.ret, 0, 1, d.reverb.ret) },
+        delay: { time: oneOf(dly.time, DELAY_TIMES, d.delay.time), feedback: num(dly.feedback, 0, 0.9, d.delay.feedback), ret: num(dly.ret, 0, 1, d.delay.ret) },
+        out: { level: num(out.level, 0, 1, d.out.level) },
+    };
+}
+
 function readPart(v: unknown, index: number, existing: Part[], maxTick: number, barLen: number): Part | null {
     if (!isObj(v) || !PART_KINDS.includes(v.kind as PartKind)) return null;
     const kind = v.kind as PartKind;
@@ -194,6 +236,7 @@ function readPart(v: unknown, index: number, existing: Part[], maxTick: number, 
         volume: int(v.volume, -24, 6, 0),
         mute: bool(v.mute, false),
         solo: bool(v.solo, false),
+        fx: readFx(v.fx, kind),
     };
     const instrument = () => oneOf(v.instrument, INSTRUMENT_IDS, (base as { instrument: string }).instrument) as InstrumentId;
     switch (kind) {
@@ -243,6 +286,7 @@ export function readSong(v: unknown): Song | null {
         steps,
         bpm: int(v.bpm, 40, 240, 100),
         timeSignature,
+        space: readSpace(v.space),
     };
 }
 

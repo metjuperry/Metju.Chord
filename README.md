@@ -19,7 +19,7 @@ A chord instrument modelled on pocket chord machines like the HiChord: seven cho
 
 - Thirteen instruments built from Tone.js synths: E-Piano, Pad, Warm Pad, Strings, Organ, Drawbar, Brass, Lead, Bass, Chiptune, Pluck, Mallets, Bells. They are level-matched (`npm run levels`).
 - The Sound panel sets the instrument of the selected part. A chord part plays chords held, or arpeggiated (up, down, up-down, random; 1/4 to 1/32 with triplets); the pads play the same way.
-- Effects in signal order: distortion → chorus → delay → reverb, then a master limiter.
+- Effects per part, in a matrix under the sequencer (the **FX** mode on phones): a row per part, a knob per effect. **Drive** and **Chorus** colour that part only (drive is level-compensated, so it adds grit, not volume); **Reverb** and **Delay** set how much of the part goes into one shared reverb and one shared delay, whose size, time, feedback and return sit underneath with the output level. Drums get the reverb and delay sends only. Effects are saved with the song, undoable and in share links. Drag a knob up or down, scroll, or use the arrow keys; double-tap for off.
 
 ### Progression
 
@@ -54,7 +54,8 @@ Small screens (phones, narrow windows) show one mode at a time, switched from th
 
 - **Play**: the instrument fills the screen with nothing to scroll. Turn the phone sideways for the HiChord layout, stick on the left and pads on the right, so one thumb works the stick while the other plays. The bar has play and record, and the screen shows the step you're recording to.
 - **Seq**: the chord row, the parts and their editors.
-- **Sound**: the selected part's instrument, chord/arp, effects, inversion and voice leading, click, theme and help.
+- **Sound**: the selected part's instrument, chord/arp, inversion and voice leading, click, theme and help.
+- **FX**: the effects matrix.
 
 The stick is a thumb-stick: press and slide toward a direction, and let go to spring back to the centre. A quick tap locks a direction instead.
 

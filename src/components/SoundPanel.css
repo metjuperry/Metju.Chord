@@ -122,44 +122,6 @@
     font: inherit;
 }
 
-.fx-row {
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: var(--bg);
-    padding: 10px 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.fx-row.on {
-    border-color: var(--line-2);
-}
-
-.fx-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-
-.fx-name {
-    display: flex;
-    gap: 8px;
-    font-size: 12px;
-    font-weight: 700;
-}
-
-.fx-index {
-    color: var(--muted);
-    font-weight: 400;
-}
-
-.fx-body {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
-    gap: 10px;
-}
-
 .switch {
     width: 44px;
     height: 24px;

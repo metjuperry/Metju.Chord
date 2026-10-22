@@ -1,0 +1,223 @@
+.fx-matrix {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 18px 20px;
+}
+
+.fx-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+}
+
+.fx-head .chip-button {
+    margin-left: auto;
+}
+
+.fx-grid {
+    display: grid;
+    grid-template-columns: minmax(84px, 140px) repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    align-items: stretch;
+}
+
+.fx-col {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: center;
+    padding-bottom: 2px;
+}
+
+.fx-part {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 54px;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+    font-size: 12px;
+    font-weight: 700;
+    text-align: left;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.fx-part i {
+    flex: 0 0 auto;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--track);
+}
+
+.fx-part.selected {
+    border-color: var(--track);
+    box-shadow: inset 0 0 0 1px var(--track);
+}
+
+.fx-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 54px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+}
+
+/* a cell that's doing something takes the part's colour */
+.fx-cell.on {
+    border-color: color-mix(in srgb, var(--track) 60%, var(--line));
+    background: color-mix(in srgb, var(--track) 10%, var(--panel-2));
+}
+
+.fx-cell.na {
+    color: var(--faint);
+    font-size: 12px;
+}
+
+.fx-value {
+    width: 34px;
+    font-size: 11px;
+}
+
+.fx-cell:not(.on) .fx-value {
+    color: var(--faint);
+}
+
+.fx-space {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 6px;
+}
+
+.fx-card {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    padding: 8px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+}
+
+.fx-card b {
+    font-size: 12px;
+    min-width: 48px;
+}
+
+.fx-card-val {
+    font-size: 11px;
+    color: var(--muted);
+}
+
+.fx-card select {
+    height: 30px;
+    padding: 0 6px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+}
+
+/* ---- knob ---------------------------------------------------------------------------------- */
+
+.knob {
+    display: inline-flex;
+    flex: 0 0 auto;
+    touch-action: none;
+    cursor: ns-resize;
+    border-radius: 50%;
+}
+
+.knob:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.knob-track {
+    fill: none;
+    stroke: var(--line-2);
+    stroke-width: 3;
+    stroke-linecap: round;
+}
+
+.knob-arc {
+    fill: none;
+    stroke: var(--knob);
+    stroke-width: 3;
+    stroke-linecap: round;
+}
+
+.knob-cap {
+    fill: var(--bg);
+    stroke: var(--line-2);
+}
+
+.knob-pointer {
+    stroke: var(--text);
+    stroke-width: 2;
+    stroke-linecap: round;
+}
+
+.knob.off .knob-pointer {
+    stroke: var(--faint);
+}
+
+/* phones: tighter cells, the hint goes */
+@media (max-width: 1023px), (max-height: 560px) {
+    .fx-matrix {
+        gap: 8px;
+        padding: 10px;
+    }
+
+    .fx-hint {
+        display: none;
+    }
+
+    .fx-grid {
+        grid-template-columns: 84px repeat(4, minmax(0, 1fr));
+        gap: 5px;
+    }
+
+    .fx-part,
+    .fx-cell {
+        min-height: 46px;
+    }
+
+    .fx-value {
+        width: 30px;
+        font-size: 10px;
+    }
+}
+
+@media (max-width: 560px) {
+    .fx-grid {
+        grid-template-columns: 64px repeat(4, minmax(0, 1fr));
+    }
+
+    .fx-part {
+        padding: 0 6px;
+        font-size: 11px;
+        gap: 5px;
+    }
+
+    .fx-cell {
+        flex-direction: column;
+        gap: 0;
+        padding: 4px 0;
+    }
+
+    .fx-value {
+        width: auto;
+    }
+}

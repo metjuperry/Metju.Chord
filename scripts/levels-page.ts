@@ -32,17 +32,16 @@ async function dry(id: string, midi: number[]) {
     return measure(buffer);
 }
 
-/** The full engine (limiter included) with every effect at max, chords retriggered every half second. */
+/** The full engine (limiter included) with every effect and send at max, chords retriggered every half second. */
 async function withFx(id: string) {
     const buffer = await Tone.Offline(async () => {
         const engine = new Engine();
-        engine.setInstrument(id as any);
-        engine.fx.set('reverb', { enabled: true, wet: 1, decay: 3 });
-        engine.fx.set('delay', { enabled: true, wet: 1, feedback: 0.9 });
-        engine.fx.set('chorus', { enabled: true, wet: 1 });
-        engine.fx.set('distortion', { enabled: true, amount: 1 });
+        // every effect at its maximum: drive, chorus, full sends into a long reverb and a high-feedback delay
+        engine.setTrack('t', { instrument: id as any, volume: 0, fx: { drive: 1, chorus: 1, reverb: 1, delay: 1 } });
+        engine.selectTrack('t');
+        engine.setSpace({ reverb: { size: 3, ret: 1 }, delay: { time: '8n', feedback: 0.9, ret: 1 }, out: { level: 1 } });
         await engine.ready();
-        FX_CHORDS.forEach((chord, i) => engine.playChord(chord, { duration: 0.6, time: i * 0.5 }));
+        FX_CHORDS.forEach((chord, i) => engine.playChord(chord, { duration: 0.6, time: i * 0.5, track: 't' }));
     }, 4);
     return measure(buffer);
 }

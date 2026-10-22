@@ -9,6 +9,7 @@ import SoundPanel from './components/SoundPanel';
 import Progression from './components/Progression';
 import HelpDialog from './components/HelpDialog';
 import DrumEditor from './components/DrumEditor';
+import FxMatrix from './components/FxMatrix';
 import IntroScreen, { IntroPhase } from './components/IntroScreen';
 import MelodyEditor from './components/MelodyEditor';
 import { BassEditor, ChordPartEditor } from './components/PartEditors';
@@ -27,7 +28,7 @@ import {
 } from './song';
 import { Clip, clipAt, fitTo, isChordClip, place, remove, setLength, split } from './progression';
 import {
-    BassPart, ChordPart, Harmony, InstrumentPart, MAX_PARTS, MelodyPart, Part, PartKind,
+    BassPart, ChordPart, Harmony, InstrumentPart, MAX_PARTS, MelodyPart, Part, PartFx, PartKind, noFx,
     audibleParts, fitNotes, hasInstrument, melodyMidi, musicEnd, musicLoopEnd, newPart, noteAt, partNotes, placeNote, removeNote, resolveClip,
 } from './parts';
 import { SeqEvent, SeqOptions, SequencerPlayer, ticksToSeconds } from './audio/sequencer';
@@ -56,8 +57,8 @@ const LEGATO: { [k in Exclude<PartKind, 'drums'>]: number } = { chords: 0.98, ba
 /** Keep the engine's strips in step with the parts: an instrument per instrument part, a kit per drum part. */
 function syncParts(engine: ReturnType<typeof getEngine>, parts: Part[]) {
     parts.forEach(p => (hasInstrument(p)
-        ? engine.setTrack(p.id, { instrument: p.instrument, volume: p.volume })
-        : engine.setDrumTrack(p.id, { volume: p.volume })));
+        ? engine.setTrack(p.id, { instrument: p.instrument, volume: p.volume, fx: p.fx })
+        : engine.setDrumTrack(p.id, { volume: p.volume, fx: p.fx })));
 }
 
 /**
@@ -260,6 +261,11 @@ const App: React.FC = () => {
         if (audioReady) getEngine().setBpm(transportBpm(bpm, ts));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [bpm, ts.unit, audioReady]);
+
+    // The shared reverb, delay and output level belong to the song
+    useEffect(() => {
+        if (audioReady) getEngine().setSpace(song.space);
+    }, [song.space, audioReady]);
 
     // Keep the engine's per-part strips (instrument, volume) in step with the parts
     const engineParts = useRef(new Set<string>());
@@ -558,6 +564,15 @@ const App: React.FC = () => {
         },
     };
 
+    // ---- effects: per part (drive, chorus, sends) and the shared space ---------------------------
+    const fxActions = {
+        // turning one knob is one undo step, not one per pixel
+        set: (id: string, key: keyof PartFx, value: number) =>
+            setParts(ps => ps.map(p => (p.id === id ? { ...p, fx: { ...p.fx, [key]: value } } : p)), `fx:${id}:${key}`),
+        space: (space: Song['space']) => editSong(sg => ({ ...sg, space }), 'space'),
+        dryAll: () => setParts(ps => ps.map(p => ({ ...p, fx: noFx() }))),
+    };
+
     // ---- drum pattern editing (the selected drum part) ---------------------------------------
     const drumPart = selPart?.kind === 'drums' ? selPart : null;
     const setPattern = (update: (p: DrumPattern) => DrumPattern, mergeKey?: string) => {
@@ -773,7 +788,8 @@ const App: React.FC = () => {
 
     useEffect(() => {
         const isTyping = (t: EventTarget | null) =>
-            t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement;
+            t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement
+            || (t instanceof HTMLElement && t.getAttribute('role') === 'slider');
 
         const down = (e: KeyboardEvent) => {
             const a = keyActions.current;
@@ -1067,6 +1083,17 @@ const App: React.FC = () => {
             )}
         />
     );
+    const fxEl = (
+        <FxMatrix
+            parts={parts}
+            space={song.space}
+            selectedPart={selPart?.id}
+            onSelectPart={pickLane}
+            onFx={fxActions.set}
+            onSpace={fxActions.space}
+            onDryAll={fxActions.dryAll}
+        />
+    );
     const voicingEl = (
         <VoicingControls inversion={inversion} maxInversion={maxInv} voiceLeading={voiceLeading} onInversion={setInversion} onVoiceLeading={setVoiceLeading} />
     );
@@ -1094,6 +1121,7 @@ const App: React.FC = () => {
                 />
                 {mode === 'play' && deviceEl}
                 {mode === 'seq' && progressionEl}
+                {mode === 'fx' && fxEl}
                 {mode === 'sound' && (
                     <div className="sound-mode">
                         <section className="panel sound-section voicing-card" aria-label="Voicing">
@@ -1148,6 +1176,8 @@ const App: React.FC = () => {
             </main>
 
             {progressionEl}
+
+            {fxEl}
 
             <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
             {notice && <div className="toast" role="status">{notice}</div>}
