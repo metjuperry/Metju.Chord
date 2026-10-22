@@ -3,12 +3,13 @@ import './CompactBar.css';
 import { KEYS, MusicalKey, SCALES, ScaleId } from '../theory';
 import { BPM_MAX, BPM_MIN, OCTAVE_MAX, OCTAVE_MIN } from './TopBar';
 
-export type AppMode = 'play' | 'seq' | 'sound';
+export type AppMode = 'play' | 'seq' | 'sound' | 'fx';
 
 const MODES: { id: AppMode; label: string }[] = [
     { id: 'play', label: 'Play' },
     { id: 'seq', label: 'Seq' },
     { id: 'sound', label: 'Sound' },
+    { id: 'fx', label: 'FX' },
 ];
 
 interface CompactBarProps {

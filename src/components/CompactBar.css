@@ -113,4 +113,17 @@
     .compact-bar {
         gap: 6px;
     }
+
+    /* four modes have to fit beside the controls */
+    .cb-modes > button {
+        padding: 0 7px;
+    }
+
+    .cb-group > button {
+        width: 28px;
+    }
+
+    .cb-value {
+        min-width: 26px;
+    }
 }

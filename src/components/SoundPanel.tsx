@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import './SoundPanel.css';
 import { ArpPattern } from '../theory';
-import { ArpRate, FxName, FxState, getEngine } from '../audio/engine';
+import { ArpRate } from '../audio/engine';
 import { INSTRUMENTS, InstrumentId } from '../audio/instruments';
 import { PlayMode } from '../parts';
 
@@ -85,7 +85,6 @@ interface SoundPanelProps {
     onChordStyle: (patch: Partial<ChordStyle>) => void;
 }
 
-const pct = (v: number) => `${Math.round(v * 100)}%`;
 
 const Slider: React.FC<{ label: string; value: number; min: number; max: number; step: number; display: string; onChange: (v: number) => void }> =
     ({ label, value, min, max, step, display, onChange }) => (
@@ -94,78 +93,6 @@ const Slider: React.FC<{ label: string; value: number; min: number; max: number;
             <input type="range" min={min} max={max} step={step} value={value} onChange={e => onChange(parseFloat(e.target.value))} />
         </label>
     );
-
-const Effects: React.FC = () => {
-    const [fx, setFx] = useState<FxState>(() => getEngine().fx.get());
-    const update = <N extends FxName>(name: N, params: Partial<FxState[N]>) => {
-        getEngine().fx.set(name, params);
-        setFx(getEngine().fx.get());
-    };
-
-    const rows: { name: FxName; label: string; enabled: boolean; body: React.ReactNode }[] = [
-        {
-            name: 'distortion', label: 'Distortion', enabled: fx.distortion.enabled,
-            body: <Slider label="Drive" value={fx.distortion.amount} min={0} max={1} step={0.05} display={pct(fx.distortion.amount)} onChange={amount => update('distortion', { amount })} />,
-        },
-        {
-            name: 'chorus', label: 'Chorus', enabled: fx.chorus.enabled,
-            body: <>
-                <Slider label="Depth" value={fx.chorus.depth} min={0} max={1} step={0.05} display={pct(fx.chorus.depth)} onChange={depth => update('chorus', { depth })} />
-                <Slider label="Rate" value={fx.chorus.frequency} min={0.5} max={10} step={0.5} display={`${fx.chorus.frequency.toFixed(1)} Hz`} onChange={frequency => update('chorus', { frequency })} />
-                <Slider label="Mix" value={fx.chorus.wet} min={0} max={1} step={0.05} display={pct(fx.chorus.wet)} onChange={wet => update('chorus', { wet })} />
-            </>,
-        },
-        {
-            name: 'delay', label: 'Delay', enabled: fx.delay.enabled,
-            body: <>
-                <label className="fx-slider">
-                    <span><span>Time</span></span>
-                    <select value={fx.delay.time} onChange={e => update('delay', { time: e.target.value })}>
-                        <option value="16n">1/16</option>
-                        <option value="8n">1/8</option>
-                        <option value="4n">1/4</option>
-                        <option value="2n">1/2</option>
-                    </select>
-                </label>
-                <Slider label="Feedback" value={fx.delay.feedback} min={0} max={0.9} step={0.05} display={pct(fx.delay.feedback)} onChange={feedback => update('delay', { feedback })} />
-                <Slider label="Mix" value={fx.delay.wet} min={0} max={1} step={0.05} display={pct(fx.delay.wet)} onChange={wet => update('delay', { wet })} />
-            </>,
-        },
-        {
-            name: 'reverb', label: 'Reverb', enabled: fx.reverb.enabled,
-            body: <>
-                <Slider label="Size" value={fx.reverb.decay} min={0.1} max={5} step={0.1} display={`${fx.reverb.decay.toFixed(1)} s`} onChange={decay => update('reverb', { decay })} />
-                <Slider label="Mix" value={fx.reverb.wet} min={0} max={1} step={0.05} display={pct(fx.reverb.wet)} onChange={wet => update('reverb', { wet })} />
-            </>,
-        },
-    ];
-
-    return (
-        <section className="panel sound-section" aria-labelledby="fx-title">
-            <div className="section-head">
-                <h2 className="eyebrow" id="fx-title">Effects</h2>
-                <span className="section-note">signal flows top → bottom</span>
-            </div>
-            {rows.map((row, i) => (
-                <div key={row.name} className={`fx-row ${row.enabled ? 'on' : ''}`}>
-                    <div className="fx-head">
-                        <span className="fx-name"><span className="fx-index">0{i + 1}</span>{row.label}</span>
-                        <button
-                            className="switch"
-                            role="switch"
-                            aria-checked={row.enabled}
-                            aria-label={row.label}
-                            onClick={() => update(row.name, { enabled: !row.enabled } as Partial<FxState[typeof row.name]>)}
-                        >
-                            <span />
-                        </button>
-                    </div>
-                    {row.enabled && <div className="fx-body">{row.body}</div>}
-                </div>
-            ))}
-        </section>
-    );
-};
 
 const SoundPanel: React.FC<SoundPanelProps> = ({ partName, partColor, instrument, onInstrument, chordStyle, onChordStyle }) => (
     <aside className="sound-panel" aria-label="Sound">
@@ -190,7 +117,6 @@ const SoundPanel: React.FC<SoundPanelProps> = ({ partName, partColor, instrument
             </p>
         </section>
 
-        <Effects />
     </aside>
 );
 

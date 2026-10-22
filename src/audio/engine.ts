@@ -3,15 +3,8 @@ import { ArpPattern, arpOrder } from '../theory';
 import { Instrument, InstrumentId, createInstrument } from './instruments';
 import { DrumKit } from './drumkit';
 import type { DrumVoice } from '../drums';
-
-export type FxName = 'reverb' | 'delay' | 'chorus' | 'distortion';
-
-export interface FxState {
-    reverb: { enabled: boolean; wet: number; decay: number };
-    delay: { enabled: boolean; wet: number; time: string; feedback: number };
-    chorus: { enabled: boolean; wet: number; depth: number; frequency: number };
-    distortion: { enabled: boolean; amount: number };
-}
+import type { PartFx } from '../parts';
+import type { Space } from '../song';
 
 export type ArpRate = '4n' | '8n' | '8t' | '16n' | '16t' | '32n';
 
@@ -24,52 +17,72 @@ export interface ArpOptions {
 
 const velocityFor = (voices: number) => 1 / Math.sqrt(Math.max(1, voices));
 
-interface Strip {
+/**
+ * A part's channel: instrument -> drive -> makeup -> chorus -> level -> master, with the level also
+ * feeding two sends into the shared reverb and delay. Drum parts skip drive and chorus.
+ */
+interface Channel {
+    input: Tone.Gain;
+    drive?: Tone.Distortion;
+    makeup?: Tone.Gain;
+    chorus?: Tone.Chorus;
+    level: Tone.Volume;
+    sendReverb: Tone.Gain;
+    sendDelay: Tone.Gain;
+    nodes: Tone.ToneAudioNode[];
+}
+
+interface Strip extends Channel {
     instrument: InstrumentId;
     voice: Instrument;
-    level: Tone.Volume;
 }
 
 /**
- * Owns every audio node. Signal path:
- *   track instrument -> track volume -> fxIn -> distortion -> chorus -> delay -> reverb -> fxOut -> master -> limiter -> destination
- * The effects chain is created once and never rewired; "disabled" just means wet = 0.
+ * Drive gets louder as it squashes; this pulls it back so turning drive up adds grit, not volume.
+ * Fitted to the average loudness rise measured on E-Piano, Bass, Lead and Strings (about +3.5 dB at
+ * 25% up to +6.5 dB at 100%), in dB at drive amount `a`.
+ */
+export const driveMakeupDb = (a: number) => (a <= 0 ? 0 : -(1.5 + 5.2 * Math.pow(a, 0.6)));
+
+/** Master gain at full output level. */
+const MASTER_GAIN = 0.8;
+
+const NO_FX: PartFx = { drive: 0, chorus: 0, reverb: 0, delay: 0 };
+
+/**
+ * Owns every audio node. Each part has its own channel (see Channel); the parts share one reverb
+ * and one delay, which they send into, and everything ends in master -> limiter -> destination.
  */
 export class Engine {
-    readonly master = new Tone.Gain(0.8);
+    readonly master = new Tone.Gain(MASTER_GAIN);
     readonly limiter = new Tone.Limiter(-1);
     readonly meter = new Tone.Meter();
-    readonly fxIn = new Tone.Gain(1);
-    readonly fxOut = new Tone.Gain(1);
 
-    private distortion = new Tone.Distortion(0.4);
-    private chorus = new Tone.Chorus(4, 2.5, 0.5);
-    private delay = new Tone.FeedbackDelay('8n', 0.3);
-    private reverb = new Tone.Reverb(1.5);
-
-    private fxState: FxState = {
-        reverb: { enabled: false, wet: 0.3, decay: 1.5 },
-        delay: { enabled: false, wet: 0.3, time: '8n', feedback: 0.3 },
-        chorus: { enabled: false, wet: 0.5, depth: 0.5, frequency: 4 },
-        distortion: { enabled: false, amount: 0.4 },
+    private reverbBus = new Tone.Gain(1);
+    private reverb = new Tone.Reverb({ decay: 2.5, wet: 1 });
+    private reverbReturn = new Tone.Gain(0.8);
+    private delayBus = new Tone.Gain(1);
+    private delay = new Tone.FeedbackDelay({ delayTime: '8n', feedback: 0.35, wet: 1 });
+    private delayReturn = new Tone.Gain(0.7);
+    private space: Space = {
+        reverb: { size: 2.5, ret: 0.8 },
+        delay: { time: '8n', feedback: 0.35, ret: 0.7 },
+        out: { level: 1 },
     };
 
-    /** One strip per sequencer track: its instrument into its own volume, then into the shared effects. */
+    /** One strip per instrument part. */
     private strips = new Map<string, Strip>();
-    /** Drum tracks: a kit into its own volume, straight to the master (dry, so the chord effects don't smear the beat). */
-    private kits = new Map<string, { kit: DrumKit; level: Tone.Volume }>();
-    /** The track the pads and keyboard play through. */
+    /** One kit per drum part. */
+    private kits = new Map<string, Channel & { kit: DrumKit }>();
+    /** The part the pads and keyboard play through. */
     private current = 'main';
     private transportUsers = new Set<string>();
 
     constructor() {
-        this.fxIn.chain(this.distortion, this.chorus, this.delay, this.reverb, this.fxOut, this.master, this.limiter, Tone.getDestination());
+        this.master.chain(this.limiter, Tone.getDestination());
         this.limiter.connect(this.meter);
-        this.chorus.start();
-        this.applyFx('reverb');
-        this.applyFx('delay');
-        this.applyFx('chorus');
-        this.applyFx('distortion');
+        this.reverbBus.chain(this.reverb, this.reverbReturn, this.master);
+        this.delayBus.chain(this.delay, this.delayReturn, this.master);
     }
 
     /** Resolves once the reverb impulse response is rendered. */
@@ -77,32 +90,82 @@ export class Engine {
         return this.reverb.ready;
     }
 
-    // ---- instruments -------------------------------------------------------
+    // ---- channels ------------------------------------------------------------
 
-    /** Create or update a track's strip. Changing its instrument swaps the synth with a short fade. */
-    setTrack(id: string, opts: { instrument: InstrumentId; volume: number }) {
-        let strip = this.strips.get(id);
-        if (!strip) {
-            const level = new Tone.Volume(opts.volume).connect(this.fxIn);
-            const voice = createInstrument(opts.instrument);
-            voice.output.connect(level);
-            strip = { instrument: opts.instrument, voice, level };
-            this.strips.set(id, strip);
-            return;
+    /** A channel's nodes, wired up; `inserts` adds drive and chorus (not for drums). */
+    private makeChannel(volume: number, inserts: boolean): Channel {
+        const input = new Tone.Gain(1);
+        const level = new Tone.Volume(volume).connect(this.master);
+        const sendReverb = new Tone.Gain(0).connect(this.reverbBus);
+        const sendDelay = new Tone.Gain(0).connect(this.delayBus);
+        level.connect(sendReverb);
+        level.connect(sendDelay);
+        if (!inserts) {
+            input.connect(level);
+            return { input, level, sendReverb, sendDelay, nodes: [input, level, sendReverb, sendDelay] };
         }
-        strip.level.volume.rampTo(opts.volume, 0.05);
-        if (strip.instrument !== opts.instrument) {
-            const previous = strip.voice;
-            strip.voice = createInstrument(opts.instrument);
-            strip.voice.output.connect(strip.level);
-            strip.instrument = opts.instrument;
-            this.fadeOut(previous);
-        }
+        const drive = new Tone.Distortion({ distortion: 0, wet: 0, oversample: '2x' });
+        const makeup = new Tone.Gain(1);
+        const chorus = new Tone.Chorus({ frequency: 1.5, delayTime: 3.5, depth: 0.7, spread: 180, wet: 0 }).start();
+        input.chain(drive, makeup, chorus, level);
+        return { input, drive, makeup, chorus, level, sendReverb, sendDelay, nodes: [input, drive, makeup, chorus, level, sendReverb, sendDelay] };
     }
 
-    /** Fade a voice out over 50 ms (still through the effects and limiter) and dispose it, so swapping instruments mid-note doesn't click. */
-    private fadeOut(voice: Instrument, then?: () => void) {
-        const fade = new Tone.Gain(1).connect(this.fxIn);
+    /** Set a channel's effects, smoothly. */
+    private applyFx(ch: Channel, fx: PartFx) {
+        if (ch.drive && ch.makeup) {
+            ch.drive.distortion = 0.1 + 0.8 * fx.drive;
+            ch.drive.wet.rampTo(fx.drive > 0 ? 1 : 0, 0.03);
+            ch.makeup.gain.rampTo(Tone.dbToGain(driveMakeupDb(fx.drive)), 0.03);
+        }
+        ch.chorus?.wet.rampTo(fx.chorus, 0.05);
+        ch.sendReverb.gain.rampTo(fx.reverb, 0.05);
+        ch.sendDelay.gain.rampTo(fx.delay, 0.05);
+    }
+
+    private disposeChannel(ch: Channel, after = 600) {
+        ch.level.volume.rampTo(-80, 0.05);
+        setTimeout(() => ch.nodes.forEach(n => n.dispose()), after);
+    }
+
+    /** The shared reverb, delay and output level. */
+    setSpace(space: Space) {
+        if (space.reverb.size !== this.space.reverb.size) this.reverb.decay = space.reverb.size;
+        this.reverbReturn.gain.rampTo(space.reverb.ret, 0.05);
+        this.delay.delayTime.rampTo(Tone.Time(space.delay.time).toSeconds(), 0.05);
+        this.delay.feedback.rampTo(space.delay.feedback, 0.05);
+        this.delayReturn.gain.rampTo(space.delay.ret, 0.05);
+        // full level is the master gain the instruments were matched at, leaving headroom for the sends
+        this.master.gain.rampTo(MASTER_GAIN * space.out.level, 0.05);
+        this.space = JSON.parse(JSON.stringify(space));
+    }
+
+    // ---- instruments -------------------------------------------------------
+
+    /** Create or update a part's strip. Changing its instrument swaps the synth with a short fade. */
+    setTrack(id: string, opts: { instrument: InstrumentId; volume: number; fx?: PartFx }) {
+        let strip = this.strips.get(id);
+        if (!strip) {
+            const voice = createInstrument(opts.instrument);
+            strip = { ...this.makeChannel(opts.volume, true), instrument: opts.instrument, voice };
+            voice.output.connect(strip.input);
+            this.strips.set(id, strip);
+        } else {
+            strip.level.volume.rampTo(opts.volume, 0.05);
+            if (strip.instrument !== opts.instrument) {
+                const previous = strip.voice;
+                strip.voice = createInstrument(opts.instrument);
+                strip.voice.output.connect(strip.input);
+                strip.instrument = opts.instrument;
+                this.fadeOut(previous, strip.input);
+            }
+        }
+        this.applyFx(strip, opts.fx ?? NO_FX);
+    }
+
+    /** Fade a voice out over 50 ms (still through its channel) and dispose it, so swapping instruments mid-note doesn't click. */
+    private fadeOut(voice: Instrument, into: Tone.ToneAudioNode, then?: () => void) {
+        const fade = new Tone.Gain(1).connect(into);
         voice.output.disconnect();
         voice.output.connect(fade);
         voice.synth.releaseAll();
@@ -114,25 +177,26 @@ export class Engine {
         }, 150);
     }
 
-    /** Create or update a drum track's kit and level. */
-    setDrumTrack(id: string, opts: { volume: number }) {
-        const existing = this.kits.get(id);
-        if (existing) {
-            existing.level.volume.rampTo(opts.volume, 0.05);
-            return;
+    /** Create or update a drum part's kit, level and sends. */
+    setDrumTrack(id: string, opts: { volume: number; fx?: PartFx }) {
+        let ch = this.kits.get(id);
+        if (!ch) {
+            const kit = new DrumKit();
+            ch = { ...this.makeChannel(opts.volume, false), kit };
+            kit.output.connect(ch.input);
+            this.kits.set(id, ch);
+        } else {
+            ch.level.volume.rampTo(opts.volume, 0.05);
         }
-        const level = new Tone.Volume(opts.volume).connect(this.master);
-        const kit = new DrumKit();
-        kit.output.connect(level);
-        this.kits.set(id, { kit, level });
+        this.applyFx(ch, { ...(opts.fx ?? NO_FX), drive: 0, chorus: 0 });
     }
 
-    /** Play one drum hit on a drum track at an audio-clock `time`. */
+    /** Play one drum hit on a drum part at an audio-clock `time`. */
     playDrum(track: string, voice: DrumVoice, time?: number, velocity = 1) {
-        const strip = this.kits.get(track);
-        if (!strip) return;
+        const ch = this.kits.get(track);
+        if (!ch) return;
         try {
-            strip.kit.trigger(voice, time ?? Tone.now(), velocity);
+            ch.kit.trigger(voice, time ?? Tone.now(), velocity);
         } catch {
             // two hits on one monophonic voice at the same instant: the second is dropped
         }
@@ -142,16 +206,13 @@ export class Engine {
         const kit = this.kits.get(id);
         if (kit) {
             this.kits.delete(id);
-            kit.level.volume.rampTo(-80, 0.05);
-            setTimeout(() => {
-                kit.kit.dispose();
-                kit.level.dispose();
-            }, 600);
+            this.disposeChannel(kit);
+            setTimeout(() => kit.kit.dispose(), 600);
         }
         const strip = this.strips.get(id);
         if (!strip) return;
         this.strips.delete(id);
-        this.fadeOut(strip.voice, () => strip.level.dispose());
+        this.fadeOut(strip.voice, strip.input, () => this.disposeChannel(strip, 300));
     }
 
     /** The track the pads and keyboard play through. */
@@ -232,7 +293,8 @@ export class Engine {
     /** One shared bpm for the metronome, arpeggiator, sequencer and tempo-synced delay. */
     setBpm(bpm: number) {
         Tone.getTransport().bpm.value = bpm;
-        this.applyFx('delay');
+        // the delay is tempo-synced: re-read its note value at the new tempo
+        this.delay.delayTime.rampTo(Tone.Time(this.space.delay.time).toSeconds(), 0.05);
     }
 
     /** The Transport runs while anyone holds it; the last one to let go stops it. */
@@ -305,40 +367,6 @@ export class Engine {
             synth.triggerAttackRelease(
                 Tone.Frequency(cycle[k], 'midi').toFrequency(),
                 Math.min(opts.noteLength, stepSeconds), time + i * stepSeconds, velocityFor(1));
-        }
-    }
-
-    // ---- effects -----------------------------------------------------------
-
-    readonly fx = {
-        get: (): FxState => JSON.parse(JSON.stringify(this.fxState)),
-        set: <N extends FxName>(name: N, params: Partial<FxState[N]>) => {
-            Object.assign(this.fxState[name], params);
-            this.applyFx(name);
-        },
-    };
-
-    private applyFx(name: FxName) {
-        const s = this.fxState;
-        switch (name) {
-            case 'reverb':
-                if (this.reverb.decay !== s.reverb.decay) this.reverb.decay = s.reverb.decay;
-                this.reverb.wet.value = s.reverb.enabled ? s.reverb.wet : 0;
-                break;
-            case 'delay':
-                this.delay.delayTime.value = Tone.Time(s.delay.time).toSeconds(); // follows current bpm
-                this.delay.feedback.value = s.delay.feedback;
-                this.delay.wet.value = s.delay.enabled ? s.delay.wet : 0;
-                break;
-            case 'chorus':
-                this.chorus.depth = s.chorus.depth;
-                this.chorus.frequency.value = s.chorus.frequency;
-                this.chorus.wet.value = s.chorus.enabled ? s.chorus.wet : 0;
-                break;
-            case 'distortion':
-                this.distortion.distortion = s.distortion.amount;
-                this.distortion.wet.value = s.distortion.enabled ? 1 : 0;
-                break;
         }
     }
 }

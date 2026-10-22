@@ -140,3 +140,36 @@ describe('time signatures', () => {
         expect(mel?.kind === 'melody' && mel.notes).toEqual([{ start: 2 * (S / 2), len: S / 2, step: 3 }]);
     });
 });
+
+describe('effects in the song', () => {
+    it('new parts start dry, with the default shared space', () => {
+        const song = newSong();
+        expect(song.parts.every(p => p.fx.drive === 0 && p.fx.chorus === 0 && p.fx.reverb === 0 && p.fx.delay === 0)).toBe(true);
+        expect(song.space.delay.time).toBe('8n');
+    });
+
+    it('reads effects back, clamped, and keeps drums off drive and chorus', () => {
+        const song = readSong({
+            chords: [],
+            parts: [
+                { kind: 'bass', fx: { drive: 0.6, chorus: 7, reverb: -1, delay: 'x' } },
+                { kind: 'drums', fx: { drive: 1, chorus: 1, reverb: 0.2, delay: 0.1 } },
+            ],
+            space: { reverb: { size: 99, ret: 0.5 }, delay: { time: '3n', feedback: 2, ret: 0.4 }, out: { level: 0.6 } },
+        })!;
+        const bass = song.parts.find(p => p.kind === 'bass')!;
+        const drums = song.parts.find(p => p.kind === 'drums')!;
+        expect(bass.fx).toEqual({ drive: 0.6, chorus: 1, reverb: 0, delay: 0 });
+        expect(drums.fx).toEqual({ drive: 0, chorus: 0, reverb: 0.2, delay: 0.1 });
+        expect(song.space).toEqual({ reverb: { size: 8, ret: 0.5 }, delay: { time: '8n', feedback: 0.9, ret: 0.4 }, out: { level: 0.6 } });
+    });
+
+    it('songs saved before effects load dry', () => {
+        const old = JSON.parse(JSON.stringify(newSong()));
+        old.parts.forEach((p: { fx?: unknown }) => delete p.fx);
+        delete old.space;
+        const song = readSong(old)!;
+        expect(song.parts.every(p => p.fx.reverb === 0)).toBe(true);
+        expect(song.space.out.level).toBe(1);
+    });
+});

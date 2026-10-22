@@ -1,193 +1,145 @@
 # Metju.Chord
 
-An interactive musical chord and scale visualization tool built with React, TypeScript, and Tone.js. Play chords, create sequences, visualize scales, and explore music theory in your browser.
+A chord instrument and song sketchpad in the browser, modelled on pocket chord machines like the HiChord: seven chord pads, an 8-way stick that changes the chord type, and a screen that shows what you're playing. Underneath is a sequencer where one chord row drives keys, bass, melody and drums, with per-part effects. Built with React 19, TypeScript and Tone.js, no backend.
+
+Live at <https://metjuperry.github.io/Metju.Chord/> (deployed from `master`).
+
+- [Features](#features)
+- [Getting started](#getting-started)
+- [For developers and agents](#for-developers-and-agents): architecture, conventions, how to verify, where things stand
+
+---
 
 ## Features
 
-A chord instrument modelled on pocket chord machines like the HiChord: seven chord pads, an 8-way stick that changes the chord type, and a screen that shows what you're playing.
-
 ### Pads and stick
 
-- Seven pads play the diatonic chords of the selected major key: **1** = I, **2** = ii … **7** = vii°. They are laid out like the hardware: 2 4 6 above, 1 3 5 7 below.
+- Seven pads play the diatonic chords of the song's key: **1** = I, **2** = ii … **7** = vii°. They sit like piano keys, HiChord style: 1 3 5 7 are long keys along the bottom, 2 4 6 short keys over the gaps.
 - Each pad shows the chord it will play with the stick where it is now.
-- The stick changes the chord type: centre = triad, ↑ flip 3rd, ↗ dominant 7, → 7th, ↘ 9th, ↓ sus4, ↙ 6 (major) / sus2 (minor), ← diminished, ↖ augmented.
-- Click a stick direction to latch it, or hold **Q W E / A D / Z X C** while playing **1–7**. Moving the stick while holding a pad re-voices the held chord.
+- The stick is a ring of eight wedges around a knob. Centre = triad, ↑ flip 3rd, ↗ dominant 7, → 7th, ↘ 9th, ↓ sus4, ↙ 6 (major) / sus2 (minor), ← diminished, ↖ augmented. Each wedge shows the chord it gives on the current pad.
+- Press and slide (thumb-stick), tap a direction to lock it, or hold **Q W E / A D / Z X C** while playing **1–7**. Moving the stick while holding a pad re-voices the held chord.
 - All 12 keys in eight scales: major, minor, harmonic and melodic minor, Dorian, Phrygian, Lydian, Mixolydian. Note names use flats in flat keys.
 - Inversions (root to 3rd), octave C2–C6, or **voice leading**: each chord takes the inversion that moves least from the last one, and that voicing is what gets recorded.
+- **Notes mode** (switch on the device, **N**, or select a Melody lane): the pads play single scale notes on the Melody part instead of chords; stick up = octave above.
 
-### Sound
+### Song: one chord row, played by parts
 
-- Thirteen instruments built from Tone.js synths: E-Piano, Pad, Warm Pad, Strings, Organ, Drawbar, Brass, Lead, Bass, Chiptune, Pluck, Mallets, Bells. They are level-matched (`npm run levels`).
-- The Sound panel sets the instrument of the selected part. A chord part plays chords held, or arpeggiated (up, down, up-down, random; 1/4 to 1/32 with triplets); the pads play the same way.
-- Effects in signal order: distortion → chorus → delay → reverb, then a master limiter.
+- **One chord row** holds the song's chords; the pads record into it (**R**, pick a step, play pads; the cursor moves on). Key and scale belong to the song, so changing them moves every part (undoable).
+- **Parts** (up to six, added with **+ Part**) play that chord row, each in its own way, each with instrument, volume, mute and solo:
+  - **Chords** (Keys, Pad…): block chords, or arpeggiated (up, down, up-down, random; 1/4 to 1/32 with triplets). The pads play through the chord part selected last.
+  - **Bass**: follows the chord roots. Ten styles shown as pattern cards: Hold, Beats, 8ths, Octaves, Off-beat, Root–5th, Arpeggio, 3-3-2, Walk (steps into the next chord) and Follow kick (a note on every kick of the drum parts). Octave C1–C3.
+  - **Melody**: a scale-locked grid, two octaves of the key, one column per 1/16, one note at a time, 1/16 to 1/2 long. The chord under each column is shaded (root darker). Or record from the pads in Notes mode: when stopped, each note goes at the cursor; while playing, notes land where you play them, snapped to 1/16.
+  - **Drums**: a synthesised 808/909-style kit (kick, snare, clap, closed/open hat, two toms, rim) on a 1/16 grid of 1, 2 or 4 bars that loops under the song, with starter beats per time signature.
+- Each part's lane shows a miniature of what it plays; selecting a lane opens that part's editor below.
+- Sequencer: grows a row at a time (SEQ-8, SEQ-16…), one step per beat; held chords show strike dot and sustain; lengthen with the grip or **[ ]**, split **/**, rest **.**, copy/paste, loop. Time signatures 2/4–12/8; the click accents the downbeat (and every third beat in compound meters).
+- Playback never touches the screen or stick: they only follow what you play live.
 
-### Progression
+### Sound and effects
 
-- A step sequencer that grows a row of 8 steps at a time (SEQ-8, SEQ-16, …), one step per beat in 4/4. A chord held across several steps is one block with a strike dot and a sustain bar, and it carries on into the next row when it crosses a row break.
-- **One chord row** holds the song's chords. The pads record into it. Key and scale belong to the song, so changing them moves every part with it (and can be undone).
-- **Parts** play the chord row, each in its own way, up to six of them, each with its own instrument, volume, mute and solo:
-  - **Chords** (Keys, Pad, ...): the chords held as block chords, or arpeggiated. The pads play through the chord part you selected last.
-  - **Bass**: follows the chord roots. Ten styles, each shown as a little pattern: Hold, Beats, 8ths, Octaves, Off-beat, Root–5th, Arpeggio, 3-3-2, Walk (steps into the next chord on the last beat) and Follow kick (a note on every kick of the drum parts). Octave C1–C3.
-  - **Melody**: notes you write on a scale-locked grid, two octaves of the key, one column per 1/16. The notes of the chord under each column are shaded (the root darker), so you can see where a note will sit before you hear it. One note at a time; new notes are 1/16 to 1/2 long.
-  - **Notes mode**: switch the pads from Chords to Notes (or press **N**; selecting a Melody lane does it too) and they play single notes of the key on the Melody part, 1–7 up the scale, with the stick pushed up for the octave above. With Record on, a stopped song writes each note at the cursor (length from the Melody editor) and moves on; a playing song records notes where you play them, snapped to 1/16.
-  - **Drums**: a synthesised 808/909-style kit (kick, snare, clap, closed and open hat, two toms, rim) on a 1/16 grid of 1, 2 or 4 bars that loops under the whole song, with starter beats that fit the time signature (Rock, Four on the floor, Half-time, Boom bap, Bossa nova, Disco in 4/4; Waltz in 3/4; a 6/8 groove; a basic beat for any meter). Drums play dry, without the effects.
-- Each part's lane shows a miniature of what it plays. Select a lane to edit that part underneath.
-- Mute and solo only affect playback, so you can still play live through a muted part.
-- Chords are stored in ticks (96 per beat) and played by a lookahead scheduler on the audio clock, so edits made while playing are heard straight away and tempo changes apply immediately.
-- Playback doesn't touch the screen or the stick; they only follow what you play live.
-- Press **R** (or Record), pick a step, and play pads to write chords into the chord row; the cursor moves on.
-- Lengthen with the edge grip or **[ ]**, split with **/**, rest with **.**, copy and paste, add or remove rows, loop.
-- Time signatures 2/4, 3/4, 4/4, 5/4, 6/8, 7/8, 9/8, 12/8. One step is one beat, BPM counts beats of the signature, rows hold whole bars, and the click accents the downbeat (plus every third beat in 6/8, 9/8, 12/8).
-- Metronome click in the top bar, on the same clock as the progression.
+- Thirteen level-matched Tone.js instruments: E-Piano, Pad, Warm Pad, Strings, Organ, Drawbar, Brass, Lead, Bass, Chiptune, Pluck, Mallets, Bells.
+- **Effects per part**, in a matrix under the sequencer (FX mode on phones): **Drive** and **Chorus** colour one part (drive is level-compensated); **→ Reverb** and **→ Delay** send the part into one shared reverb and delay, whose size, time, feedback, return and the output level sit underneath. Drums get the sends only. Knobs: drag, scroll, arrow keys, double-tap for off.
+- The intro: tap the start key and a random chord (any key, pad and stick direction) rings out while the app fades in.
 
 ### Saving
 
-- The song and settings autosave in your browser.
-- Undo/redo every song edit (Ctrl/⌘ Z, Shift Ctrl/⌘ Z or Ctrl Y).
-- Song menu: new song, open/save a song file (JSON), and copy a share link that carries the whole song in the URL.
-
-Press the keyboard icon in the app for the full shortcut list.
+- Song and settings autosave in the browser; undo/redo every song edit (Ctrl/⌘ Z, Shift+Ctrl/⌘ Z, Ctrl Y).
+- Song menu: new song, open/save a JSON file, copy a share link that carries the whole song in the URL.
 
 ### On a phone
 
-Small screens (phones, narrow windows) show one mode at a time, switched from the top bar:
+One mode at a time, from the top bar: **Play** (the instrument, no scrolling; sideways = stick left, pads right), **Seq** (chord row, parts, editors), **Sound** (instrument, chord/arp, voicing, click, theme, help) and **FX** (the effects matrix).
 
-- **Play**: the instrument fills the screen with nothing to scroll. Turn the phone sideways for the HiChord layout, stick on the left and pads on the right, so one thumb works the stick while the other plays. The bar has play and record, and the screen shows the step you're recording to.
-- **Seq**: the chord row, the parts and their editors.
-- **Sound**: the selected part's instrument, chord/arp, effects, inversion and voice leading, click, theme and help.
+---
 
-The stick is a thumb-stick: press and slide toward a direction, and let go to spring back to the centre. A quick tap locks a direction instead.
+## Getting started
 
-## Getting Started
-
-### Prerequisites
-
-- Node.js (version 20.9.0 or higher recommended)
-- npm or yarn
-
-### Installation
-
-Install dependencies:
+Node 20+.
 
 ```bash
 npm install
+npm start          # dev server with HMR at http://localhost:3000
+npm test           # vitest: theory, song format, parts, drums
+npm run build      # production bundle in dist/
+npm run levels     # renders every instrument offline in headless Chromium and checks levels
 ```
 
-### Development
+Deployment: every push to `master` builds and publishes to GitHub Pages (`.github/workflows/deploy.yml`).
 
-Start the development server:
+---
 
-```bash
-npm start
-```
+## For developers and agents
 
-The application will open automatically at `http://localhost:3000`.
-
-### Production Build
-
-Build for production:
-
-```bash
-npm run build
-```
-
-The production-ready files will be in the `dist/` folder.
-
-## Deployment
-
-This project is configured for automatic deployment to GitHub Pages using GitHub Actions.
-
-### Setup GitHub Pages
-
-1. Go to your repository settings on GitHub
-2. Navigate to **Pages** (under Code and automation)
-3. Under **Source**, select **GitHub Actions**
-
-### Automatic Deployment
-
-Every push to the `master` branch will automatically:
-
-- Install dependencies
-- Build the production bundle
-- Deploy to GitHub Pages at `https://metjuperry.github.io/Metju.Chord/`
-
-You can also manually trigger deployment from the **Actions** tab.
-
-### Local Production Build
-
-Build for production locally:
-
-```bash
-npm run build
-```
-
-## Project Structure
+### Map of the code
 
 ```text
-Metju.Chord/
-├── src/
-│   ├── index.tsx           # Application entry point
-│   ├── App.tsx             # Main App component with audio engine
-│   ├── App.css             # App styles
-│   ├── ChordDisplay.tsx    # Chord name and interval display
-│   ├── ChordGrid.tsx       # Interactive note grid
-│   ├── NoteButton.tsx      # Individual note button component
-│   ├── SettingsPanel.tsx   # Synth and playback settings
-│   ├── EffectsPanel.tsx    # Audio effects controls
-│   ├── Sequencer.tsx       # Chord sequencer component
-│   ├── Metronome.tsx       # Metronome component
-│   ├── ScaleVisualizer.tsx # Scale visualization overlay
-│   ├── ScalePicker.tsx     # Key and scale selection
-│   ├── FeatureMenu.tsx     # Feature toggle menu
-│   ├── theory.ts           # Chord voicing (MIDI), naming, arp ordering
-│   ├── audio/engine.ts     # Master bus, limiter, effects chain, Transport helpers
-│   ├── audio/instruments.ts # Instrument presets
-│   └── index.css           # Global styles
-├── public/
-│   └── index.html          # HTML template
-├── webpack.config.js       # Webpack configuration
-├── tsconfig.json           # TypeScript configuration
-└── package.json            # Dependencies and scripts
+src/
+  index.tsx              entry
+  App.tsx                owns all state: song (with undo), live settings, selection, playback, recording; wires everything
+  theory.ts              pure music theory: keys, scales, chord building (MIDI), inversions, naming, stick→chord type, voice leading
+  progression.ts         the chord row: clips in ticks (PPQ 96) and editing ops (place, setLength, split, fitTo)
+  parts.ts               parts (chords, bass, melody, drums), what each plays (partNotes, bassNotes…), melody editing, song length
+  drums.ts               drum patterns, presets per time signature, pattern ops
+  song.ts                Song/Settings types, time signatures, defaults, reading untrusted saves (readSong), share-link encoding
+  useHistory.ts          undo/redo with merge keys (one knob turn or slider drag = one step)
+  useMedia.ts            matchMedia hook (compact layout switch)
+  audio/
+    engine.ts            every audio node: per-part channels, shared reverb/delay, master, limiter, transport helpers, intro sound
+    instruments.ts       the 13 instrument presets and their matched volumes
+    drumkit.ts           the synthesised drum kit
+    sequencer.ts         lookahead scheduler on the Tone Transport (reads the song fresh every 1/16)
+  components/
+    TopBar, CompactBar   desktop header / phone bar with modes (Play, Seq, Sound, FX)
+    Device               screen, scale-key strip, stick (segmented ring), pads, Chords/Notes switch, voicing
+    Progression          sequencer: transport, part strips, chord lane + part lanes, chord toolbar, + Part menu
+    PartEditors          chord part style, bass style cards; MelodyEditor; DrumEditor
+    SoundPanel           instrument grid + chord/arp style for the selected part
+    FxMatrix, Knob       effects matrix and the knob control
+    SongMenu, HelpDialog, IntroScreen
+scripts/levels*.ts       the level-matching check (npm run levels)
 ```
 
-## Tech Stack
+### Data model (`song.ts`, `parts.ts`)
 
-- **React 19** - UI library
-- **TypeScript 5** - Type safety and better developer experience
-- **Webpack 5** - Module bundler from scratch (no CRA/Vite)
-- **Tone.js 15** - Web Audio framework for synthesis and effects
-- **ts-loader** - TypeScript compilation
+- `Song = { key, scale, chords: Clip[], parts: Part[], steps, bpm, timeSignature, space }`. Everything in `Song` is undoable and saved; `Settings` (voiceLeading, octave, inversion, loop, theme) is saved but not undoable.
+- Time is in **ticks, 96 per quarter note** (`PPQ`). A sequencer step is one beat of the time signature (`ticksPerStep(ts)`: 96 in x/4, 48 in x/8). Melody and drums work in 1/16s (`TICKS_PER_SIXTEENTH` = 24).
+- A chord clip stores only `{ degree, type, inversion, octave }`; key and scale come from the song, so `resolveClip(harmony, clip)` turns it into notes.
+- `Part = ChordPart | BassPart | MelodyPart | DrumPart`, all with `{ id, name, color, volume, mute, solo, fx }`. Melody notes store a **scale step** (0–14 from the key's root in the part's octave), not a MIDI note, so they follow key and scale changes.
+- `fx = { drive, chorus, reverb, delay }` (0–1, 0 = off); drums only use reverb/delay. `space = { reverb: { size, ret }, delay: { time, feedback, ret }, out: { level } }`.
+- Saves: `SavedState { version: 2, song, settings }` in localStorage key `metju.chord.v2`, JSON files, and `#song=` share links (deflate-raw + base64url). `readSong` repairs anything malformed (clamps, drops overlaps, fills defaults) so new fields must get a default there. No migration from v1 (there were no v1 users).
 
-## Usage
+### Audio (`audio/engine.ts`, `audio/sequencer.ts`)
 
-1. **Select a Key**: Choose your desired musical key and mode (major/minor)
-2. **Play Notes**: Click any note in the grid to play it
-3. **Build Chords**: Click multiple notes to create chords
-4. **Adjust Settings**:
-   - Change synthesizer type
-   - Switch between chord and arpeggiator modes
-   - Adjust arpeggiator pattern and speed
-5. **Add Effects**: Toggle reverb and delay with custom parameters
-6. **Visualize Scales**: Enable scale visualization to see note relationships
-7. **Record Sequences**: Use the sequencer to record and loop chord progressions
-8. **Keep Time**: Enable the metronome for rhythm practice
+- Per part: `instrument → drive → makeup → chorus → volume → master`, plus `volume → reverb send / delay send` into one shared `Reverb` and `FeedbackDelay`, whose returns go to `master → limiter (-1 dB) → destination`. Drum channels skip drive and chorus.
+- `driveMakeupDb(a)` is fitted to measured loudness; `MASTER_GAIN` (0.8) is the level at `out.level = 1` and leaves headroom for full sends. `npm run levels` must stay green (sustaining RMS spread ≤ 6 dB, triad peaks -10…-3 dBFS, all-effects limiter output ≤ -0.5 dBFS).
+- App keeps the engine in step: `syncParts` on every parts change, `setSpace` on space change, `selectTrack(padPart)` for the pads. Live pads use `engine.attack(midi, time, track)`.
+- Playback: `SequencerPlayer` asks `schedule()` for events every 1/16 on the Transport, so edits while playing are heard immediately. `schedule()` expands every audible part with `partNotes()` (and drum patterns with `expandPattern`). Loop length = end of the music rounded up to a bar, capped at the sequencer length.
+- The audio context only starts after the intro tap (`startAudio`); nothing audio is mounted before.
 
-## Development
+### UI conventions (keep these when changing anything visible)
 
-This project uses a custom Webpack configuration without any framework scaffolding tools. Key aspects:
+- **Yellow means "on/active"** (`--accent`/`--cap`): selected options in toggle groups, the pushed stick wedge, a held pad. A locked/selected item gets a yellow *edge*. Parts never use yellow; their colours are `PART_COLORS` and they colour lanes, sliders and effect cells.
+- Flat dark tiles with a thin edge (`--panel-2`, `--line`); only the instrument's own keys (pads, knob, intro key) get the keycap lip. No dashed outlines.
+- Phones: `compact = (max-width: 1023px), (max-height: 560px)`. Play mode must fit without scrolling (check 844×390, 667×375, 932×430, 390×844). Landscape is the main phone layout: stick left, pads right.
+- Light theme is driven by tokens in `index.css`; check new UI in both (`data-theme="light"` on `<html>`).
+- Everything has a keyboard path and an aria label; global shortcuts live in App's keydown handler, which ignores inputs, selects and `role="slider"`.
 
-- **Hot Module Replacement (HMR)** for instant updates during development
-- **TypeScript strict mode** for maximum type safety
-- **CSS modules** support with style-loader and css-loader
-- **Custom webpack.config.js** handling all build processes
+### How changes have been verified
 
-### Development Tips
+- `npm test` and `npm run build` before every commit; `npm run levels` after any change to instruments, drums or the engine.
+- Browser checks with Playwright against the built app: `npx http-server dist -p 8124 -s`, then a script using `playwright-core` with Chromium (`executablePath: '/opt/pw-browsers/chromium'` in the cloud sandbox). The intro must be dismissed first (`click('.intro-key')`, then wait ~2.1 s). A saved song can be injected with `localStorage.setItem('metju.chord.v2', json)` before reload. Multi-touch (stick + pad) was tested through CDP `Input.dispatchTouchEvent`.
+- Audio behaviour (routing, levels) was checked offline with `Tone.Offline` in headless Chromium, the same way `scripts/levels-page.ts` does.
+- Not verifiable in the sandbox: how things sound on real speakers, and real-phone feel (touch latency, live-recording timing).
 
-- Edit files in the `src/` directory - changes reload automatically
-- TypeScript provides real-time type checking in your editor
-- Check the browser console for audio context warnings (click to start audio)
-- Use browser DevTools to inspect Tone.js audio graph
+### Working on the repo
 
-## License
+- GitHub: `metjuperry/Metju.Chord`, default branch `master`. Work on `claude/<topic>` branches and open PRs; stacked work uses the previous branch as the PR base.
+- In the cloud sandbox `gh api` (REST) works; GraphQL commands don't. The clone may be shallow: add `+refs/heads/<branch>:refs/remotes/origin/<branch>` to `remote.origin.fetch` so a new branch tracks its remote.
 
-ISC
+### Where things stand / ideas not done yet
+
+- **Haptics were tried and removed**: iOS Safari no longer lets web pages trigger the Taptic Engine (the hidden-switch trick was closed in iOS 26.5), and the owner only has iPhones. A native wrapper (e.g. Capacitor) would be the way back.
+- **Sequencer declutter**, mocked up but on hold: transport down to Play/Loop/Record; one "4 bars · 4/4 ▾" button plus a "+ row" strip; part strips as name + M/S only with instrument/volume/remove moved into the part editor; chord tools as a small bar on the selected chord; "Clear all" into the Song menu. Header sections (dividers) and the single + Part menu are done.
+- **Melody and bass generator** (Generate / Re-roll writing ordinary notes): designed, not built; the owner put it on hold. Bass would need its own note grid ("Custom" style) for that.
+- **Per-chord style overrides** (e.g. Keys arpeggiates only one chord): designed, the owner decided it isn't needed for now.
+- Desktop header shows section dividers only at ≥1360px; narrower windows wrap without them.
+- Live recording timing on real phones is untested.

@@ -33,6 +33,22 @@ export interface Note {
 
 export const MELODY_STEPS = 15;
 
+/**
+ * A part's effects, each 0..1 with 0 meaning off. Drive and chorus colour this part only; reverb and
+ * delay are how much of it is sent into the song's shared reverb and delay. Drums only use the sends.
+ */
+export interface PartFx {
+    drive: number;
+    chorus: number;
+    reverb: number;
+    delay: number;
+}
+
+export const FX_KEYS: (keyof PartFx)[] = ['drive', 'chorus', 'reverb', 'delay'];
+export const noFx = (): PartFx => ({ drive: 0, chorus: 0, reverb: 0, delay: 0 });
+/** Drive and chorus would smear a beat, so drum parts only get the reverb and delay sends. */
+export const fxAvailable = (kind: PartKind, key: keyof PartFx) => kind !== 'drums' || key === 'reverb' || key === 'delay';
+
 interface PartBase {
     id: string;
     name: string;
@@ -41,6 +57,7 @@ interface PartBase {
     volume: number;
     mute: boolean;
     solo: boolean;
+    fx: PartFx;
 }
 
 /** Plays the chords: held as block chords, or broken into an arpeggio. */
@@ -103,6 +120,7 @@ export function newPart(kind: PartKind, existing: Part[], drums?: DrumPattern): 
         volume: 0,
         mute: false,
         solo: false,
+        fx: noFx(),
     };
     switch (kind) {
         case 'chords':
