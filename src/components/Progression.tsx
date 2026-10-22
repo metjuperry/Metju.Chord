@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import './Progression.css';
+import './SongMenu.css';
 import { Clip, clipAt, clipEnd } from '../progression';
 import { TIME_SIGNATURES, TimeSignature, isCompound, tsLabel } from '../song';
 import { INSTRUMENTS, InstrumentId } from '../audio/instruments';
@@ -94,6 +95,47 @@ const KIND_HINT: { [k in PartKind]: string } = {
     bass: 'follows the roots',
     melody: 'your notes',
     drums: 'loops a beat',
+};
+
+/** One "+ Part" button that opens a short menu of part kinds. */
+const AddPartMenu: React.FC<{ full: boolean; onAdd: (kind: PartKind) => void }> = ({ full, onAdd }) => {
+    const [open, setOpen] = useState(false);
+    const root = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (!open) return;
+        const close = (e: PointerEvent | KeyboardEvent) => {
+            if (e instanceof KeyboardEvent ? e.key === 'Escape' : !root.current?.contains(e.target as Node)) setOpen(false);
+        };
+        document.addEventListener('pointerdown', close);
+        document.addEventListener('keydown', close);
+        return () => {
+            document.removeEventListener('pointerdown', close);
+            document.removeEventListener('keydown', close);
+        };
+    }, [open]);
+    return (
+        <div className="add-part" ref={root}>
+            <button
+                className="chip-button add-track"
+                aria-haspopup="menu"
+                aria-expanded={open}
+                disabled={full}
+                title={full ? `Up to ${MAX_PARTS} parts` : 'Add a part'}
+                onClick={() => setOpen(o => !o)}
+            >
+                + Part
+            </button>
+            {open && (
+                <div className="song-popover add-part-popover panel" role="menu">
+                    {(['chords', 'bass', 'melody', 'drums'] as PartKind[]).map(k => (
+                        <button key={k} role="menuitem" onClick={() => { setOpen(false); onAdd(k); }}>
+                            {PART_LABELS[k]} <span className="add-part-hint">{KIND_HINT[k]}</span>
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
 };
 
 const PartStrip: React.FC<{
@@ -397,9 +439,7 @@ const Progression: React.FC<ProgressionProps> = props => {
                         onRemove={() => props.onRemovePart(p.id)}
                     />
                 ))}
-                {parts.length < MAX_PARTS && (['chords', 'bass', 'melody', 'drums'] as PartKind[]).map(k => (
-                    <button key={k} className="chip-button add-track" onClick={() => props.onAddPart(k)}>+ {PART_LABELS[k]}</button>
-                ))}
+                <AddPartMenu full={parts.length >= MAX_PARTS} onAdd={props.onAddPart} />
             </div>
 
             <div className="seq-rows">{Array.from({ length: rows }, (_, r) => renderRow(r))}</div>
