@@ -30,6 +30,8 @@ export interface RestClip {
     start: number;
     len: number;
     rest: true;
+    /** Per part id: whether that part keeps playing through the rest. Parts not listed follow their kind's default. */
+    plays?: { [partId: string]: boolean };
 }
 
 export type Clip = ChordClip | RestClip;

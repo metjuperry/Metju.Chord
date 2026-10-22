@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-    BassPart, ChordPart, Harmony, MelodyPart, Part, audibleParts, bassNotes, chordPartNotes, melodyMidi, musicLoopEnd,
-    newPart, placeNote, noteAt, fitNotes,
+    BassPart, ChordPart, Harmony, MelodyPart, Part, audibleParts, bassNotes, chordPartNotes, melodyMidi, melodyNotes, musicLoopEnd,
+    newPart, placeNote, noteAt, fitNotes, outsideRests, restSpans,
 } from './parts';
 import { Clip, TICKS_PER_STEP as S, PPQ } from './progression';
 
@@ -147,5 +147,49 @@ describe('a melody part', () => {
     it('a melody longer than the chords sets the loop', () => {
         const long: MelodyPart = { ...mel, notes: [{ start: 17 * S, len: S, step: 0 }] };
         expect(musicLoopEnd(song.chords, [long], 4 * S) / S).toBe(20);
+    });
+});
+
+describe('a rest', () => {
+    const [keys, bass, mel, drums] = (() => {
+        const out: Part[] = [];
+        for (const k of ['chords', 'bass', 'melody', 'drums'] as const) out.push(newPart(k, out));
+        return out;
+    })() as [ChordPart, BassPart, MelodyPart, Part];
+    // C for a bar, then a bar's rest, then G
+    const withRest = (plays?: { [id: string]: boolean }): Harmony => ({
+        ...song, chords: [chord(0, 4, 0), { start: 4 * S, len: 4 * S, rest: true, ...(plays && { plays }) }, chord(8, 4, 4)],
+    });
+
+    it('silences the chords and bass, and lets melody and drums play on, unless told otherwise', () => {
+        const h = withRest();
+        expect(chordPartNotes(keys, h).map(n => [n.start / S, n.len / S])).toEqual([[0, 4], [8, 4]]);
+        expect(bassNotes({ ...bass, style: 'pulse' }, h, { beatTicks: S }).some(n => n.start >= 4 * S && n.start < 8 * S)).toBe(false);
+        const melody: MelodyPart = { ...mel, notes: [{ start: 5 * S, len: S, step: 0 }] };
+        expect(melodyNotes(melody, h)).toHaveLength(1);
+        expect(restSpans(h.chords, drums)).toEqual([]);
+    });
+
+    it('lets a chord part play through, holding the chord before it', () => {
+        const h = withRest({ [keys.id]: true });
+        expect(chordPartNotes(keys, h).map(n => [n.start / S, n.len / S])).toEqual([[0, 8], [8, 4]]);
+        const arp: ChordPart = { ...keys, playMode: 'Arp', arpRate: '4n' };
+        expect(chordPartNotes(arp, h).filter(n => n.start >= 4 * S && n.start < 8 * S)).toHaveLength(4);
+    });
+
+    it('lets the bass keep its pattern going on the chord before it', () => {
+        const notes = bassNotes({ ...bass, style: 'pulse' }, withRest({ [bass.id]: true }), { beatTicks: S });
+        expect(notes.filter(n => n.start >= 4 * S && n.start < 8 * S).map(n => named(n.midi[0]))).toEqual(['C2', 'C2', 'C2', 'C2']);
+    });
+
+    it('can silence the melody: notes inside are dropped, a note running in is cut short', () => {
+        const melody: MelodyPart = { ...mel, notes: [{ start: 2 * S, len: 4 * S, step: 0 }, { start: 5 * S, len: S, step: 2 }, { start: 9 * S, len: S, step: 4 }] };
+        expect(melodyNotes(melody, withRest({ [mel.id]: false })).map(n => [n.start / S, n.len / S])).toEqual([[2, 2], [9, 1]]);
+    });
+
+    it('can silence the drums', () => {
+        const spans = restSpans(withRest({ [drums.id]: false }).chords, drums);
+        expect(spans).toEqual([[4 * S, 8 * S]]);
+        expect([0, 4 * S, 7 * S, 8 * S].map(t => outsideRests(spans, t))).toEqual([true, false, false, true]);
     });
 });

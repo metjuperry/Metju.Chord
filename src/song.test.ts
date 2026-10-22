@@ -9,7 +9,7 @@ const sample = (): SavedState => {
     song.chords = [
         { start: 0, len: S, chord: { degree: 0, type: 'triad', inversion: 0, octave: 4 } },
         { start: S, len: 2 * S, chord: { degree: 5, type: 'diatonic7', inversion: 1, octave: 4 } },
-        { start: 3 * S, len: S, rest: true },
+        { start: 3 * S, len: S, rest: true, plays: { p1: true, p2: false } },
     ];
     song.parts = song.parts.map(p => (p.kind === 'bass' ? { ...p, mute: true, style: 'walk' }
         : p.kind === 'melody' ? { ...p, notes: [{ start: 0, len: 48, step: 4 }, { start: 48, len: 24, step: 7 }] } : p));
@@ -38,6 +38,7 @@ describe('saving songs', () => {
                 { start: 0, len: S, chord: { degree: 12, type: 'triad', octave: 0 } },
                 { start: S / 2, len: S, chord: { degree: 1, type: 'triad' } },   // overlaps the first: dropped
                 { start: 7 * S, len: 5 * S, rest: true },                           // runs past the end: dropped
+                { start: 3 * S, len: S, rest: true, plays: { p1: 'yes', p2: false } }, // only boolean plays are kept
                 { start: 2 * S, len: S, chord: { type: 'nonsense' } },             // unknown chord type: dropped
             ],
             parts: [
@@ -50,8 +51,9 @@ describe('saving songs', () => {
         })!;
         expect([song.key, song.scale, song.bpm]).toEqual(['C', 'major', 240]);
         expect(song.timeSignature).toEqual({ beats: 12, unit: 4 });
-        expect(song.chords).toHaveLength(1);
+        expect(song.chords).toHaveLength(2);
         expect(song.chords[0]).toMatchObject({ chord: { degree: 6, octave: 1 } });
+        expect(song.chords[1]).toEqual({ start: 3 * S, len: S, rest: true, plays: { p2: false } });
         const [a, dup, bass, melody] = song.parts;
         expect(song.parts).toHaveLength(4);
         expect(a).toMatchObject({ kind: 'chords', name: 'Keys', instrument: 'epiano', volume: 6, playMode: 'Chord' });

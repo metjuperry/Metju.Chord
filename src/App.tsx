@@ -29,7 +29,8 @@ import {
 import { Clip, clipAt, fitTo, isChordClip, place, remove, setLength, split } from './progression';
 import {
     BassPart, ChordPart, Harmony, InstrumentPart, MAX_PARTS, MelodyPart, Part, PartFx, PartKind, noFx,
-    audibleParts, fitNotes, hasInstrument, melodyMidi, musicEnd, musicLoopEnd, newPart, noteAt, partNotes, placeNote, removeNote, resolveClip,
+    audibleParts, fitNotes, hasInstrument, melodyMidi, musicEnd, musicLoopEnd, newPart, noteAt, outsideRests, partNotes, placeNote, removeNote, resolveClip,
+    restSpans,
 } from './parts';
 import { SeqEvent, SeqOptions, SequencerPlayer, ticksToSeconds } from './audio/sequencer';
 import {
@@ -422,7 +423,9 @@ const App: React.FC = () => {
             // Mute and solo only affect playback, so a muted part can still be played live from the pads
             events: audibleParts(s.parts).flatMap((p): SeqEvent<Scheduled>[] => (p.kind === 'drums'
                 // a drum pattern repeats from the top until the loop (or the song) ends
-                ? expandPattern(p.drums, s.ts, playLength(s)).map(hit => ({ tick: hit.tick, duration: TICKS_PER_SIXTEENTH, data: { drum: hit.voice, part: p.id } }))
+                ? expandPattern(p.drums, s.ts, playLength(s))
+                    .filter(hit => outsideRests(restSpans(s.chords, p), hit.tick))
+                    .map(hit => ({ tick: hit.tick, duration: TICKS_PER_SIXTEENTH, data: { drum: hit.voice, part: p.id } }))
                 : partNotes(p, h, { beatTicks: s.stepTicks, kicks: kickTicks(s.parts, s.ts, s.total * s.stepTicks) }).map(n => ({
                     tick: n.start, duration: n.len, data: { midi: n.midi, gate: n.gate, legato: LEGATO[p.kind], part: p.id },
                 })))),
@@ -642,7 +645,13 @@ const App: React.FC = () => {
         paste: chordEdit(() => clipboard && setChords(place(clips, { ...clipboard, start: selTick, len: Math.min(clipboard.len, totalTicks - selTick) }))),
         rest: chordEdit(() => {
             const base = selClip ?? { start: selTick, len: T };
-            setChords(place(selClip ? remove(clips, selClip) : clips, { start: base.start, len: base.len, rest: true }));
+            const plays = selClip?.rest ? selClip.plays : undefined;
+            setChords(place(selClip ? remove(clips, selClip) : clips, { start: base.start, len: base.len, rest: true, ...(plays && { plays }) }));
+        }),
+        /** Whether the selected rest lets part `id` play through. */
+        restPart: chordEdit((id: string, plays: boolean) => {
+            if (!selClip?.rest) return;
+            setChords(place(remove(clips, selClip), { ...selClip, plays: { ...selClip.plays, [id]: plays } }));
         }),
         del: chordEdit(() => selClip && setChords(remove(clips, selClip))),
         clearAll: () => {
@@ -1066,6 +1075,7 @@ const App: React.FC = () => {
             onCopy={edit.copy}
             onPaste={edit.paste}
             onRest={edit.rest}
+            onRestPart={edit.restPart}
             onDelete={edit.del}
             onClearAll={edit.clearAll}
             canClearAll={chords.length > 0 || parts.some(p => (p.kind === 'melody' && p.notes.length > 0) || (p.kind === 'drums' && Object.values(p.drums.hits).some(h => h?.length)))}

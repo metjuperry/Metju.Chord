@@ -666,6 +666,37 @@
     line-height: 34px;
 }
 
+/* With a rest selected: one chip per part, lit while it keeps playing through the rest */
+.rest-parts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.rest-part {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--faint);
+    text-decoration: line-through;
+}
+
+.rest-part .track-dot {
+    background: transparent;
+    box-shadow: inset 0 0 0 1.5px var(--track);
+}
+
+.rest-part[aria-pressed='true'] {
+    color: inherit;
+    text-decoration: none;
+    border-color: color-mix(in srgb, var(--track) 60%, var(--line));
+}
+
+.rest-part[aria-pressed='true'] .track-dot {
+    background: var(--track);
+}
+
 .chip-button.danger {
     margin-left: auto;
     background: transparent;

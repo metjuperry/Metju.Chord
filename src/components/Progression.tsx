@@ -5,7 +5,7 @@ import { Clip, clipAt, clipEnd } from '../progression';
 import { TIME_SIGNATURES, TimeSignature, isCompound, tsLabel } from '../song';
 import { INSTRUMENTS, InstrumentId } from '../audio/instruments';
 import { DrumPattern, DrumVoice, hasHit } from '../drums';
-import { MAX_PARTS, PART_LABELS, Part, PartKind, hasInstrument } from '../parts';
+import { MAX_PARTS, PART_LABELS, Part, PartKind, hasInstrument, outsideRests, playsThroughRest, restSpans } from '../parts';
 
 /** Which drums show on which line of a drum lane's miniature: cymbals, the backbeat, the kick. */
 const MINI_LINES: DrumVoice[][] = [['hat', 'openhat', 'rim'], ['snare', 'clap', 'tomhi', 'tomlo'], ['kick']];
@@ -74,6 +74,8 @@ interface ProgressionProps {
     onCopy: () => void;
     onPaste: () => void;
     onRest: () => void;
+    /** Whether the selected rest lets a part play through. */
+    onRestPart: (id: string, plays: boolean) => void;
     onDelete: () => void;
     onClearAll: () => void;
     canClearAll: boolean;
@@ -283,9 +285,11 @@ const Progression: React.FC<ProgressionProps> = props => {
         const per = props.sixteenthsPerStep;
         const length = pattern.bars * props.sixteenthsPerBar;
         const isCurrent = part.id === selectedLane;
+        const rests = restSpans(chords, part);
         return Array.from({ length: rowEnd - rowStart }, (_, j) => {
             const step = rowStart + j;
-            const past = step >= props.loopSteps;
+            // past the loop, or under a rest that silences the drums
+            const past = step >= props.loopSteps || !outsideRests(rests, step);
             return (
                 <button
                     key={step}
@@ -480,6 +484,27 @@ const Progression: React.FC<ProgressionProps> = props => {
                         <button className="chip-button" disabled={!selClip} onClick={props.onDelete}>Delete <kbd>⌫</kbd></button>
                         <button className="chip-button danger" disabled={!props.canClearAll} onClick={props.onClearAll}>Clear all</button>
                     </div>
+
+                    {selClip?.rest && (
+                        <div className="rest-parts" role="group" aria-label="Parts that keep playing through this rest">
+                            <span className="sel-label">During this rest<span className="section-note"> · lit parts keep playing</span></span>
+                            {parts.map(p => {
+                                const plays = playsThroughRest(selClip, p);
+                                return (
+                                    <button
+                                        key={p.id}
+                                        className="chip-button rest-part"
+                                        style={{ '--track': p.color } as React.CSSProperties}
+                                        aria-pressed={plays}
+                                        title={plays ? `${p.name} keeps playing; click to silence it here` : `${p.name} is silent here; click to let it play`}
+                                        onClick={() => props.onRestPart(p.id, !plays)}
+                                    >
+                                        <span className="track-dot" />{p.name}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
                 </>
             )}
         </section>

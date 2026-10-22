@@ -154,7 +154,10 @@ function readClip(v: unknown, maxTick: number): Clip | null {
     const start = int(v.start, 0, maxTick, -1);
     const len = int(v.len, 1, maxTick, -1);
     if (start < 0 || len < 1 || start + len > maxTick) return null;
-    if (v.rest === true) return { start, len, rest: true };
+    if (v.rest === true) {
+        const plays = isObj(v.plays) ? Object.entries(v.plays).filter(([, on]) => typeof on === 'boolean') : [];
+        return plays.length ? { start, len, rest: true, plays: Object.fromEntries(plays) as { [id: string]: boolean } } : { start, len, rest: true };
+    }
     const c = v.chord;
     if (!isObj(c)) return null;
     if (!CHORD_TYPES.includes(c.type as ChordType)) return null;
