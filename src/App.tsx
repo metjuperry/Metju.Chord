@@ -28,7 +28,7 @@ import {
 } from './song';
 import { Clip, clipAt, fitTo, isChordClip, place, remove, setLength, split } from './progression';
 import {
-    BassPart, ChordPart, Harmony, InstrumentPart, MAX_PARTS, MelodyPart, Part, PartFx, PartKind, noFx,
+    BassPart, ChordPart, Harmony, InstrumentPart, MAX_PARTS, MelodyPart, Part, PartFx, PartKind, PartTone, noFx,
     audibleParts, fitNotes, hasInstrument, melodyMidi, musicEnd, musicLoopEnd, newPart, noteAt, outsideRests, partNotes, placeNote, removeNote, resolveClip,
     restSpans,
 } from './parts';
@@ -58,7 +58,7 @@ const LEGATO: { [k in Exclude<PartKind, 'drums'>]: number } = { chords: 0.98, ba
 /** Keep the engine's strips in step with the parts: an instrument per instrument part, a kit per drum part. */
 function syncParts(engine: ReturnType<typeof getEngine>, parts: Part[]) {
     parts.forEach(p => (hasInstrument(p)
-        ? engine.setTrack(p.id, { instrument: p.instrument, volume: p.volume, fx: p.fx })
+        ? engine.setTrack(p.id, { instrument: p.instrument, volume: p.volume, fx: p.fx, tone: p.tone })
         : engine.setDrumTrack(p.id, { volume: p.volume, fx: p.fx })));
 }
 
@@ -218,6 +218,9 @@ const App: React.FC = () => {
         // dragging a volume slider is one undo step, not one per pixel
         setParts(ps => ps.map(p => (p.id === id ? { ...p, ...patch } as Part : p)), 'volume' in patch ? `vol:${id}` : undefined);
     const setInstrument = (id: InstrumentId) => updatePart(soundPart.id, { instrument: id });
+    // turning one tone knob is one undo step
+    const setTone = (id: string, key: keyof PartTone, value: number) =>
+        setParts(ps => ps.map(p => (p.id === id && hasInstrument(p) ? { ...p, tone: { ...p.tone, [key]: value } } : p)), `tone:${id}:${key}`);
     const setChordStyle = (id: string, patch: Partial<ChordStyle>) => updatePart(id, patch as Partial<Part>);
     const clips = chords;
     const [selected, setSelected] = useState(0);
@@ -988,6 +991,8 @@ const App: React.FC = () => {
             partColor={soundPart.color}
             instrument={soundPart.instrument}
             onInstrument={setInstrument}
+            tone={soundPart.tone}
+            onTone={(k, v) => setTone(soundPart.id, k, v)}
             chordStyle={soundPart.kind === 'chords' ? soundPart : undefined}
             onChordStyle={patch => setChordStyle(soundPart.id, patch)}
         />

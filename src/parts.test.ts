@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     BassPart, ChordPart, Harmony, MelodyPart, Part, audibleParts, bassNotes, chordPartNotes, melodyMidi, melodyNotes, musicLoopEnd,
-    newPart, placeNote, noteAt, fitNotes, outsideRests, restSpans,
+    newPart, placeNote, noteAt, fitNotes, outsideRests, restSpans, shapeAttack, shapeRelease, shapeBrightness, shapePan,
 } from './parts';
 import { Clip, TICKS_PER_STEP as S, PPQ } from './progression';
 
@@ -191,5 +191,33 @@ describe('a rest', () => {
         const spans = restSpans(withRest({ [drums.id]: false }).chords, drums);
         expect(spans).toEqual([[4 * S, 8 * S]]);
         expect([0, 4 * S, 7 * S, 8 * S].map(t => outsideRests(spans, t))).toEqual([true, false, false, true]);
+    });
+});
+
+describe('tone shaping', () => {
+    it('keeps the instrument as designed at 12 o\'clock', () => {
+        expect(shapeAttack(0.05, 0.5)).toBeCloseTo(0.05);
+        expect(shapeRelease(1.5, 0.5)).toBeCloseTo(1.5);
+        expect(shapeBrightness(0.5)).toEqual({ cutoff: 20000, shelfDb: 0 });
+        expect(shapePan(0.5)).toBe(0);
+    });
+
+    it('goes from snappy to slow, and rises steadily', () => {
+        expect(shapeAttack(0.05, 0)).toBeCloseTo(0.001);
+        expect(shapeAttack(0.05, 1)).toBeCloseTo(2);
+        expect(shapeRelease(0.3, 0)).toBeCloseTo(0.02);
+        expect(shapeRelease(0.3, 1)).toBeCloseTo(5);
+        for (let v = 0; v < 1; v += 0.1) {
+            expect(shapeAttack(0.2, v + 0.1)).toBeGreaterThan(shapeAttack(0.2, v));
+            expect(shapeRelease(0.2, v + 0.1)).toBeGreaterThan(shapeRelease(0.2, v));
+        }
+    });
+
+    it('darkens below the middle and brightens above it', () => {
+        expect(shapeBrightness(0).cutoff).toBeCloseTo(300);
+        expect(shapeBrightness(0.25).cutoff).toBeLessThan(5000);
+        expect(shapeBrightness(1)).toEqual({ cutoff: 20000, shelfDb: 9 });
+        expect(shapePan(0)).toBe(-1);
+        expect(shapePan(1)).toBe(1);
     });
 });

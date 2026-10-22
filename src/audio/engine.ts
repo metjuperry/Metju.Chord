@@ -3,7 +3,7 @@ import { ArpPattern, arpOrder } from '../theory';
 import { Instrument, InstrumentId, createInstrument } from './instruments';
 import { DrumKit } from './drumkit';
 import type { DrumVoice } from '../drums';
-import type { PartFx } from '../parts';
+import { PartFx, PartTone, neutralTone, shapeBrightness, shapePan } from '../parts';
 import type { Space } from '../song';
 
 export type ArpRate = '4n' | '8n' | '8t' | '16n' | '16t' | '32n';
@@ -23,6 +23,10 @@ const velocityFor = (voices: number) => 1 / Math.sqrt(Math.max(1, voices));
  */
 interface Channel {
     input: Tone.Gain;
+    /** Brightness: a low-pass that closes to darken, and a high shelf that lifts to brighten. */
+    tone?: Tone.Filter;
+    shelf?: Tone.Filter;
+    pan: Tone.Panner;
     drive?: Tone.Distortion;
     makeup?: Tone.Gain;
     chorus?: Tone.Chorus;
@@ -35,6 +39,7 @@ interface Channel {
 interface Strip extends Channel {
     instrument: InstrumentId;
     voice: Instrument;
+    shaped: PartTone;
 }
 
 /**
@@ -92,23 +97,43 @@ export class Engine {
 
     // ---- channels ------------------------------------------------------------
 
-    /** A channel's nodes, wired up; `inserts` adds drive and chorus (not for drums). */
+    /**
+     * A channel's nodes, wired up: input -> [tone -> shelf -> drive -> makeup -> chorus] -> pan -> level.
+     * `inserts` adds the bracketed part (not for drums).
+     */
     private makeChannel(volume: number, inserts: boolean): Channel {
         const input = new Tone.Gain(1);
+        const pan = new Tone.Panner(0);
         const level = new Tone.Volume(volume).connect(this.master);
         const sendReverb = new Tone.Gain(0).connect(this.reverbBus);
         const sendDelay = new Tone.Gain(0).connect(this.delayBus);
+        pan.connect(level);
         level.connect(sendReverb);
         level.connect(sendDelay);
         if (!inserts) {
-            input.connect(level);
-            return { input, level, sendReverb, sendDelay, nodes: [input, level, sendReverb, sendDelay] };
+            input.connect(pan);
+            return { input, pan, level, sendReverb, sendDelay, nodes: [input, pan, level, sendReverb, sendDelay] };
         }
+        const tone = new Tone.Filter({ type: 'lowpass', frequency: 20000, rolloff: -12, Q: 0.5 });
+        const shelf = new Tone.Filter({ type: 'highshelf', frequency: 2500, gain: 0 });
         const drive = new Tone.Distortion({ distortion: 0, wet: 0, oversample: '2x' });
         const makeup = new Tone.Gain(1);
         const chorus = new Tone.Chorus({ frequency: 1.5, delayTime: 3.5, depth: 0.7, spread: 180, wet: 0 }).start();
-        input.chain(drive, makeup, chorus, level);
-        return { input, drive, makeup, chorus, level, sendReverb, sendDelay, nodes: [input, drive, makeup, chorus, level, sendReverb, sendDelay] };
+        input.chain(tone, shelf, drive, makeup, chorus, pan);
+        return {
+            input, tone, shelf, drive, makeup, chorus, pan, level, sendReverb, sendDelay,
+            nodes: [input, tone, shelf, drive, makeup, chorus, pan, level, sendReverb, sendDelay],
+        };
+    }
+
+    /** Set a strip's tone: the instrument's envelope, the brightness filters and the pan. */
+    private applyTone(strip: Strip, t: PartTone) {
+        const { cutoff, shelfDb } = shapeBrightness(t.brightness);
+        strip.tone?.frequency.rampTo(cutoff, 0.05);
+        strip.shelf?.gain.rampTo(shelfDb, 0.05);
+        strip.pan.pan.rampTo(shapePan(t.pan), 0.05);
+        strip.voice.shape(t.attack, t.release);
+        strip.shaped = { ...t };
     }
 
     /** Set a channel's effects, smoothly. */
@@ -143,11 +168,11 @@ export class Engine {
     // ---- instruments -------------------------------------------------------
 
     /** Create or update a part's strip. Changing its instrument swaps the synth with a short fade. */
-    setTrack(id: string, opts: { instrument: InstrumentId; volume: number; fx?: PartFx }) {
+    setTrack(id: string, opts: { instrument: InstrumentId; volume: number; fx?: PartFx; tone?: PartTone }) {
         let strip = this.strips.get(id);
         if (!strip) {
             const voice = createInstrument(opts.instrument);
-            strip = { ...this.makeChannel(opts.volume, true), instrument: opts.instrument, voice };
+            strip = { ...this.makeChannel(opts.volume, true), instrument: opts.instrument, voice, shaped: neutralTone() };
             voice.output.connect(strip.input);
             this.strips.set(id, strip);
         } else {
@@ -161,6 +186,7 @@ export class Engine {
             }
         }
         this.applyFx(strip, opts.fx ?? NO_FX);
+        this.applyTone(strip, opts.tone ?? strip.shaped);
     }
 
     /** Fade a voice out over 50 ms (still through its channel) and dispose it, so swapping instruments mid-note doesn't click. */

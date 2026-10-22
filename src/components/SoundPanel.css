@@ -165,3 +165,41 @@
     border-radius: 50%;
     display: inline-block;
 }
+
+/* ---- tone strip: attack, release, brightness, pan for the selected part ---------------- */
+
+.tone-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+}
+
+.tone-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 6px 2px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+}
+
+/* a knob moved away from "as designed" takes the part's colour, like an effect cell that's on */
+.tone-cell.on {
+    border-color: color-mix(in srgb, var(--track) 60%, var(--line));
+    background: color-mix(in srgb, var(--track) 10%, var(--panel-2));
+}
+
+.tone-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.tone-value {
+    font-size: 10px;
+    color: var(--muted);
+    white-space: nowrap;
+}

@@ -1,5 +1,6 @@
 import * as Tone from 'tone';
 import SAMPLES from './samples.json';
+import { shapeAttack, shapeRelease } from '../parts';
 
 export type InstrumentId =
     | 'piano' | 'pad' | 'epiano' | 'organ' | 'pluck' | 'lead'
@@ -73,6 +74,8 @@ export interface Voice {
     attack(midi: number[], time: number, velocity: number, glide?: Glide): void;
     release(midi: number[], time: number): void;
     releaseAll(time: number): void;
+    /** Scale the envelope: knob values 0..1, 0.5 = as designed (see `shapeAttack`, `shapeRelease`). */
+    shape(attack: number, release: number): void;
 }
 
 export interface Instrument extends Voice {
@@ -90,6 +93,7 @@ const mtof = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
 /** What the pool needs from a monophonic Tone synth (Synth, FMSynth, AMSynth, MonoSynth). */
 interface Mono {
     frequency: Tone.Signal<'frequency'>;
+    envelope: { attack: Tone.Unit.Time; release: Tone.Unit.Time };
     triggerAttack(note: number, time: number, velocity: number): unknown;
     triggerRelease(time: number): unknown;
     connect(node: Tone.InputNode): unknown;
@@ -113,11 +117,24 @@ interface Slot {
 export class SynthPool implements Voice {
     readonly output: Tone.Volume;
     private slots: Slot[] = [];
-    private release0: number;
+    /** The envelope as currently shaped (starts as the preset's). */
+    private env: Envelope;
+    private readonly preset: Envelope;
 
     constructor(private readonly ctor: MonoCtor, private readonly options: { envelope: Envelope } & object, volume: number, private readonly max = 24) {
         this.output = new Tone.Volume(volume);
-        this.release0 = options.envelope.release;
+        this.preset = { attack: options.envelope.attack, release: options.envelope.release };
+        this.env = { ...this.preset };
+    }
+
+    shape(attack: number, release: number) {
+        this.env = { attack: shapeAttack(this.preset.attack, attack), release: shapeRelease(this.preset.release, release) };
+        this.slots.forEach(s => this.applyEnv(s.synth));
+    }
+
+    private applyEnv(synth: Mono) {
+        synth.envelope.attack = this.env.attack;
+        synth.envelope.release = this.env.release;
     }
 
     private grab(time: number): Slot {
@@ -125,6 +142,7 @@ export class SynthPool implements Voice {
         if (free) return free;
         if (this.slots.length < this.max) {
             const synth = new this.ctor(this.options);
+            this.applyEnv(synth);
             synth.connect(this.output);
             const slot: Slot = { synth, midi: -1, start: 0, released: true, freeAt: 0 };
             this.slots.push(slot);
@@ -150,7 +168,7 @@ export class SynthPool implements Voice {
             if (!slot) continue;
             slot.synth.triggerRelease(Math.max(time, slot.start));
             slot.released = true;
-            slot.freeAt = Math.max(time, slot.start) + this.release0 * 1.2 + 0.05;
+            slot.freeAt = Math.max(time, slot.start) + this.env.release * 1.2 + 0.05;
         }
     }
 
@@ -298,6 +316,7 @@ class SynthInstrument implements Instrument {
     attack(midi: number[], time: number, velocity: number, glide?: Glide) { this.built.pool.attack(midi, time, velocity, glide); }
     release(midi: number[], time: number) { this.built.pool.release(midi, time); }
     releaseAll(time: number) { this.built.pool.releaseAll(time); }
+    shape(attack: number, release: number) { this.built.pool.shape(attack, release); }
     dispose() {
         this.built.pool.dispose();
         this.built.nodes.forEach(n => n.dispose());
@@ -366,9 +385,15 @@ interface Playing {
 export class SamplePlayer implements Voice {
     readonly output: Tone.Volume;
     private playing: Playing[] = [];
+    private env: Envelope;
 
-    constructor(private readonly bank: Bank, volume: number, private readonly env: Envelope) {
+    constructor(private readonly bank: Bank, volume: number, private readonly preset: Envelope) {
         this.output = new Tone.Volume(volume);
+        this.env = { ...preset };
+    }
+
+    shape(attack: number, release: number) {
+        this.env = { attack: shapeAttack(this.preset.attack, attack), release: shapeRelease(this.preset.release, release) };
     }
 
     attack(midi: number[], time: number, velocity: number, glide?: Glide) {
@@ -441,6 +466,7 @@ class SampledInstrument implements Instrument {
     private standIn: SynthInstrument;
     private player: SamplePlayer | null = null;
     private disposed = false;
+    private shaped: [number, number] = [0.5, 0.5];
 
     constructor(id: SampledId) {
         this.standIn = new SynthInstrument(STAND_IN[id]);
@@ -448,6 +474,7 @@ class SampledInstrument implements Instrument {
         const use = (bank: Bank) => {
             if (this.disposed || this.player) return;
             this.player = new SamplePlayer(bank, SAMPLE_VOLUMES[id], SAMPLE_ENVELOPES[id]);
+            this.player.shape(...this.shaped);
             this.player.output.connect(this.output);
         };
         const ready = decoded.get(id);
@@ -472,6 +499,11 @@ class SampledInstrument implements Instrument {
     releaseAll(time: number) {
         this.player?.releaseAll(time);
         this.standIn.releaseAll(time);
+    }
+    shape(attack: number, release: number) {
+        this.shaped = [attack, release];
+        this.player?.shape(attack, release);
+        this.standIn.shape(attack, release);
     }
     dispose() {
         this.disposed = true;

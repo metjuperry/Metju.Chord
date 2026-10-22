@@ -175,3 +175,25 @@ describe('effects in the song', () => {
         expect(song.space.out.level).toBe(1);
     });
 });
+
+describe('part tone (attack, release, brightness, pan)', () => {
+    it('new instrument parts start as designed', () => {
+        const song = newSong();
+        for (const p of song.parts) if (p.kind !== 'drums') expect(p.tone).toEqual({ attack: 0.5, release: 0.5, brightness: 0.5, pan: 0.5 });
+    });
+
+    it('reads tone back clamped, and fills it in for songs saved before it existed', () => {
+        const song = readSong({
+            chords: [],
+            parts: [
+                { kind: 'chords', tone: { attack: 0.1, release: 3, brightness: 'x', pan: -2 } },
+                { kind: 'bass' },
+                { kind: 'drums', tone: { attack: 0 } },
+            ],
+        })!;
+        const [keys, bass, drums] = song.parts;
+        expect(keys.kind === 'chords' && keys.tone).toEqual({ attack: 0.1, release: 1, brightness: 0.5, pan: 0 });
+        expect(bass.kind === 'bass' && bass.tone).toEqual({ attack: 0.5, release: 0.5, brightness: 0.5, pan: 0.5 });
+        expect('tone' in drums).toBe(false);
+    });
+});

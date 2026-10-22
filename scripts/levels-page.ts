@@ -10,15 +10,19 @@ const FX_CHORDS = [[60, 64, 67, 71, 74], [57, 60, 64, 67, 71], [62, 65, 69, 72, 
 
 const db = (x: number) => 20 * Math.log10(Math.max(x, 1e-9));
 
+/** Peak over all channels, and RMS (0.1–1.0 s) of the louder channel. */
 function measure(buffer: Tone.ToneAudioBuffer) {
-    const data = buffer.getChannelData(0);
     const rate = buffer.sampleRate;
-    let peak = 0;
-    for (const v of data) peak = Math.max(peak, Math.abs(v));
-    const from = Math.floor(0.1 * rate), to = Math.min(data.length, Math.floor(1.0 * rate));
-    let sum = 0;
-    for (let i = from; i < to; i++) sum += data[i] * data[i];
-    return { peak: db(peak), rms: db(Math.sqrt(sum / (to - from))) };
+    let peak = 0, rms = 0;
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+        const data = buffer.getChannelData(c);
+        for (const v of data) peak = Math.max(peak, Math.abs(v));
+        const from = Math.floor(0.1 * rate), to = Math.min(data.length, Math.floor(1.0 * rate));
+        let sum = 0;
+        for (let i = from; i < to; i++) sum += data[i] * data[i];
+        rms = Math.max(rms, Math.sqrt(sum / (to - from)));
+    }
+    return { peak: db(peak), rms: db(rms) };
 }
 
 async function dry(id: InstrumentId, midi: number[], synth: boolean) {
@@ -37,7 +41,8 @@ async function withFx(id: InstrumentId) {
     const buffer = await Tone.Offline(async () => {
         const engine = new Engine();
         // every effect at its maximum: drive, chorus, full sends into a long reverb and a high-feedback delay
-        engine.setTrack('t', { instrument: id, volume: 0, fx: { drive: 1, chorus: 1, reverb: 1, delay: 1 } });
+        // ...and the tone at its loudest: brightest, longest release, hard-panned
+        engine.setTrack('t', { instrument: id, volume: 0, fx: { drive: 1, chorus: 1, reverb: 1, delay: 1 }, tone: { attack: 0, release: 1, brightness: 1, pan: 1 } });
         engine.selectTrack('t');
         engine.setSpace({ reverb: { size: 3, ret: 1 }, delay: { time: '8n', feedback: 0.9, ret: 1 }, out: { level: 1 } });
         await engine.ready();

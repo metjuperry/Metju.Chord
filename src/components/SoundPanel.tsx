@@ -3,7 +3,8 @@ import './SoundPanel.css';
 import { ArpPattern } from '../theory';
 import { ArpRate } from '../audio/engine';
 import { INSTRUMENTS, InstrumentId } from '../audio/instruments';
-import { PlayMode } from '../parts';
+import { PartTone, PlayMode, TONE_KEYS, shapeBrightness, shapePan } from '../parts';
+import Knob from './Knob';
 
 export const ARP_RATES: { rate: ArpRate; label: string }[] = [
     { rate: '4n', label: '1/4' },
@@ -75,12 +76,51 @@ export const ChordStyleControls: React.FC<{ style: ChordStyle; onChange: (patch:
     );
 };
 
+const TONE_LABELS: { [k in keyof PartTone]: string } = { attack: 'Attack', release: 'Release', brightness: 'Bright', pan: 'Pan' };
+const TONE_HINTS: { [k in keyof PartTone]: string } = {
+    attack: 'how fast notes come in: left snappy, right a slow swell',
+    release: 'how long notes ring after you let go',
+    brightness: 'left darker, right brighter',
+    pan: 'left to right',
+};
+
+/** What a tone knob reads as. The middle is always the instrument as designed. */
+function toneText(k: keyof PartTone, v: number): string {
+    const off = Math.round((v - 0.5) * 200);
+    if (k === 'pan') {
+        const p = shapePan(v);
+        return Math.abs(p) < 0.02 ? 'centre' : `${Math.round(Math.abs(p) * 100)}% ${p < 0 ? 'L' : 'R'}`;
+    }
+    if (Math.abs(off) < 2) return 'as is';
+    if (k === 'brightness') {
+        const { cutoff, shelfDb } = shapeBrightness(v);
+        return shelfDb > 0 ? `+${shelfDb.toFixed(1)} dB` : `${cutoff >= 1000 ? `${(cutoff / 1000).toFixed(1)}k` : Math.round(cutoff)} Hz`;
+    }
+    return off < 0 ? `shorter ${-off}%` : `longer ${off}%`;
+}
+
+/** Attack, release, brightness and pan for one part: knobs, 12 o'clock = the instrument as designed. */
+export const ToneControls: React.FC<{ tone: PartTone; color: string; partName: string; onChange: (key: keyof PartTone, value: number) => void }> =
+    ({ tone, color, partName, onChange }) => (
+        <div className="tone-strip" role="group" aria-label={`${partName} tone`}>
+            {TONE_KEYS.map(k => (
+                <div key={k} className={`tone-cell ${Math.abs(tone[k] - 0.5) > 0.01 ? "on" : ""}`} title={TONE_HINTS[k]} style={{ "--track": color } as React.CSSProperties}>
+                    <Knob value={tone[k]} onChange={v => onChange(k, v)} color={color} label={`${partName} ${TONE_LABELS[k]}`} display={toneText(k, tone[k])} size={34} resetTo={0.5} />
+                    <span className="tone-label">{TONE_LABELS[k]}</span>
+                    <span className="tone-value">{toneText(k, tone[k])}</span>
+                </div>
+            ))}
+        </div>
+    );
+
 interface SoundPanelProps {
     /** The part whose sound this panel sets. */
     partName: string;
     partColor: string;
     instrument: InstrumentId;
     onInstrument: (id: InstrumentId) => void;
+    tone: PartTone;
+    onTone: (key: keyof PartTone, value: number) => void;
     /** For a chord part: how it plays the chords. */
     chordStyle?: ChordStyle;
     onChordStyle: (patch: Partial<ChordStyle>) => void;
@@ -95,7 +135,7 @@ const Slider: React.FC<{ label: string; value: number; min: number; max: number;
         </label>
     );
 
-const SoundPanel: React.FC<SoundPanelProps> = ({ partName, partColor, instrument, onInstrument, chordStyle, onChordStyle }) => (
+const SoundPanel: React.FC<SoundPanelProps> = ({ partName, partColor, instrument, onInstrument, tone, onTone, chordStyle, onChordStyle }) => (
     <aside className="sound-panel" aria-label="Sound">
         <section className="panel sound-section" aria-labelledby="inst-title">
             <div className="section-head">
@@ -110,6 +150,11 @@ const SoundPanel: React.FC<SoundPanelProps> = ({ partName, partColor, instrument
                     </button>
                 ))}
             </div>
+            <div className="section-head">
+                <h3 className="eyebrow">Tone</h3>
+                <span className="section-note">double-tap a knob: as designed</span>
+            </div>
+            <ToneControls tone={tone} color={partColor} partName={partName} onChange={onTone} />
             {chordStyle && <ChordStyleControls style={chordStyle} onChange={onChordStyle} />}
             <p className="section-note">
                 {chordStyle
