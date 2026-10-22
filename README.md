@@ -20,6 +20,7 @@ Live at <https://metjuperry.github.io/Metju.Chord/> (deployed from `master`).
 - Press and slide (thumb-stick), tap a direction to lock it, or hold **Q W E / A D / Z X C** while playing **1–7**. Moving the stick while holding a pad re-voices the held chord.
 - All 12 keys in eight scales: major, minor, harmonic and melodic minor, Dorian, Phrygian, Lydian, Mixolydian. Note names use flats in flat keys.
 - Inversions (root to 3rd), octave C2–C6, or **voice leading**: each chord takes the inversion that moves least from the last one, and that voicing is what gets recorded.
+- **Register-aware voicing**: low chords are spread so they don't turn to mud. Below C4 a triad opens up (C2 E2 G2 plays C2 G2 E3), a 7th or 9th drops its root an octave, a 9th keeps the 9th on top, and close semitones (B–C in a maj7 inversion) are pulled apart. From C4 up chords stay in close position. The bass note, the chord and its name never change.
 - **Notes mode** (switch on the device, **N**, or select a Melody lane): the pads play single scale notes on the Melody part instead of chords; stick up = octave above.
 
 ### Song: one chord row, played by parts
@@ -36,7 +37,8 @@ Live at <https://metjuperry.github.io/Metju.Chord/> (deployed from `master`).
 
 ### Sound and effects
 
-- Thirteen level-matched Tone.js instruments: E-Piano, Pad, Warm Pad, Strings, Organ, Drawbar, Brass, Lead, Bass, Chiptune, Pluck, Mallets, Bells.
+- Fourteen level-matched instruments. **Sampled** (recorded instruments, bundled with the app): Piano, E-Piano, Strings, Organ (pipe), Brass, Marimba, Celesta. **Synths**, where the synth is the point: Pad, Warm Pad, Drawbar, Lead, Bass, Chiptune, Pluck.
+- Samples load in the background once the app starts (only for instruments a part uses); until they arrive a synth version of the instrument plays, so the first chord never waits.
 - **Effects per part**, in a matrix under the sequencer (FX mode on phones): **Drive** and **Chorus** colour one part (drive is level-compensated); **→ Reverb** and **→ Delay** send the part into one shared reverb and delay, whose size, time, feedback, return and the output level sit underneath. Drums get the sends only. Knobs: drag, scroll, arrow keys, double-tap for off.
 - The intro: tap the start key and a random chord (any key, pad and stick direction) rings out while the app fades in.
 
@@ -84,7 +86,8 @@ src/
   useMedia.ts            matchMedia hook (compact layout switch)
   audio/
     engine.ts            every audio node: per-part channels, shared reverb/delay, master, limiter, transport helpers, intro sound
-    instruments.ts       the 13 instrument presets and their matched volumes
+    instruments.ts       the 14 instruments: synth presets (a voice pool), sample players, matched volumes
+    samples.json         which notes each sample set has, and its loop points (written by scripts/samples/prepare.py)
     drumkit.ts           the synthesised drum kit
     sequencer.ts         lookahead scheduler on the Tone Transport (reads the song fresh every 1/16)
   components/
@@ -96,6 +99,8 @@ src/
     FxMatrix, Knob       effects matrix and the knob control
     SongMenu, HelpDialog, IntroScreen
 scripts/levels*.ts       the level-matching check (npm run levels)
+scripts/samples/         prepare.py: builds public/samples/ from the original sample libraries
+public/samples/          the bundled samples, <instrument>/<midi>.mp3 (copied into dist/ by webpack)
 ```
 
 ### Data model (`song.ts`, `parts.ts`)
@@ -111,10 +116,12 @@ scripts/levels*.ts       the level-matching check (npm run levels)
 ### Audio (`audio/engine.ts`, `audio/sequencer.ts`)
 
 - Per part: `instrument → drive → makeup → chorus → volume → master`, plus `volume → reverb send / delay send` into one shared `Reverb` and `FeedbackDelay`, whose returns go to `master → limiter (-1 dB) → destination`. Drum channels skip drive and chorus.
-- `driveMakeupDb(a)` is fitted to measured loudness; `MASTER_GAIN` (0.8) is the level at `out.level = 1` and leaves headroom for full sends. `npm run levels` must stay green (sustaining RMS spread ≤ 6 dB, triad peaks -10…-3 dBFS, all-effects limiter output ≤ -0.5 dBFS).
+- `driveMakeupDb(a)` is fitted to measured loudness; `MASTER_GAIN` (0.8) is the level at `out.level = 1` and leaves headroom for full sends. `npm run levels` must stay green (sustaining RMS spread ≤ 6 dB, triad peaks -10…-3 dBFS, all-effects limiter output ≤ -0.5 dBFS). It measures sampled instruments with their samples (`SAMPLE_VOLUMES`) and again as their stand-in synth (`~synth` rows, `VOLUMES`), so the switch from one to the other doesn't jump in level.
 - App keeps the engine in step: `syncParts` on every parts change, `setSpace` on space change, `selectTrack(padPart)` for the pads. Live pads use `engine.attack(midi, time, track)`.
 - Playback: `SequencerPlayer` asks `schedule()` for events every 1/16 on the Transport, so edits while playing are heard immediately. `schedule()` expands every audible part with `partNotes()` (and drum patterns with `expandPattern`). Loop length = end of the music rounded up to a bar, capped at the sequencer length.
 - The audio context only starts after the intro tap (`startAudio`); nothing audio is mounted before.
+- Instruments (`instruments.ts`) all implement `Voice`: `attack(midi[], time, velocity, glide?)`, `release(midi[], time)`, `releaseAll(time)`, plus `output`, `ready` and `dispose`. Synths are a `SynthPool` of monophonic Tone voices handed out by audio time (unlike `Tone.PolySynth`, so notes scheduled ahead never steal a voice that's still sounding). Sampled instruments are a `SamplePlayer` (one `ToneBufferSource` + gain envelope per note, pitched from the nearest recording; sustained sets loop a baked crossfade loop) behind their synth stand-in until `loadBank` has decoded the samples. Velocity is still scaled by 1/sqrt(voices).
+- Samples are fetched relative to the page (`samples/<id>/<midi>.mp3`), so they work under the Pages subpath. Webpack's `publicPath` is `''` for the same reason, and everything in `public/` besides `index.html` is copied into `dist/`.
 
 ### UI conventions (keep these when changing anything visible)
 
@@ -131,6 +138,22 @@ scripts/levels*.ts       the level-matching check (npm run levels)
 - Audio behaviour (routing, levels) was checked offline with `Tone.Offline` in headless Chromium, the same way `scripts/levels-page.ts` does.
 - Not verifiable in the sandbox: how things sound on real speakers, and real-phone feel (touch latency, live-recording timing).
 
+### Samples: sources and licences
+
+All bundled samples are freely licensed; `scripts/samples/prepare.py` rebuilds `public/samples/` from the originals (it maps every file by its measured pitch, since several VSCO files are named an octave off; trims, level-matches, bakes loops for sustained sets; encodes 64 kb/s mono mp3, the safest format for iOS Safari). About 3.6 MB in total, 108 files.
+
+| Instrument | Source | Licence |
+| --- | --- | --- |
+| Piano | Salamander Grand Piano V3 by Alexander Holm, as published in [Tonejs/audio](https://github.com/Tonejs/audio/tree/master/salamander) (minor thirds, one velocity) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
+| E-Piano | FluidR3_GM "Electric Piano 1" by Frank Wen, as rendered by [gleitz/midi-js-soundfonts](https://github.com/gleitz/midi-js-soundfonts) (major thirds) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/us/) |
+| Celesta | FluidR3_GM "Celesta", same source | CC BY 3.0 |
+| Strings | [VSCO-2 Community Edition](https://github.com/sgossner/VSCO-2-CE) (Versilian Studios): cello section below B3, violin section above, sustain with vibrato | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
+| Organ | VSCO-2 CE pipe organ (Simon Dalzell / Ivy Audio), quiet manual | CC0 1.0 |
+| Brass | VSCO-2 CE French horn (low) and trumpet, sustain | CC0 1.0 |
+| Marimba | VSCO-2 CE marimba | CC0 1.0 |
+
+CC BY requires credit: the piano is by Alexander Holm (Salamander Grand Piano), the e-piano and celesta are from Frank Wen's FluidR3 GM soundfont. VSCO-2 CE asks for (but doesn't require) credit to Versilian Studios.
+
 ### Working on the repo
 
 - GitHub: `metjuperry/Metju.Chord`, default branch `master`. Work on `claude/<topic>` branches and open PRs; stacked work uses the previous branch as the PR base.
@@ -142,5 +165,6 @@ scripts/levels*.ts       the level-matching check (npm run levels)
 - **Sequencer declutter**, mocked up but on hold: transport down to Play/Loop/Record; one "4 bars · 4/4 ▾" button plus a "+ row" strip; part strips as name + M/S only with instrument/volume/remove moved into the part editor; chord tools as a small bar on the selected chord; "Clear all" into the Song menu. Header sections (dividers) and the single + Part menu are done.
 - **Melody and bass generator** (Generate / Re-roll writing ordinary notes): designed, not built; the owner put it on hold. Bass would need its own note grid ("Custom" style) for that.
 - **Per-chord style overrides** (e.g. Keys arpeggiates only one chord): designed, the owner decided it isn't needed for now.
+- **Samples**: one velocity layer each, no round-robins, so fast repeated notes sound alike. More layers would mean more megabytes. The tonejs-instruments set (CC BY 3.0) has guitar, harp and other instruments if more are wanted.
 - Desktop header shows section dividers only at ≥1360px; narrower windows wrap without them.
 - Live recording timing on real phones is untested.

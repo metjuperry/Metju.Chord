@@ -168,10 +168,10 @@ export class Engine {
         const fade = new Tone.Gain(1).connect(into);
         voice.output.disconnect();
         voice.output.connect(fade);
-        voice.synth.releaseAll();
+        voice.releaseAll(Tone.now());
         fade.gain.rampTo(0, 0.05);
         setTimeout(() => {
-            voice.nodes.forEach(n => n.dispose());
+            voice.dispose();
             fade.dispose();
             then?.();
         }, 150);
@@ -235,8 +235,10 @@ export class Engine {
 
     /** Play a chord for `duration` (seconds or Tone time) at an audio-clock `time`, on `track` (default: the selected one). */
     playChord(midi: number[], opts: { duration: Tone.Unit.Time; time?: number; track?: string }) {
-        this.voice(opts.track).synth.triggerAttackRelease(
-            this.toFreqs(midi), opts.duration, opts.time ?? Tone.now(), velocityFor(midi.length));
+        const voice = this.voice(opts.track);
+        const time = opts.time ?? Tone.now();
+        voice.attack(midi, time, velocityFor(midi.length));
+        voice.release(midi, time + Tone.Time(opts.duration).toSeconds());
     }
 
     /**
@@ -244,10 +246,9 @@ export class Engine {
      * synth even if the selection changes.
      */
     attack(midi: number[], time?: number, track?: string): () => void {
-        const synth = this.voice(track).synth;
-        const freqs = this.toFreqs(midi);
-        synth.triggerAttack(freqs, time ?? Tone.now(), velocityFor(midi.length));
-        return () => synth.triggerRelease(freqs, Tone.now());
+        const voice = this.voice(track);
+        voice.attack(midi, time ?? Tone.now(), velocityFor(midi.length));
+        return () => voice.release(midi, Tone.now());
     }
 
     /**
@@ -281,11 +282,12 @@ export class Engine {
     }
 
     releaseAll() {
-        this.strips.forEach(s => s.voice.synth.releaseAll());
+        this.strips.forEach(s => s.voice.releaseAll(Tone.now()));
     }
 
-    private toFreqs(midi: number[]): number[] {
-        return midi.map(m => Tone.Frequency(m, 'midi').toFrequency());
+    /** Resolves when every part's instrument plays its real sound (sampled ones have loaded). */
+    instrumentsReady(): Promise<void> {
+        return Promise.all([...this.strips.values()].map(s => s.voice.ready)).then(() => undefined);
     }
 
     // ---- transport ---------------------------------------------------------
@@ -327,7 +329,7 @@ export class Engine {
 
     /** Arpeggiate while held. Returns the function that stops it. */
     startArp(midi: number[], opts: ArpOptions): () => void {
-        const synth = this.voice().synth;
+        const voice = this.voice();
         const owner = `arp:${Math.random().toString(36).slice(2)}`;
         let cycle = arpOrder(midi, opts.pattern);
         let step = 0;
@@ -338,8 +340,9 @@ export class Engine {
                 cycle = arpOrder(midi, opts.pattern); // reshuffles for 'random'
                 step = 0;
             }
-            synth.triggerAttackRelease(
-                Tone.Frequency(cycle[step++], 'midi').toFrequency(), opts.noteLength, time, velocity);
+            const note = [cycle[step++]];
+            voice.attack(note, time, velocity);
+            voice.release(note, time + opts.noteLength);
         }, opts.rate);
 
         const startAt = this.quantizedStart(opts.rate);
@@ -355,7 +358,7 @@ export class Engine {
 
     /** Schedule an arpeggio at an exact audio time, filling `seconds` (used by sequencer steps). */
     scheduleArp(midi: number[], opts: ArpOptions, time: number, seconds: number, track?: string) {
-        const synth = this.voice(track).synth;
+        const voice = this.voice(track);
         const stepSeconds = Tone.Time(opts.rate).toSeconds();
         const steps = Math.max(1, Math.floor((seconds + 1e-6) / stepSeconds));
         let cycle = arpOrder(midi, opts.pattern);
@@ -364,9 +367,9 @@ export class Engine {
                 cycle = arpOrder(midi, opts.pattern);
                 k = 0;
             }
-            synth.triggerAttackRelease(
-                Tone.Frequency(cycle[k], 'midi').toFrequency(),
-                Math.min(opts.noteLength, stepSeconds), time + i * stepSeconds, velocityFor(1));
+            const at = time + i * stepSeconds;
+            voice.attack([cycle[k]], at, velocityFor(1));
+            voice.release([cycle[k]], at + Math.min(opts.noteLength, stepSeconds));
         }
     }
 }
