@@ -101,6 +101,15 @@
 
 .track-bar {
     display: flex;
+    gap: 8px;
+    align-items: flex-start;
+}
+
+/* the strips wrap on the left; + Part stays put at the right edge */
+.track-strips {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
     flex-wrap: wrap;
     gap: 8px;
     align-items: center;
@@ -201,12 +210,17 @@
 
 .add-part {
     position: relative;
+    flex: 0 0 auto;
+}
+
+.add-part .add-track {
+    white-space: nowrap;
 }
 
 /* opens towards the left edge, under the button */
 .add-part-popover {
-    left: 0;
-    right: auto;
+    left: auto;
+    right: 0;
     min-width: 220px;
 }
 

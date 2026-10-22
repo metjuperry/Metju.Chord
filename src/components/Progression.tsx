@@ -45,6 +45,8 @@ interface ProgressionProps {
     describe: (clip: Clip) => { symbol: string; numeral: string };
     /** The part the pads play through, e.g. "Keys". */
     padPart: string;
+    /** In Notes mode: the melody part the pads record into. */
+    recordInto?: string;
     /** 1/16 steps per sequencer step and per bar, for drum lanes. */
     sixteenthsPerStep: number;
     sixteenthsPerBar: number;
@@ -406,7 +408,9 @@ const Progression: React.FC<ProgressionProps> = props => {
                     <span className="rec-dot" />{recording ? 'Recording' : 'Record'} <kbd className="kbd">R</kbd>
                 </button>
                 <span className="section-note prog-hint">
-                    {recording
+                    {recording && props.recordInto
+                        ? `Notes mode: play pads to write notes into ${props.recordInto}. Stopped, each note goes at the cursor; while playing, they land where you play them.`
+                        : recording
                         ? `Play a pad to write it into the chord row at step ${selected + 1}; the cursor moves on.`
                         : 'Pads record into the chord row. Every part below plays those chords in its own way.'}
                 </span>
@@ -427,18 +431,20 @@ const Progression: React.FC<ProgressionProps> = props => {
             </div>
 
             <div className="track-bar" role="group" aria-label="Parts">
-                {parts.map(p => (
-                    <PartStrip
-                        key={p.id}
-                        part={p}
-                        selected={p.id === selectedLane}
-                        silenced={silenced(p)}
-                        canRemove={props.canRemovePart(p.id)}
-                        onSelect={() => props.onSelectLane(p.id)}
-                        onUpdate={props.onUpdatePart}
-                        onRemove={() => props.onRemovePart(p.id)}
-                    />
-                ))}
+                <div className="track-strips">
+                    {parts.map(p => (
+                        <PartStrip
+                            key={p.id}
+                            part={p}
+                            selected={p.id === selectedLane}
+                            silenced={silenced(p)}
+                            canRemove={props.canRemovePart(p.id)}
+                            onSelect={() => props.onSelectLane(p.id)}
+                            onUpdate={props.onUpdatePart}
+                            onRemove={() => props.onRemovePart(p.id)}
+                        />
+                    ))}
+                </div>
                 <AddPartMenu full={parts.length >= MAX_PARTS} onAdd={props.onAddPart} />
             </div>
 

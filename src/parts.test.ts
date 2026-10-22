@@ -55,21 +55,21 @@ describe('a chord part', () => {
 
 describe('a bass part', () => {
     const bass = newPart('bass', []) as BassPart;
-    const roots = (p: BassPart) => bassNotes(p, song, S).map(n => named(n.midi[0]));
+    const roots = (p: BassPart) => bassNotes(p, song, { beatTicks: S }).map(n => named(n.midi[0]));
 
     it('holds the root of each chord', () => {
         expect(roots({ ...bass, style: 'hold' })).toEqual(['C2', 'A2', 'F2', 'G2']);
     });
 
     it('plays the root on every beat', () => {
-        const notes = bassNotes({ ...bass, style: 'pulse' }, song, S);
+        const notes = bassNotes({ ...bass, style: 'pulse' }, song, { beatTicks: S });
         expect(notes).toHaveLength(16);
         expect(notes.every(n => n.len === S)).toBe(true);
     });
 
     it('drives in eighths', () => {
-        expect(bassNotes({ ...bass, style: 'eighths' }, song, S)).toHaveLength(32);
-        expect(bassNotes({ ...bass, style: 'eighths' }, song, S)[1].start).toBe(PPQ / 2);
+        expect(bassNotes({ ...bass, style: 'eighths' }, song, { beatTicks: S })).toHaveLength(32);
+        expect(bassNotes({ ...bass, style: 'eighths' }, song, { beatTicks: S })[1].start).toBe(PPQ / 2);
     });
 
     it('alternates root and fifth', () => {
@@ -82,6 +82,35 @@ describe('a bass part', () => {
         expect(walk.slice(0, 8)).toEqual(['C2', 'C2', 'C2', 'G2', 'A2', 'A2', 'A2', 'G2']);
         // the last chord has nothing to walk into
         expect(walk.slice(12)).toEqual(['G2', 'G2', 'G2', 'G2']);
+    });
+
+    it('bounces between root and octave', () => {
+        expect(roots({ ...bass, style: 'octaves' }).slice(0, 4)).toEqual(['C2', 'C3', 'C2', 'C3']);
+    });
+
+    it('plays off the beat', () => {
+        const notes = bassNotes({ ...bass, style: 'offbeat' }, song, { beatTicks: S });
+        expect(notes.slice(0, 2).map(n => n.start)).toEqual([S / 2, S + S / 2]);
+        expect(notes).toHaveLength(16);
+    });
+
+    it('arpeggiates up through the chord', () => {
+        // Am: A C E A
+        const am = bassNotes({ ...bass, style: 'arp' }, song, { beatTicks: S }).filter(n => n.start >= 4 * S && n.start < 6 * S);
+        expect(am.map(n => named(n.midi[0]))).toEqual(['A2', 'C3', 'E3', 'A3']);
+    });
+
+    it('plays 3-3-2: two long roots and a short fifth', () => {
+        const bar = bassNotes({ ...bass, style: 'tresillo' }, song, { beatTicks: S }).filter(n => n.start < 2 * S);
+        expect(bar.map(n => [n.start / (S / 4), n.len / (S / 4), named(n.midi[0])])).toEqual([[0, 3, 'C2'], [3, 3, 'C2'], [6, 2, 'G2']]);
+    });
+
+    it('follows the kick', () => {
+        const kicks = [0, 2 * S, 2 * S + S / 2, 4 * S];
+        const notes = bassNotes({ ...bass, style: 'kick' }, song, { beatTicks: S, kicks });
+        expect(notes.slice(0, 4).map(n => [n.start / S, n.len / S, named(n.midi[0])])).toEqual([[0, 1, 'C2'], [2, 0.5, 'C2'], [2.5, 1, 'C2'], [4, 1, 'A2']]);
+        // a chord with no kick under it holds its root
+        expect(notes.find(n => n.start === 8 * S)?.len).toBe(4 * S);
     });
 
     it('sits in the octave you choose', () => {

@@ -21,6 +21,8 @@ export interface ScreenView {
     status: string[];
     /** Right-hand status flag, e.g. "REC" or "BEAT 3 · HELD 2/3". */
     flag?: string;
+    /** What the stick did, when it isn't a chord type (Notes mode: "Octave up"). */
+    stickLabel?: string;
 }
 
 interface DeviceProps {
@@ -49,7 +51,29 @@ interface DeviceProps {
     onInversion: (inversion: number) => void;
     /** Phone layout: no keyboard strip or voicing row, slim screen. */
     compact?: boolean;
+    /** Override the small label under a stick direction (Notes mode: "Octave up"). */
+    stickRules?: Partial<Record<StickDir, string>>;
+    /** What the pads play: chords, or single notes on a melody part. */
+    padMode: 'chords' | 'notes';
+    /** The melody part Notes mode plays, if the song has one. */
+    notesPart?: string;
+    onPadMode: (mode: 'chords' | 'notes') => void;
 }
+
+/** Chords / Notes: what the pads play. Notes needs a melody part to play on. */
+const ModeToggle: React.FC<{ mode: 'chords' | 'notes'; notesPart?: string; onMode: (m: 'chords' | 'notes') => void }> = ({ mode, notesPart, onMode }) => (
+    <div className="segmented dark pad-mode" role="group" aria-label="Pads play">
+        <button aria-pressed={mode === 'chords'} onClick={() => onMode('chords')} title="Pads play chords (N)">Chords</button>
+        <button
+            aria-pressed={mode === 'notes'}
+            disabled={!notesPart}
+            onClick={() => onMode('notes')}
+            title={notesPart ? `Pads play single notes on ${notesPart} (N)` : 'Add a Melody part to play notes'}
+        >
+            Notes
+        </button>
+    </div>
+);
 
 const DIR_VECTOR: { [d in StickDir]: [number, number] } = {
     C: [0, 0], U: [0, -1], UR: [0.71, -0.71], R: [1, 0], DR: [0.71, 0.71],
@@ -87,7 +111,7 @@ const Screen: React.FC<{ view: ScreenView; recording: boolean }> = ({ view, reco
                 <span className="oled-side">
                     <span className="oled-numeral">{view.numeral}</span>
                     <span className="oled-stick">
-                        <StickGlyph dir={view.stick} /> {STICK_LABELS[view.stick].toUpperCase()}
+                        <StickGlyph dir={view.stick} /> {(view.stickLabel ?? STICK_LABELS[view.stick]).toUpperCase()}
                     </span>
                 </span>
             </div>
@@ -148,11 +172,15 @@ const Stick: React.FC<{
     dir: StickDir;
     latched: StickDir;
     chords: { [d in StickDir]: string };
+    rules?: Partial<Record<StickDir, string>>;
+    caption: string;
     forPad: string;
     showCaption: boolean;
     onStick: (d: StickDir) => void;
     onHold: (d: StickDir | null) => void;
-}> = ({ dir, latched, chords, forPad, showCaption, onStick, onHold }) => {
+}> = ({ dir, latched, chords, rules, caption, forPad, showCaption, onStick, onHold }) => {
+    // an unused direction (no chord or note there) gets no label either
+    const rule = (d: StickDir) => (!chords[d] ? '' : rules?.[d] ?? STICK_LABELS[d]);
     const [vx, vy] = DIR_VECTOR[dir];
     const gesture = useRef<{ id: number; start: number; dir: StickDir; moved: boolean } | null>(null);
 
@@ -205,7 +233,7 @@ const Stick: React.FC<{
             >
                 <svg className="stick-ring" viewBox="-50 -50 100 100" aria-hidden="true">
                     {RING.map(d => (
-                        <path key={d} d={SEGMENTS[d]} className={`seg ${dir === d ? 'active' : ''} ${latched === d ? 'latched' : ''}`} />
+                        <path key={d} d={SEGMENTS[d]} className={`seg ${dir === d ? 'active' : ''} ${latched === d ? 'latched' : ''} ${chords[d] ? '' : 'off'}`} />
                     ))}
                 </svg>
                 {RING.map(d => {
@@ -213,16 +241,16 @@ const Stick: React.FC<{
                     return (
                         <button
                             key={d}
-                            className={`stick-dir ${dir === d ? 'active' : ''}`}
+                            className={`stick-dir ${dir === d ? 'active' : ''} ${chords[d] ? '' : 'off'}`}
                             style={{ left: `calc(50% + ${x} * var(--label-r))`, top: `calc(50% + ${y} * var(--label-r))` }}
                             aria-pressed={latched === d}
-                            aria-label={`${chords[d]}: ${STICK_LABELS[d]} (hold ${DIR_KEYS[d]})`}
-                            title={`${STICK_LABELS[d]} · hold ${DIR_KEYS[d]}`}
+                            aria-label={`${chords[d] || 'Nothing'}: ${rule(d) || 'unused'} (hold ${DIR_KEYS[d]})`}
+                            title={`${rule(d) || 'unused here'} · hold ${DIR_KEYS[d]}`}
                             // pointer input is handled by the stick itself; this is for keyboard (Enter/Space)
                             onClick={e => { if (e.detail === 0) onStick(latched === d ? 'C' : d); }}
                         >
                             <span className="dir-name">{chords[d]}</span>
-                            <span className="dir-rule">{STICK_LABELS[d]}</span>
+                            <span className="dir-rule">{rule(d)}</span>
                         </button>
                     );
                 })}
@@ -233,10 +261,10 @@ const Stick: React.FC<{
                     onClick={e => { if (e.detail === 0) onStick('C'); }}
                 >
                     <span className="knob-name">{chords.C}</span>
-                    <span className="knob-rule">Triad</span>
+                    <span className="knob-rule">{rules?.C ?? 'Triad'}</span>
                 </button>
             </div>
-            {showCaption && <p className="stick-caption">Chords for pad <b>{forPad}</b></p>}
+            {showCaption && <p className="stick-caption">{caption} <b>{forPad}</b></p>}
         </div>
     );
 };
@@ -302,11 +330,13 @@ export const VoicingControls: React.FC<{
 const Device: React.FC<DeviceProps> = ({
     screen, sounding, scalePcs, octave, pads, stickDir, latchedDir, stickChords, stickFor, inversion, maxInversion, recording,
     voiceLeading, onVoiceLeading, onPadDown, onPadUp, onStick, onStickHold, onInversion, compact = false,
+    stickRules, padMode, notesPart, onPadMode,
 }) => (
     <section className={`device ${compact ? 'compact' : ''}`} aria-label="Instrument">
         {!compact && (
             <div className="device-top">
                 <span className="device-label">metju.chord</span>
+                <ModeToggle mode={padMode} notesPart={notesPart} onMode={onPadMode} />
                 <span className="device-leds" aria-hidden="true">
                     <span className={recording ? 'led-rec' : ''} />
                     <span className={pads.some(p => p.held) ? 'led-play' : ''} />
@@ -314,11 +344,28 @@ const Device: React.FC<DeviceProps> = ({
             </div>
         )}
 
-        <Screen view={screen} recording={recording} />
+        {compact ? (
+            <div className="screen-row">
+                <Screen view={screen} recording={recording} />
+                <ModeToggle mode={padMode} notesPart={notesPart} onMode={onPadMode} />
+            </div>
+        ) : (
+            <Screen view={screen} recording={recording} />
+        )}
         {!compact && <ScaleKeys sounding={sounding} scalePcs={scalePcs} octave={octave} />}
 
         <div className="device-controls">
-            <Stick dir={stickDir} latched={latchedDir} chords={stickChords} forPad={stickFor} showCaption={!compact} onStick={onStick} onHold={onStickHold} />
+            <Stick
+                dir={stickDir}
+                latched={latchedDir}
+                chords={stickChords}
+                rules={stickRules}
+                caption={padMode === 'notes' ? `Notes on ${notesPart ?? ''} · pad` : 'Chords for pad'}
+                forPad={stickFor}
+                showCaption={!compact}
+                onStick={onStick}
+                onHold={onStickHold}
+            />
             <div className="pads">
                 {[0, 2, 4, 6, 1, 3, 5].map(d => (
                     <Pad key={d} pad={pads[d]} onDown={onPadDown} onUp={onPadUp} />
