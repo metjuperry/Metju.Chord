@@ -118,12 +118,13 @@
     border-left: 2px solid var(--faint);
 }
 
-/* the notes of the chord under this step: safe landing spots */
+/* the notes of the chord under this step: safe landing spots.
+   (Shading stays at two classes so a note, below, always paints over it.) */
 .mel-cell.tone {
     background: color-mix(in srgb, var(--accent) 16%, var(--panel-2));
 }
 
-.mel-cell.alt.tone {
+.mel-cell:where(.alt).tone {
     background: color-mix(in srgb, var(--accent) 16%, var(--bg));
 }
 
@@ -131,7 +132,7 @@
     background: color-mix(in srgb, var(--accent) 30%, var(--panel-2));
 }
 
-.mel-cell.alt.root {
+.mel-cell:where(.alt).root {
     background: color-mix(in srgb, var(--accent) 30%, var(--bg));
 }
 

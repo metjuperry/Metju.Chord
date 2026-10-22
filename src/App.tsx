@@ -9,10 +9,11 @@ import SoundPanel from './components/SoundPanel';
 import Progression from './components/Progression';
 import HelpDialog from './components/HelpDialog';
 import DrumEditor from './components/DrumEditor';
+import IntroScreen, { IntroPhase } from './components/IntroScreen';
 import MelodyEditor from './components/MelodyEditor';
 import { BassEditor, ChordPartEditor } from './components/PartEditors';
 import {
-    ChordParams, ResolvedChord, StickDir,
+    ChordParams, KEYS, ResolvedChord, StickDir,
     STICK_DIRS, ScaleId, buildChordMidi, keyPitchClass, resolveChord, romanNumeral, scaleLabel, scalePitchClasses,
     stickChordType, triadQuality, voiceLead,
 } from './theory';
@@ -65,6 +66,19 @@ const loopLength = (s: PlayState) => Math.min(musicLoopEnd(s.chords, s.parts, s.
 /** How far playback goes before it wraps or stops. */
 const playLength = (s: PlayState) => (s.loop ? loopLength(s) : musicEnd(s.chords, s.parts, s.barTicks));
 
+/**
+ * A chord for the intro: a random press on the instrument itself. Any key, any of the 7 pads,
+ * any of the 9 stick positions (in the song's scale), with the root doubled two octaves down.
+ */
+function introChord(scale: ScaleId): { name: string; midi: number[] } {
+    const pick = <T,>(list: readonly T[]) => list[Math.floor(Math.random() * list.length)];
+    const key = pick(KEYS);
+    const degree = Math.floor(Math.random() * 7);
+    const dir = pick(STICK_DIRS);
+    const chord = resolveChord(key, { degree, type: stickChordType(dir, triadQuality(degree, scale)), inversion: 0, octave: 4, scale });
+    return { name: chord.name.symbol, midi: [36 + chord.rootPc, ...chord.midi] };
+}
+
 /** The song and settings saved in this browser, if any. */
 function loadSaved(): SavedState | null {
     try {
@@ -92,6 +106,8 @@ interface Hold {
 const App: React.FC = () => {
     // ---- settings ---------------------------------------------------------------
     const [audioReady, setAudioReady] = useState(false);
+    const [intro, setIntro] = useState<IntroPhase>('idle');
+    const [introName, setIntroName] = useState('');
     const [saved] = useState(loadSaved);
     const initial = saved?.settings ?? defaultSettings();
     const [theme, setTheme] = useState<'dark' | 'light'>(initial.theme);
@@ -777,17 +793,19 @@ const App: React.FC = () => {
 
     const beatDot = metronomeOn ? metBeat : playing ? playhead % ts.beats : null;
 
-    if (!audioReady) {
-        return (
-            <div className="start-screen">
-                <button className="start-card" onClick={startAudio}>
-                    <span className="start-logo">metju<span>.</span>chord</span>
-                    <span className="start-cta">Click to start</span>
-                    <span className="start-note">Your browser needs a click before it can play sound.</span>
-                </button>
-            </div>
-        );
-    }
+    /** The start tap: ring a chord from the song's key and fade from the intro into the app. */
+    const begin = async () => {
+        if (intro !== 'idle') return;
+        const chord = introChord(scale);
+        setIntroName(chord.name);
+        setIntro('leaving');
+        await startAudio();
+        getEngine().playIntro(chord.midi);
+        setTimeout(() => setIntro('done'), 1900);
+    };
+    const introEl = intro !== 'done' ? <IntroScreen phase={intro} chord={introName} onStart={begin} /> : null;
+    // Until the first tap there is no audio, so nothing but the intro is mounted
+    if (!audioReady) return <>{null}{introEl}</>;
 
     const deviceEl = (
         <Device
@@ -924,9 +942,10 @@ const App: React.FC = () => {
     );
 
     // Phones and small windows: one mode at a time under a compact bar, so playing never needs scrolling
+    const entering = intro === 'leaving' ? 'app-entering' : '';
     if (compact) {
-        return (
-            <div className={`app compact mode-${mode}`}>
+        return (<>
+            <div className={`app compact mode-${mode} ${entering}`}>
                 <CompactBar
                     mode={mode}
                     selectedKey={selectedKey}
@@ -969,11 +988,12 @@ const App: React.FC = () => {
                 <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
             {notice && <div className="toast" role="status">{notice}</div>}
             </div>
-        );
+            {introEl}
+        </>);
     }
 
-    return (
-        <div className="app">
+    return (<>
+        <div className={`app ${entering}`}>
             <TopBar
                 selectedKey={selectedKey}
                 octave={octave}
@@ -1002,7 +1022,8 @@ const App: React.FC = () => {
             <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
             {notice && <div className="toast" role="status">{notice}</div>}
         </div>
-    );
+        {introEl}
+    </>);
 };
 
 export default App;

@@ -199,6 +199,22 @@
     height: 40px;
 }
 
+.add-part {
+    position: relative;
+}
+
+/* opens towards the left edge, under the button */
+.add-part-popover {
+    left: 0;
+    right: auto;
+    min-width: 220px;
+}
+
+.add-part-hint {
+    color: var(--muted);
+    font-size: 11px;
+}
+
 /* each row: a ruler line, then one lane per track, all sharing a label column */
 .lane-row {
     display: grid;

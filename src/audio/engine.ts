@@ -186,6 +186,36 @@ export class Engine {
         return () => synth.triggerRelease(freqs, Tone.now());
     }
 
+    /**
+     * The intro's "bwooong": the notes rolled upwards a few ms apart on a bell-ish FM voice, while a
+     * low-pass opens wide and settles back, through its own long reverb. Everything is thrown away
+     * once it has rung out.
+     */
+    playIntro(midi: number[]) {
+        const reverb = new Tone.Reverb({ decay: 4.5, wet: 0.4 }).connect(this.master);
+        const filter = new Tone.Filter({ type: 'lowpass', frequency: 500, Q: 2 }).connect(reverb);
+        const synth = new Tone.PolySynth(Tone.FMSynth, {
+            harmonicity: 2,
+            modulationIndex: 5,
+            oscillator: { type: 'sine' },
+            envelope: { attack: 0.006, decay: 2.8, sustain: 0.12, release: 2.4 },
+            modulation: { type: 'triangle' },
+            modulationEnvelope: { attack: 0.01, decay: 1.4, sustain: 0.1, release: 1.5 },
+        } as Partial<Tone.FMSynthOptions>).connect(filter);
+        synth.volume.value = 0;
+        const at = Tone.now() + 0.05;
+        filter.frequency.setValueAtTime(500, at);
+        filter.frequency.exponentialRampToValueAtTime(6000, at + 0.4);
+        filter.frequency.exponentialRampToValueAtTime(1400, at + 3);
+        midi.forEach((m, i) =>
+            synth.triggerAttackRelease(Tone.Frequency(m, 'midi').toFrequency(), 1.8, at + i * 0.045, i === 0 ? 0.9 : 0.6));
+        setTimeout(() => {
+            synth.dispose();
+            filter.dispose();
+            reverb.dispose();
+        }, 8000);
+    }
+
     releaseAll() {
         this.strips.forEach(s => s.voice.synth.releaseAll());
     }
