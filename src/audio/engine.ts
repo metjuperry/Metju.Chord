@@ -3,7 +3,7 @@ import { ArpPattern, arpOrder } from '../theory';
 import { Instrument, InstrumentId, createInstrument } from './instruments';
 import { DrumKit } from './drumkit';
 import type { DrumVoice } from '../drums';
-import { PartFx, PartTone, neutralTone, shapeBrightness, shapePan } from '../parts';
+import { PartFx, PartTone, glideSeconds, glides, neutralTone, noFx, shapeBrightness, shapePan } from '../parts';
 import type { Space } from '../song';
 
 export type ArpRate = '4n' | '8n' | '8t' | '16n' | '16t' | '32n';
@@ -30,6 +30,7 @@ interface Channel {
     drive?: Tone.Distortion;
     makeup?: Tone.Gain;
     chorus?: Tone.Chorus;
+    tremolo?: Tone.Tremolo;
     level: Tone.Volume;
     sendReverb: Tone.Gain;
     sendDelay: Tone.Gain;
@@ -40,7 +41,15 @@ interface Strip extends Channel {
     instrument: InstrumentId;
     voice: Instrument;
     shaped: PartTone;
+    fx: PartFx;
+    /** The last note this part was told to play, for glide: what it was and when it started. */
+    last?: { midi: number; time: number };
 }
+
+/** A note glides from the previous one only if that one started this recently (a line, not a new phrase). */
+const GLIDE_WINDOW = 2;
+/** Tremolo speed: 1/8 notes of the tempo. */
+const TREMOLO_RATE = '8n';
 
 /**
  * Drive gets louder as it squashes; this pulls it back so turning drive up adds grit, not volume.
@@ -52,7 +61,7 @@ export const driveMakeupDb = (a: number) => (a <= 0 ? 0 : -(1.5 + 5.2 * Math.pow
 /** Master gain at full output level. */
 const MASTER_GAIN = 0.8;
 
-const NO_FX: PartFx = { drive: 0, chorus: 0, reverb: 0, delay: 0 };
+const NO_FX: PartFx = noFx();
 
 /**
  * Owns every audio node. Each part has its own channel (see Channel); the parts share one reverb
@@ -98,7 +107,7 @@ export class Engine {
     // ---- channels ------------------------------------------------------------
 
     /**
-     * A channel's nodes, wired up: input -> [tone -> shelf -> drive -> makeup -> chorus] -> pan -> level.
+     * A channel's nodes, wired up: input -> [tone -> shelf -> drive -> makeup -> chorus -> tremolo] -> pan -> level.
      * `inserts` adds the bracketed part (not for drums).
      */
     private makeChannel(volume: number, inserts: boolean): Channel {
@@ -119,10 +128,12 @@ export class Engine {
         const drive = new Tone.Distortion({ distortion: 0, wet: 0, oversample: '2x' });
         const makeup = new Tone.Gain(1);
         const chorus = new Tone.Chorus({ frequency: 1.5, delayTime: 3.5, depth: 0.7, spread: 180, wet: 0 }).start();
-        input.chain(tone, shelf, drive, makeup, chorus, pan);
+        // a mono wobble (no stereo spread) that does nothing at depth 0
+        const tremolo = new Tone.Tremolo({ frequency: Tone.Time(TREMOLO_RATE).toFrequency(), depth: 0, spread: 0 }).start();
+        input.chain(tone, shelf, drive, makeup, chorus, tremolo, pan);
         return {
-            input, tone, shelf, drive, makeup, chorus, pan, level, sendReverb, sendDelay,
-            nodes: [input, tone, shelf, drive, makeup, chorus, pan, level, sendReverb, sendDelay],
+            input, tone, shelf, drive, makeup, chorus, tremolo, pan, level, sendReverb, sendDelay,
+            nodes: [input, tone, shelf, drive, makeup, chorus, tremolo, pan, level, sendReverb, sendDelay],
         };
     }
 
@@ -144,6 +155,7 @@ export class Engine {
             ch.makeup.gain.rampTo(Tone.dbToGain(driveMakeupDb(fx.drive)), 0.03);
         }
         ch.chorus?.wet.rampTo(fx.chorus, 0.05);
+        ch.tremolo?.depth.rampTo(fx.tremolo, 0.05);
         ch.sendReverb.gain.rampTo(fx.reverb, 0.05);
         ch.sendDelay.gain.rampTo(fx.delay, 0.05);
     }
@@ -172,7 +184,7 @@ export class Engine {
         let strip = this.strips.get(id);
         if (!strip) {
             const voice = createInstrument(opts.instrument);
-            strip = { ...this.makeChannel(opts.volume, true), instrument: opts.instrument, voice, shaped: neutralTone() };
+            strip = { ...this.makeChannel(opts.volume, true), instrument: opts.instrument, voice, shaped: neutralTone(), fx: NO_FX };
             voice.output.connect(strip.input);
             this.strips.set(id, strip);
         } else {
@@ -185,7 +197,8 @@ export class Engine {
                 this.fadeOut(previous, strip.input);
             }
         }
-        this.applyFx(strip, opts.fx ?? NO_FX);
+        strip.fx = { ...(opts.fx ?? NO_FX) };
+        this.applyFx(strip, strip.fx);
         this.applyTone(strip, opts.tone ?? strip.shaped);
     }
 
@@ -214,7 +227,7 @@ export class Engine {
         } else {
             ch.level.volume.rampTo(opts.volume, 0.05);
         }
-        this.applyFx(ch, { ...(opts.fx ?? NO_FX), drive: 0, chorus: 0 });
+        this.applyFx(ch, { ...(opts.fx ?? NO_FX), drive: 0, chorus: 0, tremolo: 0, glide: 0 });
     }
 
     /** Play one drum hit on a drum part at an audio-clock `time`. */
@@ -252,19 +265,37 @@ export class Engine {
         this.setTrack(this.current, { instrument: id, volume: strip ? strip.level.volume.value : 0 });
     }
 
-    private voice(track: string = this.current): Instrument {
+    private strip(track: string = this.current): Strip {
         if (!this.strips.has(track)) this.setTrack(track, { instrument: 'epiano', volume: 0 });
-        return this.strips.get(track)!.voice;
+        return this.strips.get(track)!;
+    }
+
+    private voice(track: string = this.current): Instrument {
+        return this.strip(track).voice;
+    }
+
+    /**
+     * Start notes on a strip, gliding a single note in from the part's previous note when the part
+     * has glide (never longer than `maxGlide`, so a short note still arrives).
+     */
+    private start(strip: Strip, midi: number[], time: number, velocity: number, maxGlide = Infinity) {
+        const last = strip.last;
+        const glide = glides(strip.fx, midi.length) && last && last.midi !== midi[0] && time - last.time < GLIDE_WINDOW && time >= last.time
+            ? { from: last.midi, time: Math.min(glideSeconds(strip.fx.glide), maxGlide) }
+            : undefined;
+        strip.voice.attack(midi, time, velocity, glide);
+        if (midi.length === 1) strip.last = { midi: midi[0], time };
     }
 
     // ---- playing -----------------------------------------------------------
 
     /** Play a chord for `duration` (seconds or Tone time) at an audio-clock `time`, on `track` (default: the selected one). */
     playChord(midi: number[], opts: { duration: Tone.Unit.Time; time?: number; track?: string }) {
-        const voice = this.voice(opts.track);
+        const strip = this.strip(opts.track);
         const time = opts.time ?? Tone.now();
-        voice.attack(midi, time, velocityFor(midi.length));
-        voice.release(midi, time + Tone.Time(opts.duration).toSeconds());
+        const seconds = Tone.Time(opts.duration).toSeconds();
+        this.start(strip, midi, time, velocityFor(midi.length), 0.8 * seconds);
+        strip.voice.release(midi, time + seconds);
     }
 
     /**
@@ -272,8 +303,9 @@ export class Engine {
      * synth even if the selection changes.
      */
     attack(midi: number[], time?: number, track?: string): () => void {
-        const voice = this.voice(track);
-        voice.attack(midi, time ?? Tone.now(), velocityFor(midi.length));
+        const strip = this.strip(track);
+        const voice = strip.voice;
+        this.start(strip, midi, time ?? Tone.now(), velocityFor(midi.length));
         return () => voice.release(midi, Tone.now());
     }
 
@@ -321,6 +353,9 @@ export class Engine {
     /** One shared bpm for the metronome, arpeggiator, sequencer and tempo-synced delay. */
     setBpm(bpm: number) {
         Tone.getTransport().bpm.value = bpm;
+        // tremolo wobbles in 1/8 notes of the tempo
+        const rate = Tone.Time(TREMOLO_RATE).toFrequency();
+        this.strips.forEach(s => s.tremolo?.frequency.rampTo(rate, 0.05));
         // the delay is tempo-synced: re-read its note value at the new tempo
         this.delay.delayTime.rampTo(Tone.Time(this.space.delay.time).toSeconds(), 0.05);
     }
@@ -355,7 +390,8 @@ export class Engine {
 
     /** Arpeggiate while held. Returns the function that stops it. */
     startArp(midi: number[], opts: ArpOptions): () => void {
-        const voice = this.voice();
+        const strip = this.strip();
+        const voice = strip.voice;
         const owner = `arp:${Math.random().toString(36).slice(2)}`;
         let cycle = arpOrder(midi, opts.pattern);
         let step = 0;
@@ -367,7 +403,7 @@ export class Engine {
                 step = 0;
             }
             const note = [cycle[step++]];
-            voice.attack(note, time, velocity);
+            this.start(strip, note, time, velocity, 0.8 * opts.noteLength);
             voice.release(note, time + opts.noteLength);
         }, opts.rate);
 
@@ -384,7 +420,8 @@ export class Engine {
 
     /** Schedule an arpeggio at an exact audio time, filling `seconds` (used by sequencer steps). */
     scheduleArp(midi: number[], opts: ArpOptions, time: number, seconds: number, track?: string) {
-        const voice = this.voice(track);
+        const strip = this.strip(track);
+        const voice = strip.voice;
         const stepSeconds = Tone.Time(opts.rate).toSeconds();
         const steps = Math.max(1, Math.floor((seconds + 1e-6) / stepSeconds));
         let cycle = arpOrder(midi, opts.pattern);
@@ -394,8 +431,9 @@ export class Engine {
                 k = 0;
             }
             const at = time + i * stepSeconds;
-            voice.attack([cycle[k]], at, velocityFor(1));
-            voice.release([cycle[k]], at + Math.min(opts.noteLength, stepSeconds));
+            const gate = Math.min(opts.noteLength, stepSeconds);
+            this.start(strip, [cycle[k]], at, velocityFor(1), 0.8 * gate);
+            voice.release([cycle[k]], at + gate);
         }
     }
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     BassPart, ChordPart, Harmony, MelodyPart, Part, audibleParts, bassNotes, chordPartNotes, melodyMidi, melodyNotes, musicLoopEnd,
-    newPart, placeNote, noteAt, fitNotes, outsideRests, restSpans, shapeAttack, shapeRelease, shapeBrightness, shapePan,
+    newPart, placeNote, noteAt, fitNotes, outsideRests, restSpans, shapeAttack, shapeRelease, shapeBrightness, shapePan, glideSeconds, glides, noFx,
 } from './parts';
 import { Clip, TICKS_PER_STEP as S, PPQ } from './progression';
 
@@ -219,5 +219,20 @@ describe('tone shaping', () => {
         expect(shapeBrightness(1)).toEqual({ cutoff: 20000, shelfDb: 9 });
         expect(shapePan(0)).toBe(-1);
         expect(shapePan(1)).toBe(1);
+    });
+});
+
+describe('glide', () => {
+    it('is off at 0 and reaches half a second at full', () => {
+        expect(glideSeconds(0)).toBe(0);
+        expect(glideSeconds(1)).toBe(0.5);
+        expect(glideSeconds(0.2)).toBeCloseTo(0.02);
+    });
+
+    it('only slides single notes, never block chords', () => {
+        const fx = { ...noFx(), glide: 0.5 };
+        expect(glides(fx, 1)).toBe(true);
+        expect(glides(fx, 3)).toBe(false);
+        expect(glides(noFx(), 1)).toBe(false);
     });
 });

@@ -1,13 +1,15 @@
 import React from 'react';
 import './FxMatrix.css';
 import Knob from './Knob';
-import { FX_KEYS, Part, PartFx, fxAvailable } from '../parts';
+import { FX_KEYS, Part, PartFx, fxAvailable, glideSeconds } from '../parts';
 import { DELAY_TIMES, DelayTime, Space } from '../song';
 
-const FX_LABELS: { [k in keyof PartFx]: string } = { drive: 'Drive', chorus: 'Chorus', reverb: '→ Reverb', delay: '→ Delay' };
+const FX_LABELS: { [k in keyof PartFx]: string } = { drive: 'Drive', chorus: 'Chorus', tremolo: 'Tremolo', glide: 'Glide', reverb: '→ Reverb', delay: '→ Delay' };
 const FX_HINTS: { [k in keyof PartFx]: string } = {
     drive: 'grit and warmth, on this part only',
     chorus: 'width and shimmer, on this part only',
+    tremolo: 'a volume wobble in 1/8 notes of the tempo, on this part only',
+    glide: 'single notes slide into the next one (bass, melody, arpeggios; block chords don\'t glide)',
     reverb: 'how much of this part goes into the shared reverb',
     delay: 'how much of this part goes into the shared delay',
 };
@@ -18,6 +20,8 @@ const SIZE_MIN = 0.5;
 const SIZE_SPAN = 5.5;
 const FEEDBACK_MAX = 0.9;
 const pct = (v: number) => `${Math.round(v * 100)}%`;
+/** How an effect amount reads: glide as its time, the rest as a percentage. */
+const fxText = (k: keyof PartFx, v: number) => (v <= 0 ? 'off' : k === 'glide' ? `${Math.round(glideSeconds(v) * 1000)} ms` : pct(v));
 
 interface FxMatrixProps {
     parts: Part[];
@@ -65,10 +69,10 @@ const FxMatrix: React.FC<FxMatrixProps> = ({ parts, space, selectedPart, onSelec
                                     onChange={v => onFx(p.id, k, v)}
                                     color={p.color}
                                     label={`${p.name} ${FX_LABELS[k].replace('→ ', '')}`}
-                                    display={p.fx[k] > 0 ? pct(p.fx[k]) : 'off'}
+                                    display={fxText(k, p.fx[k])}
                                     offAtZero
                                 />
-                                <span className="fx-value">{p.fx[k] > 0 ? pct(p.fx[k]) : 'off'}</span>
+                                <span className="fx-value">{fxText(k, p.fx[k])}</span>
                             </div>
                         ) : (
                             <div key={k} className="fx-cell na" title="Drums keep a clean hit: only reverb and delay">—</div>

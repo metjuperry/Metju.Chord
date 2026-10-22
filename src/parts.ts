@@ -40,14 +40,28 @@ export const MELODY_STEPS = 15;
 export interface PartFx {
     drive: number;
     chorus: number;
+    /** Depth of a volume wobble at 1/8 notes of the song's tempo. */
+    tremolo: number;
+    /** Portamento: single notes slide in from the part's previous note (see `glideSeconds`). */
+    glide: number;
     reverb: number;
     delay: number;
 }
 
-export const FX_KEYS: (keyof PartFx)[] = ['drive', 'chorus', 'reverb', 'delay'];
-export const noFx = (): PartFx => ({ drive: 0, chorus: 0, reverb: 0, delay: 0 });
-/** Drive and chorus would smear a beat, so drum parts only get the reverb and delay sends. */
+export const FX_KEYS: (keyof PartFx)[] = ['drive', 'chorus', 'tremolo', 'glide', 'reverb', 'delay'];
+export const noFx = (): PartFx => ({ drive: 0, chorus: 0, tremolo: 0, glide: 0, reverb: 0, delay: 0 });
+/** Drive, chorus, tremolo and glide would smear a beat, so drum parts only get the reverb and delay sends. */
 export const fxAvailable = (kind: PartKind, key: keyof PartFx) => kind !== 'drums' || key === 'reverb' || key === 'delay';
+
+/** Glide time in seconds for knob value `v`: 0 off, then up to half a second (fine control at the short end). */
+export const glideSeconds = (v: number) => (v <= 0 ? 0 : 0.5 * v * v);
+
+/**
+ * Whether a note event glides in from the part's previous note: only single notes do (a bass or
+ * melody line, an arpeggio). Block chords never glide: there's no telling which note of one
+ * chord should slide to which note of the next.
+ */
+export const glides = (fx: PartFx, notes: number) => fx.glide > 0 && notes === 1;
 
 /**
  * How an instrument part's notes are shaped, each 0..1 with 0.5 meaning "as the instrument is

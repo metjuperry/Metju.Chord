@@ -155,14 +155,14 @@ describe('effects in the song', () => {
             chords: [],
             parts: [
                 { kind: 'bass', fx: { drive: 0.6, chorus: 7, reverb: -1, delay: 'x' } },
-                { kind: 'drums', fx: { drive: 1, chorus: 1, reverb: 0.2, delay: 0.1 } },
+                { kind: 'drums', fx: { drive: 1, chorus: 1, tremolo: 1, glide: 1, reverb: 0.2, delay: 0.1 } },
             ],
             space: { reverb: { size: 99, ret: 0.5 }, delay: { time: '3n', feedback: 2, ret: 0.4 }, out: { level: 0.6 } },
         })!;
         const bass = song.parts.find(p => p.kind === 'bass')!;
         const drums = song.parts.find(p => p.kind === 'drums')!;
-        expect(bass.fx).toEqual({ drive: 0.6, chorus: 1, reverb: 0, delay: 0 });
-        expect(drums.fx).toEqual({ drive: 0, chorus: 0, reverb: 0.2, delay: 0.1 });
+        expect(bass.fx).toEqual({ drive: 0.6, chorus: 1, tremolo: 0, glide: 0, reverb: 0, delay: 0 });
+        expect(drums.fx).toEqual({ drive: 0, chorus: 0, tremolo: 0, glide: 0, reverb: 0.2, delay: 0.1 });
         expect(song.space).toEqual({ reverb: { size: 8, ret: 0.5 }, delay: { time: '8n', feedback: 0.9, ret: 0.4 }, out: { level: 0.6 } });
     });
 
@@ -195,5 +195,14 @@ describe('part tone (attack, release, brightness, pan)', () => {
         expect(keys.kind === 'chords' && keys.tone).toEqual({ attack: 0.1, release: 1, brightness: 0.5, pan: 0 });
         expect(bass.kind === 'bass' && bass.tone).toEqual({ attack: 0.5, release: 0.5, brightness: 0.5, pan: 0.5 });
         expect('tone' in drums).toBe(false);
+    });
+});
+
+describe('tremolo and glide', () => {
+    it('are read back clamped; older songs get them off', () => {
+        const song = readSong({ chords: [], parts: [{ kind: 'melody', fx: { tremolo: 0.4, glide: 3 } }, { kind: 'bass', fx: { drive: 0.2 } }] })!;
+        const of = (kind: string) => song.parts.find(p => p.kind === kind)!.fx;
+        expect(of('melody')).toMatchObject({ tremolo: 0.4, glide: 1 });
+        expect(of('bass')).toMatchObject({ drive: 0.2, tremolo: 0, glide: 0 });
     });
 });

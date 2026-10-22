@@ -42,7 +42,7 @@ async function withFx(id: InstrumentId) {
         const engine = new Engine();
         // every effect at its maximum: drive, chorus, full sends into a long reverb and a high-feedback delay
         // ...and the tone at its loudest: brightest, longest release, hard-panned
-        engine.setTrack('t', { instrument: id, volume: 0, fx: { drive: 1, chorus: 1, reverb: 1, delay: 1 }, tone: { attack: 0, release: 1, brightness: 1, pan: 1 } });
+        engine.setTrack('t', { instrument: id, volume: 0, fx: { drive: 1, chorus: 1, tremolo: 1, glide: 1, reverb: 1, delay: 1 }, tone: { attack: 0, release: 1, brightness: 1, pan: 1 } });
         engine.selectTrack('t');
         engine.setSpace({ reverb: { size: 3, ret: 1 }, delay: { time: '8n', feedback: 0.9, ret: 1 }, out: { level: 1 } });
         await engine.ready();
