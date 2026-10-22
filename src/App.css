@@ -50,14 +50,20 @@
 }
 
 .sound-mode {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 8px;
-    align-items: start;
+    /* columns, not a grid: each card sits right under the one above it, with no gap
+       left over from a taller card beside it */
+    columns: 2 300px;
+    column-gap: 8px;
 }
 
 .sound-mode .sound-panel {
     display: contents;
+}
+
+.sound-mode > .panel,
+.sound-mode .sound-panel > .panel {
+    break-inside: avoid;
+    margin-bottom: 8px;
 }
 
 .voicing-card .inversion {
