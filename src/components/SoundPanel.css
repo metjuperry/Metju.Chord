@@ -211,3 +211,22 @@
 .sound-row .segmented > button {
     padding: 0 8px;
 }
+
+.learn-card {
+    padding: 12px 18px;
+}
+
+.learn-row > span:first-child {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.learn-title {
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.learn-row .switch {
+    flex: 0 0 auto;
+}

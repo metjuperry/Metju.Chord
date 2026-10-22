@@ -149,6 +149,9 @@ interface SoundPanelProps {
     onInstrument: (id: InstrumentId) => void;
     tone: PartTone;
     onTone: (key: keyof PartTone, value: number) => void;
+    /** Show what commonly comes next on the screen. */
+    nextHint: boolean;
+    onNextHint: (on: boolean) => void;
     /** For a chord part: how it plays the chords. */
     chordStyle?: ChordStyle;
     onChordStyle: (patch: Partial<ChordStyle>) => void;
@@ -163,7 +166,7 @@ const Slider: React.FC<{ label: string; value: number; min: number; max: number;
         </label>
     );
 
-const SoundPanel: React.FC<SoundPanelProps> = ({ partName, partColor, instrument, onInstrument, tone, onTone, chordStyle, onChordStyle }) => (
+const SoundPanel: React.FC<SoundPanelProps> = ({ partName, partColor, instrument, onInstrument, tone, onTone, nextHint, onNextHint, chordStyle, onChordStyle }) => (
     <aside className="sound-panel" aria-label="Sound">
         <section className="panel sound-section" aria-labelledby="inst-title">
             <div className="section-head">
@@ -189,6 +192,18 @@ const SoundPanel: React.FC<SoundPanelProps> = ({ partName, partColor, instrument
                     ? `${chordStyle.playMode !== 'Arp' ? 'Chords ring while you hold a pad. ' : ''}${partName} plays the whole chord row this way, and so do the pads.`
                     : `Select a part in the sequencer to change its sound.`}
             </p>
+        </section>
+
+        <section className="panel sound-section learn-card" aria-label="Learning">
+            <label className="sound-row learn-row">
+                <span>
+                    <span className="learn-title">Next chords on the screen</span>
+                    <span className="section-note">after each chord, the ones that often follow it in this key</span>
+                </span>
+                <button className="switch" role="switch" aria-checked={nextHint} aria-label="Show next chords on the screen" onClick={() => onNextHint(!nextHint)}>
+                    <span />
+                </button>
+            </label>
         </section>
 
     </aside>

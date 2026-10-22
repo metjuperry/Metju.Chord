@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildChordMidi, invert, nameChord, resolveChord, toToneNotes, arpOrder, ChordType, maxInversion, stickChordType, triadQuality, romanNumeral, STICK_DIRS, SCALES, KEYS, scalePitchClasses, noteNames, voiceLead, spreadVoicing, strumOffsets } from './theory';
+import { buildChordMidi, invert, nameChord, resolveChord, toToneNotes, arpOrder, ChordType, maxInversion, stickChordType, triadQuality, romanNumeral, STICK_DIRS, SCALES, KEYS, scalePitchClasses, noteNames, voiceLead, spreadVoicing, strumOffsets, nextChords, NEXT_DEGREES } from './theory';
 
 const TYPES: ChordType[] = ['root', 'triad', 'flip', 'minor', 'dim', 'aug', 'six', 'dom7', 'diatonic7', 'diatonic9', 'sus2', 'sus4'];
 const intervals = (m: number[]) => m.map(n => n - m[0]);
@@ -337,5 +337,44 @@ describe('strumOffsets', () => {
     it('leaves single notes and a zero spread unrolled', () => {
         expect(strumOffsets([60], 0.04, 'down')).toEqual([0]);
         expect(strumOffsets(c, 0, 'up')).toEqual([0, 0, 0, 0]);
+    });
+});
+
+describe('nextChords (what comes next)', () => {
+    const next = (key: Parameters<typeof nextChords>[0], scale: Parameters<typeof nextChords>[1], degree: number) =>
+        nextChords(key, scale, degree).map(c => `${c.numeral} ${c.symbol}`).join(' · ');
+
+    it('follows the usual flow in major', () => {
+        expect(next('C', 'major', 0)).toBe('IV F · V G · vi Am');
+        expect(next('C', 'major', 4)).toBe('I C · vi Am · IV F');
+        expect(next('C', 'major', 1)).toBe('V G · vii° B°');
+        expect(next('C', 'major', 6)).toBe('I C · iii Em');
+    });
+
+    it('spells chords for the key, with flats in flat keys', () => {
+        expect(next('F', 'major', 0)).toBe('IV B♭ · V C · vi Dm');
+        expect(next('D#', 'major', 4)).toBe('I E♭ · vi Cm · IV A♭');
+    });
+
+    it('gives minor and the modes their own moves', () => {
+        expect(next('A', 'minor', 5)).toBe('VII G · iv Dm · ii° B°');
+        expect(next('A', 'harmonicMinor', 0)).toBe('iv Dm · V E · VI F');
+        expect(next('D', 'dorian', 0)).toBe('IV G · VII C · v Am');
+        expect(next('E', 'phrygian', 0)).toBe('II F · vii Dm · iv Am');
+        expect(next('G', 'mixolydian', 0)).toBe('VII F · IV C · v Dm');
+        expect(next('F', 'lydian', 0)).toBe('II G · V C · vi Dm');
+    });
+
+    it('has two or three sensible follow-ups for every degree of every scale', () => {
+        for (const scale of SCALES.map(s => s.id)) {
+            expect(NEXT_DEGREES[scale]).toHaveLength(7);
+            NEXT_DEGREES[scale].forEach((targets, degree) => {
+                expect(targets.length).toBeGreaterThanOrEqual(2);
+                expect(targets.length).toBeLessThanOrEqual(3);
+                expect(new Set(targets).size).toBe(targets.length);
+                expect(targets).not.toContain(degree);
+                targets.forEach(t => expect(t >= 0 && t < 7).toBe(true));
+            });
+        }
     });
 });

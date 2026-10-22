@@ -103,6 +103,8 @@ export interface Settings {
     inversion: number;
     loop: boolean;
     theme: 'dark' | 'light';
+    /** Show the chords that commonly come next on the screen. */
+    nextHint: boolean;
 }
 
 export interface SavedState {
@@ -131,7 +133,7 @@ export function newSong(): Song {
 }
 
 export const defaultSettings = (): Settings => ({
-    voiceLeading: false, octave: 4, inversion: 0, loop: true, theme: 'dark',
+    voiceLeading: false, octave: 4, inversion: 0, loop: true, theme: 'dark', nextHint: true,
 });
 
 // ---- reading saved data: anything malformed is dropped or replaced with a default --------
@@ -313,6 +315,7 @@ export function readSettings(v: unknown): Settings {
         inversion: int(v.inversion, 0, 3, d.inversion),
         loop: bool(v.loop, d.loop),
         theme: oneOf<'dark' | 'light'>(v.theme, ['dark', 'light'], d.theme),
+        nextHint: bool(v.nextHint, d.nextHint),
     };
 }
 

@@ -23,6 +23,8 @@ export interface ScreenView {
     flag?: string;
     /** What the stick did, when it isn't a chord type (Notes mode: "Octave up"). */
     stickLabel?: string;
+    /** Chords that commonly come next, e.g. [{ numeral: 'IV', symbol: 'F' }]. */
+    next?: { numeral: string; symbol: string }[];
 }
 
 interface DeviceProps {
@@ -95,8 +97,26 @@ const SEGMENTS: { [d in StickDir]?: string } = {
 };
 const INVERSIONS = ['Root', '1st', '2nd', '3rd'];
 
+/** "NEXT IV F · V G · vi Am": a learning aid on the screen, never on the pads. */
+const NextHint: React.FC<{ next: { numeral: string; symbol: string }[] }> = ({ next }) => (
+    <span className="oled-next">
+        <span className="oled-next-label">NEXT</span>
+        {next.map((c, i) => (
+            <span key={c.numeral} className="oled-next-chord">
+                {i > 0 && <span className="oled-next-dot">·</span>}
+                <span className="oled-next-numeral">{c.numeral}</span> {c.symbol}
+            </span>
+        ))}
+    </span>
+);
+
 const Screen: React.FC<{ view: ScreenView; recording: boolean }> = ({ view, recording }) => (
-    <div className="oled" role="status" aria-live="polite" aria-label={view.idle ? 'Ready' : `${view.long}, ${view.numeral}`}>
+    <div
+        className="oled"
+        role="status"
+        aria-live="polite"
+        aria-label={view.idle ? 'Ready' : `${view.long}, ${view.numeral}${view.next?.length ? `. Often next: ${view.next.map(c => c.symbol).join(', ')}` : ''}`}
+    >
         <div className="oled-status">
             {view.status.map(s => <span key={s}>{s}</span>)}
             <span className={`oled-flag ${recording ? 'rec' : ''}`}>{view.flag ?? (recording ? '● REC' : '')}</span>
@@ -117,8 +137,9 @@ const Screen: React.FC<{ view: ScreenView; recording: boolean }> = ({ view, reco
             </div>
         )}
         <div className="oled-foot">
-            <span>{view.idle ? 'HOLD A PAD · PUSH THE STICK' : view.notes.join(' ')}</span>
-            <span>{view.idle ? '' : view.inversionLabel}</span>
+            <span className="oled-notes">{view.idle ? 'HOLD A PAD · PUSH THE STICK' : view.notes.join(' ')}</span>
+            {!view.idle && view.next && view.next.length > 0 && <NextHint next={view.next} />}
+            <span className="oled-inv">{view.idle ? '' : view.inversionLabel}</span>
         </div>
     </div>
 );

@@ -384,3 +384,40 @@ export function voiceLead(base: number[], prev: number[] | null, low = 40, high 
     }
     return best ? { midi: best.midi, inversion: best.inversion, octaveShift: best.octaveShift } : { midi: spreadVoicing(base, base[0] % 12), inversion: 0, octaveShift: 0 };
 }
+
+// ---- what comes next: common follow-ups per scale degree ----------------------------------
+
+/**
+ * Chords that commonly follow each degree's chord, most common first (degree indices, 0 = I).
+ * Major follows the textbook flow (iii → vi → ii/IV → V/vii° → I, plus V → vi and IV → I); the
+ * minor scales follow the same functions with their own colour (VI → VII → i); the modes lean on
+ * the chord that gives them their sound (Dorian IV, Phrygian ♭II, Lydian II, Mixolydian ♭VII).
+ */
+export const NEXT_DEGREES: { [s in ScaleId]: number[][] } = {
+    major: [[3, 4, 5], [4, 6], [5, 3, 1], [4, 0, 1], [0, 5, 3], [1, 3, 4], [0, 2]],
+    minor: [[3, 5, 6], [4, 6], [5, 3, 6], [4, 0, 6], [0, 5], [6, 3, 1], [2, 0, 5]],
+    harmonicMinor: [[3, 4, 5], [4, 6], [5, 3], [4, 0, 6], [0, 5], [3, 4, 1], [0, 4]],
+    melodicMinor: [[3, 4, 1], [4, 6], [3, 5], [4, 0, 1], [0, 3], [1, 4], [0, 4]],
+    dorian: [[3, 6, 4], [4, 0], [3, 6], [0, 6, 4], [0, 3], [4, 6], [0, 3]],
+    phrygian: [[1, 6, 3], [0, 2], [1, 5, 3], [0, 1, 6], [0, 5], [1, 6, 0], [0, 2]],
+    lydian: [[1, 4, 5], [0, 4], [5, 1], [0, 4], [0, 5], [1, 0, 4], [0, 2]],
+    mixolydian: [[6, 3, 4], [4, 6], [5, 3], [0, 6, 4], [0, 5, 3], [1, 3, 6], [3, 0]],
+};
+
+export interface NextChord {
+    degree: number;
+    /** Roman numeral of the degree's chord in the scale, written as on the pads ("IV", "vi", "vii°"). */
+    numeral: string;
+    /** Its plain diatonic triad, spelled for the key (flats in flat keys), e.g. "B♭". */
+    symbol: string;
+}
+
+/** The chords that commonly follow `degree` in `key` and `scale`, as the pads would name them. */
+export function nextChords(key: MusicalKey, scale: ScaleId, degree: number): NextChord[] {
+    const table = NEXT_DEGREES[scale] ?? NEXT_DEGREES.major;
+    return (table[((degree % 7) + 7) % 7] ?? []).map(d => ({
+        degree: d,
+        numeral: romanNumeral(d, scale),
+        symbol: resolveChord(key, { degree: d, type: 'triad', inversion: 0, octave: 4, scale }).name.symbol,
+    }));
+}

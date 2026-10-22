@@ -16,7 +16,7 @@ import { BassEditor, ChordPartEditor } from './components/PartEditors';
 import {
     ChordParams, KEYS, ResolvedChord, StickDir,
     STICK_DIRS, ScaleId, buildChordMidi, keyPitchClass, resolveChord, romanNumeral, scaleLabel, scalePitchClasses,
-    noteNames, stickChordType, strumOffsets, triadQuality, voiceLead,
+    nextChords, noteNames, stickChordType, strumOffsets, triadQuality, voiceLead,
 } from './theory';
 import { getEngine } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
@@ -140,6 +140,7 @@ const App: React.FC = () => {
     const [voiceLeading, setVoiceLeading] = useState(initial.voiceLeading);
     const [octave, setOctave] = useState(initial.octave);
     const [inversion, setInversion] = useState(initial.inversion);
+    const [nextHint, setNextHint] = useState(initial.nextHint);
     const [notice, setNotice] = useState<string | null>(null);
     const [helpOpen, setHelpOpen] = useState(false);
 
@@ -713,7 +714,7 @@ const App: React.FC = () => {
     const snapshot = (): SavedState => ({
         version: SAVE_VERSION,
         song,
-        settings: { voiceLeading, octave, inversion, loop, theme },
+        settings: { voiceLeading, octave, inversion, loop, theme, nextHint },
     });
 
     // Autosave a moment after any change
@@ -727,7 +728,7 @@ const App: React.FC = () => {
         }, 400);
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [song, voiceLeading, octave, inversion, loop, theme]);
+    }, [song, voiceLeading, octave, inversion, loop, theme, nextHint]);
 
     /** Replace the song (undoable) and take over its saved settings. */
     const loadState = (state: SavedState, message: string) => {
@@ -738,6 +739,7 @@ const App: React.FC = () => {
         setOctave(st.octave);
         setInversion(st.inversion);
         setLoop(st.loop);
+        setNextHint(st.nextHint);
         setSelectedLane(CHORD_LANE);
         setSelected(0);
         setPlayhead(0);
@@ -918,6 +920,8 @@ const App: React.FC = () => {
             inversionLabel: shown.note ? `${padMelody?.name.toUpperCase() ?? ''}` : INVERSION_LABELS[Math.min(shown.inversion, shown.chord.midi.length - 1)],
             status,
             flag: screenFlag,
+            // what usually follows the chord just played, in the song's key (chords only, live playing only)
+            next: nextHint && !shown.note ? nextChords(selectedKey, scale, shown.degree) : undefined,
         }
         : { idle: true, symbol: '', long: '', numeral: '', notes: [], stick: 'C', inversionLabel: '', status, flag: screenFlag };
 
@@ -997,6 +1001,8 @@ const App: React.FC = () => {
             onInstrument={setInstrument}
             tone={soundPart.tone}
             onTone={(k, v) => setTone(soundPart.id, k, v)}
+            nextHint={nextHint}
+            onNextHint={setNextHint}
             chordStyle={soundPart.kind === 'chords' ? soundPart : undefined}
             onChordStyle={patch => setChordStyle(soundPart.id, patch)}
         />

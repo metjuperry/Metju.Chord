@@ -218,3 +218,12 @@ describe('strum settings', () => {
         expect(b.kind === 'chords' && [b.playMode, b.strumSpread, b.strumDirection]).toEqual(['Arp', 0.025, 'down']);
     });
 });
+
+describe('next-chord hint setting', () => {
+    it('is on by default, and kept when saved off', () => {
+        expect(defaultSettings().nextHint).toBe(true);
+        expect(readSettings({}).nextHint).toBe(true);
+        expect(readSettings({ nextHint: false }).nextHint).toBe(false);
+        expect(readSettings({ nextHint: 'no' }).nextHint).toBe(true);
+    });
+});

@@ -21,6 +21,7 @@ Live at <https://metjuperry.github.io/Metju.Chord/> (deployed from `master`).
 - All 12 keys in eight scales: major, minor, harmonic and melodic minor, Dorian, Phrygian, Lydian, Mixolydian. Note names use flats in flat keys.
 - Inversions (root to 3rd), octave C2–C6, or **voice leading**: each chord takes the inversion that moves least from the last one, and that voicing is what gets recorded.
 - **Register-aware voicing**: low chords are spread so they don't turn to mud. Below C4 a triad opens up (C2 E2 G2 plays C2 G2 E3), a 7th or 9th drops its root an octave, a 9th keeps the 9th on top, and close semitones (B–C in a maj7 inversion) are pulled apart. From C4 up chords stay in close position. The bass note, the chord and its name never change.
+- **What comes next**: after each chord the screen shows the chords that often follow it in this key, e.g. "NEXT IV F · V G · vi Am" after C in C major, spelled for the key (B♭ in F) and with each scale's own moves (minor VI → VII, Dorian IV, Phrygian ♭II, Mixolydian ♭VII…). It's on the screen only (the pads never light up) and follows live playing only. Toggle it in the Sound panel ("Next chords on the screen", on by default).
 - **Notes mode** (switch on the device, **N**, or select a Melody lane): the pads play single scale notes on the Melody part instead of chords; stick up = octave above.
 
 ### Song: one chord row, played by parts
@@ -78,7 +79,8 @@ Deployment: every push to `master` builds and publishes to GitHub Pages (`.githu
 src/
   index.tsx              entry
   App.tsx                owns all state: song (with undo), live settings, selection, playback, recording; wires everything
-  theory.ts              pure music theory: keys, scales, chord building (MIDI), inversions, naming, stick→chord type, voice leading
+  theory.ts              pure music theory: keys, scales, chord building (MIDI), inversions, naming, stick→chord type, voice leading,
+                         register-aware spreading, strum timing, the "what comes next" table (NEXT_DEGREES, nextChords)
   progression.ts         the chord row: clips in ticks (PPQ 96) and editing ops (place, setLength, split, fitTo)
   parts.ts               parts (chords, bass, melody, drums), what each plays (partNotes, bassNotes…), melody editing, song length
   drums.ts               drum patterns, presets per time signature, pattern ops
@@ -106,7 +108,7 @@ public/samples/          the bundled samples, <instrument>/<midi>.mp3 (copied in
 
 ### Data model (`song.ts`, `parts.ts`)
 
-- `Song = { key, scale, chords: Clip[], parts: Part[], steps, bpm, timeSignature, space }`. Everything in `Song` is undoable and saved; `Settings` (voiceLeading, octave, inversion, loop, theme) is saved but not undoable.
+- `Song = { key, scale, chords: Clip[], parts: Part[], steps, bpm, timeSignature, space }`. Everything in `Song` is undoable and saved; `Settings` (voiceLeading, octave, inversion, loop, theme, nextHint) is saved but not undoable.
 - Time is in **ticks, 96 per quarter note** (`PPQ`). A sequencer step is one beat of the time signature (`ticksPerStep(ts)`: 96 in x/4, 48 in x/8). Melody and drums work in 1/16s (`TICKS_PER_SIXTEENTH` = 24).
 - A chord part's style: `playMode` ('Chord' | 'Strum' | 'Arp'), arp settings, and `strumSpread` (s) / `strumDirection`. `strumOffsets(midi, spread, direction, hit)` (theory.ts) gives each note's delay; `chordPartNotes` counts hits along the row so alternating strums don't depend on where playback starts, and the pads keep their own counter.
 - A chord clip stores only `{ degree, type, inversion, octave }`; key and scale come from the song, so `resolveClip(harmony, clip)` turns it into notes.
