@@ -23,6 +23,8 @@ import { INSTRUMENTS, InstrumentId } from './audio/instruments';
 import { useHistory } from './useHistory';
 import { keepScreenOn } from './pwa';
 import SongMenu from './components/SongMenu';
+import HooktheoryDialog from './components/HooktheoryDialog';
+import { HtClip, ImportOptions, ImportSummary, importHooktheory } from './hooktheory';
 import {
     STORAGE_KEY, SAVE_VERSION, SavedState, Song, TimeSignature, changeTimeSignature, decodeShare, defaultSettings, encodeShare,
     isCompound, newSong, readSaved, stepsPerRow, ticksPerBar, ticksPerStep, transportBpm,
@@ -144,6 +146,7 @@ const App: React.FC = () => {
     const [nextHint, setNextHint] = useState(initial.nextHint);
     const [notice, setNotice] = useState<string | null>(null);
     const [helpOpen, setHelpOpen] = useState(false);
+    const [htOpen, setHtOpen] = useState(false);
 
     // ---- stick: a latched direction (mouse) and momentary ones (held keys) --------
     const [latchedDir, setLatchedDir] = useState<StickDir>('C');
@@ -767,6 +770,23 @@ const App: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    /** Paste from Hooktheory: notes into Melody parts, chords into the chord row, one undo step. */
+    const importPaste = (clip: HtClip, options: ImportOptions, summary: ImportSummary) => {
+        editSong(sg => {
+            const done = importHooktheory(sg, clip, options);
+            return done.summary.problem ? sg : done.song;
+        });
+        setHtOpen(false);
+        // open the first Melody part it wrote, so you see what arrived
+        const first = summary.parts[0];
+        if (first) {
+            setSelectedLane(first.id);
+            setMelodyPartId(first.id);
+        }
+        const what = [summary.notes && `${summary.notes} note${summary.notes === 1 ? '' : 's'}`, summary.chords && `${summary.chords} chord${summary.chords === 1 ? '' : 's'}`].filter(Boolean).join(' and ');
+        flash(`Pasted ${what}. Undo to take ${summary.notes + summary.chords === 1 ? 'it' : 'them'} out.`);
+    };
+
     const songActions = {
         new: () => {
             stopPlayback();
@@ -807,8 +827,10 @@ const App: React.FC = () => {
 
     // ---- keyboard -----------------------------------------------------------------------
 
-    const keyActions = useRef({ pressPad, releasePad, releaseAll, togglePlay, edit, helpOpen, undo: history.undo, redo: history.redo });
-    keyActions.current = { pressPad, releasePad, releaseAll, togglePlay, edit, helpOpen, undo: history.undo, redo: history.redo };
+    // while a dialog is open the instrument's keys are off (typing or tabbing in it mustn't play pads)
+    const modalOpen = helpOpen || htOpen;
+    const keyActions = useRef({ pressPad, releasePad, releaseAll, togglePlay, edit, helpOpen: modalOpen, undo: history.undo, redo: history.redo });
+    keyActions.current = { pressPad, releasePad, releaseAll, togglePlay, edit, helpOpen: modalOpen, undo: history.undo, redo: history.redo };
 
     useEffect(() => {
         const isTyping = (t: EventTarget | null) =>
@@ -1053,6 +1075,16 @@ const App: React.FC = () => {
             <ChordPartEditor part={selPart} onChange={patch => setChordStyle(selPart.id, patch)} />
         );
 
+    const htDialog = (
+        <HooktheoryDialog
+            open={htOpen}
+            song={song}
+            selectedStep={selected}
+            chordOctave={octave}
+            onClose={() => setHtOpen(false)}
+            onImport={importPaste}
+        />
+    );
     const progressionEl = (
         <Progression
             total={total}
@@ -1110,6 +1142,7 @@ const App: React.FC = () => {
                     onOpenFile={songActions.open}
                     onSaveFile={songActions.save}
                     onShare={songActions.share}
+                    onHooktheory={() => setHtOpen(true)}
                 />
             )}
         />
@@ -1175,6 +1208,7 @@ const App: React.FC = () => {
                     </div>
                 )}
                 <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+                {htDialog}
             {notice && <div className="toast" role="status">{notice}</div>}
             </div>
             {introEl}
@@ -1211,6 +1245,7 @@ const App: React.FC = () => {
             {fxEl}
 
             <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+            {htDialog}
             {notice && <div className="toast" role="status">{notice}</div>}
         </div>
         {introEl}
