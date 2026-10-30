@@ -48,6 +48,11 @@ Live at <https://metjuperry.github.io/Metju.Chord/> (deployed from `master`).
 
 - Song and settings autosave in the browser; undo/redo every song edit (Ctrl/⌘ Z, Shift+Ctrl/⌘ Z, Ctrl Y).
 - Song menu: new song, open/save a JSON file, copy a share link that carries the whole song in the URL.
+- **Paste from Hooktheory** (Song menu): select notes and chords in Hookpad / TheoryTab, copy, and paste them into the box (or tap *Paste from clipboard* where the browser allows it). A preview shows what it adds before anything changes, and the whole import is one undo step.
+  - Notes become Melody parts (the song's empty Melody part is filled first, then "Melody 2"…). One Hooktheory beat is a quarter note (or a half note with *Half time*), snapped to the 1/16 grid. A melody wider than a Melody part's two octaves is split into parts at different octaves, cut at the longest rest. Overlapping notes keep the highest. Notes outside the scale go to the nearest scale note (the lower one when it's halfway) and are listed.
+  - Chords go into the chord row as the nearest chord the pads can play (degree, chord type, inversion): borrowed, applied, suspended and 7th/9th chords are worked out from their notes; add11/add13, ♯9 and the like that the pads can't play are dropped and listed. They start on whole beats and replace the chords in the stretch they cover; the rest of the row stays. Rests become rests.
+  - Key: use the paste's key (the song changes key, everything moves with it) or keep the song's key (each note keeps its scale degree; relative keys like A minor in C major keep their pitches). Scales the app doesn't have (Locrian, Phrygian dominant) use the closest one it has.
+  - It goes in at the start of the song, or at the selected beat when one is selected.
 
 ### On a phone
 
@@ -64,7 +69,7 @@ Node 20+.
 ```bash
 npm install
 npm start          # dev server with HMR at http://localhost:3000
-npm test           # vitest: theory, song format, parts, drums
+npm test           # vitest: theory, song format, parts, drums, Hooktheory import
 npm run build      # production bundle in dist/
 npm run levels     # renders every instrument offline in headless Chromium and checks levels
 ```
@@ -89,6 +94,8 @@ src/
   parts.ts               parts (chords, bass, melody, drums), what each plays (partNotes, bassNotes…), melody editing, song length
   drums.ts               drum patterns, presets per time signature, pattern ops
   song.ts                Song/Settings types, time signatures, defaults, reading untrusted saves (readSong), share-link encoding
+  hooktheory.ts          Paste from Hooktheory: parses the clipboard JSON (untrusted, never throws), maps notes into Melody parts
+                         (octave windows, chromatic snapping, monophony) and chords onto pad chords (chordTones → matchChord)
   useHistory.ts          undo/redo with merge keys (one knob turn or slider drag = one step)
   useMedia.ts            matchMedia hook (compact layout switch)
   audio/
@@ -105,6 +112,7 @@ src/
     SoundPanel           instrument grid + chord/arp style for the selected part
     FxMatrix, Knob       effects matrix and the knob control
     SongMenu, HelpDialog, IntroScreen
+    HooktheoryDialog     the Paste from Hooktheory dialog: paste box, options, preview
 scripts/levels*.ts       the level-matching check (npm run levels)
 scripts/samples/         prepare.py: builds public/samples/ from the original sample libraries
 public/samples/          the bundled samples, <instrument>/<midi>.mp3 (copied into dist/ by webpack)
@@ -186,4 +194,5 @@ CC BY requires credit: the piano is by Alexander Holm (Salamander Grand Piano), 
 - **Samples**: one velocity layer each, no round-robins, so fast repeated notes sound alike. More layers would mean more megabytes. The tonejs-instruments set (CC BY 3.0) has guitar, harp and other instruments if more are wanted.
 - Desktop header shows section dividers only at ≥1360px; narrower windows wrap without them.
 - Live recording timing on real phones is untested.
+- **Paste from Hooktheory** was built from one observed clipboard shape plus the TheoryTab JSON fields (as read by CMU's pyquist); tests use invented and public-domain tunes. Untested: other Hookpad clipboard variants (meters, tempo and swing changes are ignored), the exact meaning of `applied` beyond V/x and vii°/x, and the clipboard button on iOS Safari (the paste box is the reliable path there).
 - **PWA on iOS** is untested on a device: if iOS evicts the cache (it can after weeks without opening the app), samples come back from the network next time, and until then the synth stand-ins play.

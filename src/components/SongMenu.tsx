@@ -10,12 +10,13 @@ interface SongMenuProps {
     onOpenFile: (file: File) => void;
     onSaveFile: () => void;
     onShare: () => void;
+    onHooktheory: () => void;
 }
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 const mod = isMac ? '⌘' : 'Ctrl+';
 
-const SongMenu: React.FC<SongMenuProps> = ({ canUndo, canRedo, onUndo, onRedo, onNew, onOpenFile, onSaveFile, onShare }) => {
+const SongMenu: React.FC<SongMenuProps> = ({ canUndo, canRedo, onUndo, onRedo, onNew, onOpenFile, onSaveFile, onShare, onHooktheory }) => {
     const [open, setOpen] = useState(false);
     const root = useRef<HTMLDivElement>(null);
     const fileInput = useRef<HTMLInputElement>(null);
@@ -55,6 +56,7 @@ const SongMenu: React.FC<SongMenuProps> = ({ canUndo, canRedo, onUndo, onRedo, o
                     <button role="menuitem" onClick={run(() => fileInput.current?.click())}>Open file…</button>
                     <button role="menuitem" onClick={run(onSaveFile)}>Save to file</button>
                     <button role="menuitem" onClick={run(onShare)}>Copy share link</button>
+                    <button role="menuitem" onClick={run(onHooktheory)}>Paste from Hooktheory…</button>
                     <p className="song-note">Your song saves automatically in this browser.</p>
                 </div>
             )}

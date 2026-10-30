@@ -1,0 +1,194 @@
+.ht-backdrop {
+    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+
+.ht-dialog {
+    width: min(560px, 100%);
+    max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    gap: 12px;
+    padding: 16px 18px 18px;
+}
+
+.ht-lead {
+    margin: 0;
+    line-height: 1.5;
+    color: var(--muted);
+}
+
+.ht-paste {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.ht-box {
+    width: 100%;
+    min-height: 64px;
+    max-height: 30vh;
+    resize: vertical;
+    padding: 8px 10px;
+    border: 1px solid var(--line-2);
+    border-radius: 8px;
+    background: var(--panel-2);
+    color: var(--text);
+    font-family: var(--font-ui);
+    /* 16px keeps iOS Safari from zooming in when the box is tapped */
+    font-size: 16px;
+    line-height: 1.3;
+    word-break: break-all;
+}
+
+.ht-box::placeholder {
+    color: var(--faint);
+}
+
+.ht-box:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+.ht-paste-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.ht-paste-row:empty {
+    display: none;
+}
+
+.ht-status {
+    margin: 0;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.ht-status.bad {
+    color: var(--hot-text);
+}
+
+.ht-option {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.ht-option .segmented {
+    flex-wrap: wrap;
+}
+
+.ht-option .segmented > button {
+    min-height: 34px;
+    padding: 6px 10px;
+    line-height: 1.25;
+}
+
+.ht-option .section-note {
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--muted);
+}
+
+.ht-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+}
+
+.ht-totals {
+    margin: 0;
+    font-weight: 700;
+}
+
+.ht-parts,
+.ht-warnings {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.ht-swatch {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: 6px;
+    border-radius: 3px;
+    vertical-align: -1px;
+}
+
+/* the chord row is the one yellow lane */
+.ht-swatch.chord {
+    background: var(--accent);
+}
+
+.ht-warnings {
+    color: var(--muted);
+    border-top: 1px solid var(--line);
+    padding-top: 8px;
+}
+
+.ht-warnings ul {
+    margin: 3px 0 0;
+    padding-left: 16px;
+    color: var(--text);
+}
+
+.ht-problem {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--hot-text);
+}
+
+.ht-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    position: sticky;
+    bottom: -18px;
+    margin: 0 -18px -18px;
+    padding: 10px 18px 18px;
+    background: var(--panel);
+    border-top: 1px solid var(--line);
+}
+
+.ht-actions .chip-button {
+    min-height: 40px;
+    padding: 0 16px;
+    font-size: 12px;
+}
+
+.ht-go {
+    font-weight: 700;
+    background: var(--text);
+    color: var(--bg);
+    border-color: var(--text);
+}
+
+.ht-go:disabled {
+    background: var(--panel-2);
+    color: var(--faint);
+    border-color: var(--line);
+}
+
+@media (max-width: 480px), (max-height: 560px) {
+    .ht-dialog {
+        padding: 12px 14px 14px;
+    }
+
+    .ht-actions {
+        bottom: -14px;
+        margin: 0 -14px -14px;
+        padding: 8px 14px 14px;
+    }
+}
