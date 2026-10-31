@@ -72,6 +72,10 @@ Live at <https://metjuperry.github.io/Metju.Chord/> (deployed from `master`).
   - Key: use the paste's key (the song changes key, everything moves with it) or keep the song's key (each note keeps its scale degree; relative keys like A minor in C major keep their pitches). Scales the app doesn't have (Locrian, Phrygian dominant) use the closest one it has.
   - It goes in at the start of the song, or at the selected beat when one is selected.
 
+### On a computer
+
+- The instrument (chord info, keyboard strip, stick, pads, play strip) stays on the left and stays in view while you scroll; the right side has tabs **Song | Parts** with the same views as on the phone, and the top bar is on top (no mode switch there: the tabs replace it). Below ~1280 px the pads go under the stick. All keyboard shortcuts work as before; ← → on the focused tabs switch tabs.
+
 ### On a phone
 
 - **Install it**: in Safari, Share → Add to Home Screen. It then opens full screen as its own app (no browser bars, the notch and home indicator kept clear), works **offline** (everything, samples included, is stored on the phone on first visit), and keeps the screen awake while you play. A new version is picked up the next time it's opened with a connection: straight away if you haven't played yet, otherwise when you next switch away and back, so a jam is never cut off.
@@ -105,7 +109,8 @@ src/
   index.tsx              entry; registers the service worker
   pwa.ts                 service-worker registration and update reload, screen wake lock
   sw.js                  the service worker (plain JS; webpack fills in the build's file list and version)
-  App.tsx                owns all state: song (with undo), live settings, selection, playback, recording; wires everything
+  App.tsx                owns all state: song (with undo), live settings, selection, playback, recording; wires everything;
+                         lays out phones (one mode at a time) and desktop (instrument left, Song | Parts tabs right)
   theory.ts              pure music theory: keys, scales, chord building (MIDI), inversions, naming, stick→chord type, voice leading,
                          register-aware spreading, strum timing, the "what comes next" table (NEXT_DEGREES, nextChords)
   progression.ts         the chord row: clips in ticks (PPQ 96) and editing ops (place, setLength, split, fitTo)
@@ -183,6 +188,7 @@ public/icons/, manifest.webmanifest   app icons (scripts/icons.cjs renders them 
 
 - **Yellow means "on/active"** (`--accent`/`--cap`): selected options in toggle groups, the pushed stick wedge, a held pad. A locked/selected item gets a yellow *edge*. Parts never use yellow; their colours are `PART_COLORS` and they colour lanes, sliders and effect cells.
 - Flat dark tiles with a thin edge (`--panel-2`, `--line`); only the instrument's own keys (pads, knob, intro key) get the keycap lip. No dashed outlines.
+- Desktop (`.app.desk`, everything not compact): a two-column grid, the device sticky on the left (`.desk-left`, it scrolls on its own if the window is shorter than it), the Song | Parts tabs (`role="tablist"`) and panel on the right. Check 1024, 1280, 1440 and 1600 px wide.
 - Phones: `compact = (max-width: 1023px), (max-height: 560px)`. Play mode must fit without scrolling (check 844×390, 667×375, 932×430, 390×844), also with safe-area insets (installed: notch 47–59 px on the side, home indicator 21 px landscape / 34 px portrait, status bar 47 px portrait). Landscape is the main phone layout: stick left, pads right.
 - Light theme is driven by tokens in `index.css`; check new UI in both (`data-theme="light"` on `<html>`). "Auto" resolves to one of the two from `prefers-color-scheme`, so CSS only ever sees `light` or `dark`. The device body has its own tokens (`--device-*`, `--cap`); the chord info and play strip use them.
 - **Song is what plays, Parts is how it sounds**: a control belongs in Song if it changes notes, chords or hits, in Parts if it changes instrument, style, tone, effects or level. Transport (Play/Pause, Record) lives only in the top bar.
@@ -193,6 +199,7 @@ public/icons/, manifest.webmanifest   app icons (scripts/icons.cjs renders them 
 
 - `npm test` and `npm run build` before every commit; `npm run levels` after any change to instruments, drums or the engine.
 - Browser checks with Playwright against the built app: `npx http-server dist -p 8124 -s`, then a script using `playwright-core` with Chromium (`executablePath: '/opt/pw-browsers/chromium'` in the cloud sandbox). The intro must be dismissed first (`click('.intro-key')`, then wait ~2.1 s). A saved song can be injected with `localStorage.setItem('metju.chord.v2', json)` before reload. Multi-touch (stick + pad) was tested through CDP `Input.dispatchTouchEvent`.
+- Safe areas can be emulated in Chromium with CDP `Emulation.setSafeAreaInsetsOverride` (e.g. `{ top: 0, right: 47, bottom: 21, left: 47 }` for a landscape iPhone), so `env(safe-area-inset-*)` takes real values.
 - Audio behaviour (routing, levels) was checked offline with `Tone.Offline` in headless Chromium, the same way `scripts/levels-page.ts` does.
 - PWA checks in Playwright (Chromium): worker registers under `/Metju.Chord/`, the cache holds the whole build, an offline reload starts the app and plays cached samples, and a changed build is picked up and reloads. Standalone layout was checked by replacing `env(safe-area-inset-*)` with iPhone values.
 - Not verifiable in the sandbox: how things sound on real speakers, and real-phone feel (touch latency, live-recording timing); iOS Add to Home Screen, its offline cache and wake lock on a real iPhone (Chromium behaves the same per spec, but iOS has its own storage limits and quirks).
@@ -221,7 +228,7 @@ CC BY requires credit: the piano is by Alexander Holm (Salamander Grand Piano), 
 ### Where things stand / ideas not done yet
 
 - **Haptics were tried and removed**: iOS Safari no longer lets web pages trigger the Taptic Engine (the hidden-switch trick was closed in iOS 26.5), and the owner only has iPhones. A native wrapper (e.g. Capacitor) would be the way back.
-- **UI overhaul (Play · Song · Parts)**: done as approved: the LCD gave way to chord info on the body, Sound and FX became Parts, transport only in the top bar, part strips gone (instrument and volume in Parts, mute on the lane labels), chord tools docked, Clear all in the Song menu, ⚙ sheet. Still one mode at a time on desktop too (a desktop layout with the instrument always visible is the next step).
+- **UI overhaul (Play · Song · Parts)**: done as approved: the LCD gave way to chord info on the body, Sound and FX became Parts, transport only in the top bar, part strips gone (instrument and volume in Parts, mute on the lane labels), chord tools docked, Clear all in the Song menu, ⚙ sheet. On desktop the instrument stays on the left with Song | Parts tabs on the right.
 - **Sections and the chain**: done. Chain blocks are reordered with Move ← / Move → in their long-press menu; real drag-to-reorder was left out (it's hard to make feel right with touch scrolling on iOS). Open questions for the owner: whether the sequencer should follow the playing section while the chain plays (now it stays on the open one and shows the playhead only there), and whether Record in Chain mode should be disabled instead of switching to Loop.
 - **Melody and bass generator** (Generate / Re-roll writing ordinary notes): designed, not built; the owner put it on hold. Bass would need its own note grid ("Custom" style) for that.
 - **Per-chord style overrides** (e.g. Keys arpeggiates only one chord): designed, the owner decided it isn't needed for now.

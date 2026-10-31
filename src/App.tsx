@@ -1406,10 +1406,15 @@ const App: React.FC = () => {
     );
 
     const entering = intro === 'leaving' ? 'app-entering' : '';
+    const songEl = songZoom === 'song' ? songViewEl : progressionEl;
+    // Desktop: the instrument stays on the left; Song and Parts are tabs on the right
+    const rightTab: 'song' | 'parts' = mode === 'parts' ? 'parts' : 'song';
+    const deskTabs = (['song', 'parts'] as const).map(t => ({ id: t, label: t === 'song' ? 'Song' : 'Parts' }));
     return (<>
-        <div className={`app ${compact ? 'compact' : 'wide'} mode-${mode} ${entering}`}>
+        <div className={`app ${compact ? 'compact' : 'wide desk'} mode-${mode} ${entering}`}>
             <TopBar
                 compact={compact}
+                modes={compact ? undefined : []}
                 mode={mode}
                 selectedKey={selectedKey}
                 scale={scale}
@@ -1426,9 +1431,47 @@ const App: React.FC = () => {
                 onToggleRecord={toggleRecord}
                 onOpenSettings={() => setSettingsOpen(true)}
             />
-            {mode === 'play' && deviceEl}
-            {mode === 'song' && (songZoom === 'song' ? songViewEl : progressionEl)}
-            {mode === 'parts' && partsEl}
+            {compact ? (
+                <>
+                    {mode === 'play' && deviceEl}
+                    {mode === 'song' && songEl}
+                    {mode === 'parts' && partsEl}
+                </>
+            ) : (
+                <div className="desk-split">
+                    <div className="desk-left">{deviceEl}</div>
+                    <div className="desk-right">
+                        <div className="desk-tabs segmented" role="tablist" aria-label="Song or Parts">
+                            {deskTabs.map(t => (
+                                <button
+                                    key={t.id}
+                                    role="tab"
+                                    id={`tab-${t.id}`}
+                                    aria-selected={rightTab === t.id}
+                                    aria-pressed={rightTab === t.id}
+                                    aria-controls="desk-panel"
+                                    tabIndex={rightTab === t.id ? 0 : -1}
+                                    onClick={() => setMode(t.id)}
+                                    onKeyDown={e => {
+                                        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        const next = rightTab === 'song' ? 'parts' : 'song';
+                                        setMode(next);
+                                        document.getElementById(`tab-${next}`)?.focus();
+                                    }}
+                                >
+                                    {t.label}
+                                    <span className="desk-tab-hint">{t.id === 'song' ? 'what plays' : 'how it sounds'}</span>
+                                </button>
+                            ))}
+                        </div>
+                        <div id="desk-panel" role="tabpanel" aria-labelledby={`tab-${rightTab}`} className="desk-panel">
+                            {rightTab === 'song' ? songEl : partsEl}
+                        </div>
+                    </div>
+                </div>
+            )}
             <SettingsSheet
                 open={settingsOpen}
                 onClose={() => setSettingsOpen(false)}

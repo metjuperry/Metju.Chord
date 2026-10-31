@@ -224,3 +224,8 @@
         right: 6px;
     }
 }
+
+/* no mode switch (desktop has its own tabs): settings goes to the right end */
+.tb-group + .tb-gear {
+    margin-left: auto;
+}
