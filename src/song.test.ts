@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { newSong, defaultSettings, readSaved, readSong, readSettings, encodeShare, decodeShare, SAVE_VERSION, SavedState, ticksPerStep,
+import { newSong, defaultSettings, fromSingleSection, readSaved, readSong, readSettings, encodeShare, decodeShare, SAVE_VERSION, SavedState, ticksPerStep,
     changeTimeSignature, stepsPerRow, transportBpm, isCompound, ticksPerBar } from './song';
 import { TICKS_PER_STEP as S } from './progression';
 import { newPart } from './parts';
@@ -14,7 +14,7 @@ const sample = (): SavedState => {
     song.parts = song.parts.map(p => (p.kind === 'bass' ? { ...p, mute: true, style: 'walk' }
         : p.kind === 'melody' ? { ...p, notes: [{ start: 0, len: 48, step: 4 }, { start: 48, len: 24, step: 7 }] } : p));
     song.parts.push(newPart('drums', song.parts, { bars: 2, hits: { kick: [0, 16], hat: [2, 6] } }));
-    return { version: SAVE_VERSION, song, settings: { ...defaultSettings(), octave: 3, theme: 'light' } };
+    return { version: SAVE_VERSION, song: fromSingleSection(song), settings: { ...defaultSettings(), octave: 3, theme: 'light', openSection: 's1' } };
 };
 
 describe('saving songs', () => {
@@ -237,7 +237,7 @@ describe('settings from the UI overhaul', () => {
 
     it('keeps the pads part and the click accent, with defaults for older saves', () => {
         const old = { voiceLeading: true, octave: 3, inversion: 1, loop: false, theme: 'light', nextHint: false };
-        expect(readSettings(old)).toEqual({ ...old, padPart: '', clickAccent: true });
+        expect(readSettings(old)).toEqual({ ...old, padPart: '', clickAccent: true, openSection: '', playMode: 'loop' });
         expect(readSettings({ padPart: 'p4', clickAccent: false })).toMatchObject({ padPart: 'p4', clickAccent: false });
         expect(readSettings({ padPart: 7 }).padPart).toBe('');
     });
