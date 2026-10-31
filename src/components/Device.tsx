@@ -79,8 +79,10 @@ interface DeviceProps {
     onStickHold: (dir: StickDir | null) => void;
     /** Phone layout: no keyboard strip, no label row. */
     compact?: boolean;
-    /** Override the small label under a stick direction (Notes mode: "Octave up"). */
+    /** Override the small label under a stick direction (Notes mode: "8va", "♯", "♭"). */
     stickRules?: Partial<Record<StickDir, string>>;
+    /** The same overrides as screen readers should hear them ("octave up", "sharp"). */
+    stickAria?: Partial<Record<StickDir, string>>;
     /** What the pads play: chords, or single notes on a melody part. */
     padMode: 'chords' | 'notes';
     /** The melody part Notes mode plays, if the song has one. */
@@ -290,14 +292,16 @@ const Stick: React.FC<{
     latched: StickDir;
     chords: { [d in StickDir]: string };
     rules?: Partial<Record<StickDir, string>>;
+    ariaRules?: Partial<Record<StickDir, string>>;
     caption: string;
     forPad: string;
     showCaption: boolean;
     onStick: (d: StickDir) => void;
     onHold: (d: StickDir | null) => void;
-}> = ({ dir, latched, chords, rules, caption, forPad, showCaption, onStick, onHold }) => {
+}> = ({ dir, latched, chords, rules, ariaRules, caption, forPad, showCaption, onStick, onHold }) => {
     // an unused direction (no chord or note there) gets no label either
     const rule = (d: StickDir) => (!chords[d] ? '' : rules?.[d] ?? STICK_LABELS[d]);
+    const ariaRule = (d: StickDir) => (!chords[d] ? '' : ariaRules?.[d] ?? rule(d));
     const [vx, vy] = DIR_VECTOR[dir];
     const gesture = useRef<{ id: number; start: number; dir: StickDir; moved: boolean } | null>(null);
 
@@ -361,7 +365,7 @@ const Stick: React.FC<{
                             className={`stick-dir ${dir === d ? 'active' : ''} ${chords[d] ? '' : 'off'}`}
                             style={{ left: `calc(50% + ${x} * var(--label-r))`, top: `calc(50% + ${y} * var(--label-r))` }}
                             aria-pressed={latched === d}
-                            aria-label={`${chords[d] || 'Nothing'}: ${rule(d) || 'unused'} (hold ${DIR_KEYS[d]})`}
+                            aria-label={`${chords[d] || 'Nothing'}: ${ariaRule(d) || 'unused'} (hold ${DIR_KEYS[d]})`}
                             title={`${rule(d) || 'unused here'} · hold ${DIR_KEYS[d]}`}
                             // pointer input is handled by the stick itself; this is for keyboard (Enter/Space)
                             onClick={e => { if (e.detail === 0) onStick(latched === d ? 'C' : d); }}
@@ -374,7 +378,7 @@ const Stick: React.FC<{
                 <button
                     className={`stick-knob ${dir === 'C' ? 'active' : ''}`}
                     style={{ transform: `translate(${vx * 6}px, ${vy * 6}px)` }}
-                    aria-label={`${chords.C}: centre the stick, plain triad`}
+                    aria-label={`${chords.C}: centre the stick, ${ariaRules?.C ?? 'plain triad'}`}
                     onClick={e => { if (e.detail === 0) onStick('C'); }}
                 >
                     <span className="knob-name">{chords.C}</span>
@@ -420,7 +424,7 @@ const Pad: React.FC<{ pad: PadView; onDown: (d: number) => void; onUp: (d: numbe
 
 const Device: React.FC<DeviceProps> = ({
     info, sounding, scalePcs, octave, pads, stickDir, latchedDir, stickChords, stickFor, recording,
-    onPadDown, onPadUp, onStick, onStickHold, compact = false, stickRules, padMode, notesPart, onPadMode, strip,
+    onPadDown, onPadUp, onStick, onStickHold, compact = false, stickRules, stickAria, padMode, notesPart, onPadMode, strip,
 }) => (
     <section className={`device ${compact ? 'compact' : ''}`} aria-label="Instrument">
         {!compact && (
@@ -446,6 +450,7 @@ const Device: React.FC<DeviceProps> = ({
                 latched={latchedDir}
                 chords={stickChords}
                 rules={stickRules}
+                ariaRules={stickAria}
                 caption={padMode === 'notes' ? `Notes on ${notesPart ?? ''} · pad` : 'Chords for pad'}
                 forPad={stickFor}
                 showCaption={!compact}

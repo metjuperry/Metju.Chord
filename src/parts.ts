@@ -28,11 +28,26 @@ export const BASS_STYLES: { id: BassStyle; label: string; hint: string }[] = [
     { id: 'kick', label: 'Follow kick', hint: 'a note on every kick of the drums, so bass and kick lock together' },
 ];
 
-/** A melody note: `step` counts scale notes up from the key's root in the part's octave (0–14 is two octaves). */
+/** A semitone off the scale step: -1 flat, 1 sharp (absent or 0 = natural). */
+export type Accidental = -1 | 0 | 1;
+
+/**
+ * A melody note: `step` counts scale notes up from the key's root in the part's octave (0–14 is two
+ * octaves); `acc` raises or lowers it a semitone (F♯ in A minor is step 5 with acc 1). The note stays
+ * a scale step, so it follows key and scale changes (F♯ in A minor becomes C♯ in E minor).
+ */
 export interface Note {
     start: number;
     len: number;
     step: number;
+    /** Left out when natural (saves and links stay as before). */
+    acc?: -1 | 1;
+}
+
+/** `note` with accidental `acc`; natural drops the field. */
+export function withAcc<N extends Note>(note: N, acc: Accidental): N {
+    const { acc: _old, ...rest } = note;
+    return (acc ? { ...rest, acc } : rest) as N;
 }
 
 export const MELODY_STEPS = 15;
@@ -424,14 +439,18 @@ export function bassNotes(part: BassPart, h: Harmony, groove: Groove): NoteEvent
     return out;
 }
 
-/** The pitch of a melody row. */
-export function melodyMidi(part: { octave: number }, h: { key: MusicalKey; scale: ScaleId }, step: number): number {
+/** The pitch of a melody row, raised or lowered a semitone by `acc`. */
+export function melodyMidi(part: { octave: number }, h: { key: MusicalKey; scale: ScaleId }, step: number, acc = 0): number {
     const steps = (SCALES.find(s => s.id === h.scale) ?? SCALES[0]).steps;
-    return 12 * (part.octave + 1) + keyPitchClass(h.key) + steps[((step % 7) + 7) % 7] + 12 * Math.floor(step / 7);
+    return 12 * (part.octave + 1) + keyPitchClass(h.key) + steps[((step % 7) + 7) % 7] + 12 * Math.floor(step / 7) + acc;
 }
 
+/** The pitch a melody note plays: its row, plus its accidental. */
+export const noteMidi = (part: { octave: number }, h: { key: MusicalKey; scale: ScaleId }, n: Pick<Note, 'step' | 'acc'>) =>
+    melodyMidi(part, h, n.step, n.acc ?? 0);
+
 export const melodyNotes = (part: MelodyPart, h: Harmony): NoteEvent[] =>
-    silence(part.notes, restSpans(h.chords, part)).map(n => ({ start: n.start, len: n.len, midi: [melodyMidi(part, h, n.step)] }));
+    silence(part.notes, restSpans(h.chords, part)).map(n => ({ start: n.start, len: n.len, midi: [noteMidi(part, h, n)] }));
 
 /** Everything an instrument part plays, in song ticks. */
 export function partNotes(part: InstrumentPart, h: Harmony, groove: Groove): NoteEvent[] {

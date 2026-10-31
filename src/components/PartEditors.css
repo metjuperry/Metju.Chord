@@ -142,6 +142,41 @@
     border-radius: 4px;
 }
 
+/* an altered note: a small ♯ / ♭ on its first cell (part colours are light, so dark ink in both themes) */
+.mel-cell {
+    position: relative;
+}
+
+.mel-acc {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    color: #000;
+    pointer-events: none;
+}
+
+/* the selected note: a yellow edge around the whole block */
+.mel-cell.on.sel {
+    box-shadow: inset 0 2px 0 var(--accent), inset 0 -2px 0 var(--accent);
+}
+
+.mel-cell.on.sel.head {
+    box-shadow: inset 2px 0 0 var(--accent), inset 0 2px 0 var(--accent), inset 0 -2px 0 var(--accent);
+}
+
+.mel-cell.on.sel.tail {
+    box-shadow: inset -2px 0 0 var(--accent), inset 0 2px 0 var(--accent), inset 0 -2px 0 var(--accent);
+}
+
+.mel-cell.on.sel.head.tail {
+    box-shadow: inset 0 0 0 2px var(--accent);
+}
+
 .mel-cell.now {
     box-shadow: inset 0 0 0 1px var(--text);
 }

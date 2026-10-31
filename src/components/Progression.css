@@ -752,3 +752,10 @@
 .ss-list .kbd {
     white-space: nowrap;
 }
+
+/* the selected melody note's ♭ ♮ ♯ */
+.acc-group button {
+    min-width: 40px;
+    font-size: 16px;
+    line-height: 1;
+}

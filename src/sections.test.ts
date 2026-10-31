@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-    FullSong, SAVE_VERSION, Song, defaultSettings, encodeShare, decodeShare, fromSingleSection, newFullSong, newSong, readFullSong, readSaved,
+    FullSong, SAVE_VERSION, SavedState, Song, defaultSettings, encodeShare, decodeShare, fromSingleSection, newFullSong, newSong, readFullSong, readSaved,
 } from './song';
 import {
     addSection, appendToChain, applySectionEdit, chainLayout, changeSongTimeSignature, clearSections, deleteSection, duplicateEntry,
@@ -278,3 +278,65 @@ function base2(): FullSong {
             : p.kind === 'melody' ? { ...p, notes: [{ start: 6 * S, len: 2 * S, step: 3 }] } : p)),
     });
 }
+
+describe('melody accidentals in saves and links', () => {
+    /** v2Song with an F♯ (step 5 sharp in A minor) and a B♭ (step 1 flat) among its naturals. */
+    const withAccs = (): Song => {
+        const song = v2Song();
+        song.parts = song.parts.map(p => (p.kind === 'melody'
+            ? { ...p, notes: [{ start: 0, len: 48, step: 2 }, { start: 48, len: 24, step: 5, acc: 1 as const }, { start: 96, len: 24, step: 1, acc: -1 as const }] }
+            : p));
+        return song;
+    };
+    const notesOf = (song: FullSong | null) => song!.sections[0].content[melodyId(song!)].notes!;
+
+    it('round-trips through JSON files and share links (same save version)', async () => {
+        const state: SavedState = { version: 3, song: fromSingleSection(withAccs()), settings: { ...defaultSettings(), openSection: 's1' } };
+        expect(SAVE_VERSION).toBe(3);
+        expect(readSaved(JSON.parse(JSON.stringify(state)))).toEqual(state);
+        expect(readSaved(await decodeShare(await encodeShare(state)))).toEqual(state);
+        expect(notesOf(readSaved(JSON.parse(JSON.stringify(state)))!.song).map(n => n.acc)).toEqual([undefined, 1, -1]);
+    });
+
+    it('a natural note saves exactly as before: no acc field', () => {
+        const json = JSON.stringify(fromSingleSection(withAccs()));
+        expect(json).toContain('{"start":0,"len":48,"step":2}');
+        expect(json).toContain('"step":5,"acc":1');
+    });
+
+    it('accepts only -1 and 1; 0 and anything else is natural and left out', () => {
+        const full = fromSingleSection(v2Song());
+        const id = melodyId(full);
+        const raw = JSON.parse(JSON.stringify(full));
+        raw.sections[0].content[id].notes = [
+            { start: 0, len: 24, step: 0, acc: 0 }, { start: 24, len: 24, step: 1, acc: 2 }, { start: 48, len: 24, step: 2, acc: '1' },
+            { start: 72, len: 24, step: 3, acc: -1 }, { start: 96, len: 24, step: 4, acc: 0.5 }, { start: 120, len: 24, step: 5, acc: null },
+            { start: 144, len: 24, step: 6, acc: 1 }, { start: 168, len: 24, step: 7, acc: -2 },
+        ];
+        const notes = notesOf(readFullSong(raw));
+        expect(notes.map(n => n.acc)).toEqual([undefined, undefined, undefined, -1, undefined, undefined, 1, undefined]);
+        expect(notes.filter(n => 'acc' in n)).toHaveLength(2);
+    });
+
+    it('old songs (no acc anywhere) load unchanged, v2 too', () => {
+        const old = v2Song();
+        const v2 = readSaved({ version: 2, song: JSON.parse(JSON.stringify(old)), settings: {} })!;
+        expect(notesOf(v2.song)).toEqual([{ start: 0, len: 48, step: 2 }, { start: 96, len: 24, step: 4 }]);
+    });
+
+    it('a v2 song with accidentals keeps them when moved into a section', () => {
+        const v2 = readSaved({ version: 2, song: JSON.parse(JSON.stringify(withAccs())), settings: {} })!;
+        expect(notesOf(v2.song).map(n => n.acc)).toEqual([undefined, 1, -1]);
+    });
+
+    it('plays the altered pitch: F♯5 and B♭4 in A minor', () => {
+        const song = fromSingleSection(withAccs());
+        const view = sectionView(song, 's1');
+        const mel = melodyId(song);
+        const midi = sectionEvents(view, {}, 16 * S, 0, false).filter(e => e.data.part === mel).map(e => (e.data.drum ? -1 : e.data.midi[0]));
+        // A minor from A4 (part octave 4): step 2 = C5, step 5 + ♯ = F♯5, step 1 + ♭ = B♭4
+        expect(midi).toEqual([72, 78, 70]);
+        // and in the whole chain
+        expect(chainEvents(song).events.filter(e => e.data.part === mel).map(e => (e.data.drum ? -1 : e.data.midi[0]))).toEqual([72, 78, 70]);
+    });
+});

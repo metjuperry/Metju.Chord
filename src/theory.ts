@@ -133,6 +133,26 @@ export function noteNames(key: MusicalKey, scale: ScaleId = 'major'): string[] {
     return [5, 10, 3, 8, 1].includes(parent) ? FLAT_NAMES : NOTE_NAMES;
 }
 
+/**
+ * The name of a scale note raised (`acc` 1) or lowered (-1) a semitone, written on the scale note's
+ * own letter: F + ♯ = F♯, G + ♭ = G♭, E + ♯ = E♯, even when that sounds like another scale note.
+ * `names` are the key's names (`noteNames`), `pc` the scale note's pitch class. A scale note that
+ * already has the opposite accidental loses it (B♭ + ♯ = B); there are no double sharps or flats,
+ * so F♯ + ♯ falls back to the key's own name for the pitch (G).
+ */
+export function spellNote(names: string[], pc: number, acc: number): string {
+    const natural = names[((pc % 12) + 12) % 12];
+    if (!acc) return natural;
+    const letter = natural.charAt(0);
+    const mark = natural.slice(1); // '', '#' or '♭'
+    if (acc > 0) return mark === '' ? `${letter}♯` : mark === '♭' ? letter : names[(pc + 1) % 12];
+    return mark === '' ? `${letter}♭` : mark === '#' ? letter : names[(pc + 11) % 12];
+}
+
+/** A note's name with its octave as written ("F♯4", "B♯3"): the octave is the scale note's, before the accidental. */
+export const spellNoteOctave = (names: string[], naturalMidi: number, acc: number) =>
+    `${spellNote(names, naturalMidi % 12, acc)}${Math.floor(naturalMidi / 12) - 1}`;
+
 /** One cycle of arpeggio notes, ordered by pitch. */
 export function arpOrder(midi: number[], pattern: ArpPattern): number[] {
     const up = [...midi].sort((a, b) => a - b);

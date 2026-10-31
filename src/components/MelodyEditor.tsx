@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import './PartEditors.css';
 import { TICKS_PER_SIXTEENTH } from '../drums';
 import { Harmony, MELODY_STEPS, MelodyPart, chordAt, melodyMidi, resolveClip } from '../parts';
-import { noteNames } from '../theory';
+import { noteNames, spellNoteOctave } from '../theory';
 
 /** Note lengths offered for new notes, in 1/16 steps. */
 const LENGTHS: { sixteenths: number; label: string }[] = [
@@ -23,8 +23,10 @@ interface MelodyEditorProps {
     perBeat: number;
     /** Playhead in 1/16 steps, or -1 when stopped. */
     playSixteenth: number;
-    /** Tap on a cell: add a note of `len` 1/16s there, or remove the note already covering it. */
+    /** Tap on a cell: add a note of `len` 1/16s there, select the note covering it, or (selected) remove it. */
     onTap: (step: number, sixteenth: number, len: number) => void;
+    /** Start tick of the selected note, if any (it gets a yellow edge; its ♭ ♮ ♯ are in the docked toolbar). */
+    selectedStart?: number;
     /** Length of new notes in 1/16s, for taps and for recording from the pads. */
     len: number;
     onLen: (len: number) => void;
@@ -62,15 +64,19 @@ const MelodyEditor: React.FC<MelodyEditorProps> = p => {
     }), [harmony, totalCols]);
 
     // which cells are covered by a note, and where notes begin and end
+    // (an altered note stays on its scale row, marked ♯ or ♭, and is named as written: F♯4)
     const covered = useMemo(() => {
-        const map = new Map<string, { head: boolean; tail: boolean }>();
+        const map = new Map<string, { head: boolean; tail: boolean; acc: number; sel: boolean; label: string }>();
         for (const n of part.notes) {
             const from = Math.round(n.start / TICKS_PER_SIXTEENTH);
             const to = Math.round((n.start + n.len) / TICKS_PER_SIXTEENTH);
-            for (let c = from; c < to; c++) map.set(`${n.step}:${c}`, { head: c === from, tail: c === to - 1 });
+            const acc = n.acc ?? 0;
+            const label = spellNoteOctave(names, melodyMidi(part, harmony, n.step), acc);
+            const sel = n.start === p.selectedStart;
+            for (let c = from; c < to; c++) map.set(`${n.step}:${c}`, { head: c === from, tail: c === to - 1, acc, sel, label });
         }
         return map;
-    }, [part.notes]);
+    }, [part, harmony, names, p.selectedStart]);
 
     const now = p.playSixteenth >= 0 ? p.playSixteenth : -1;
     const barCols = p.beatsPerBar * p.perBeat;
@@ -101,7 +107,7 @@ const MelodyEditor: React.FC<MelodyEditorProps> = p => {
                 <span className="sel-label">
                     <span className="track-dot" style={{ background: part.color }} />
                     {part.name}
-                    <span className="section-note"> · tap to add a note, tap a note to remove it, or play the pads in Notes mode (N)</span>
+                    <span className="section-note"> · tap to add a note; tap a note to pick it (♭ ♮ ♯ below), again to remove it; or play the pads in Notes mode (N)</span>
                 </span>
                 <div className="segmented" role="group" aria-label="New note length">
                     {LENGTHS.map(l => (
@@ -151,13 +157,17 @@ const MelodyEditor: React.FC<MelodyEditorProps> = p => {
                                                         c % barCols === 0 ? 'bar' : c % p.perBeat === 0 ? 'beat' : '',
                                                         beat % 2 ? 'alt' : '',
                                                         cover ? 'on' : '', cover?.head ? 'head' : '', cover?.tail ? 'tail' : '',
+                                                        cover?.sel ? 'sel' : '',
                                                         c === now ? 'now' : '',
                                                         c === p.cursor ? 'cursor' : '',
                                                     ].filter(Boolean).join(' ')}
                                                     aria-pressed={!!cover}
-                                                    aria-label={`${row.label}, beat ${beat + 1}${c % p.perBeat ? `, 1/16 ${(c % p.perBeat) + 1}` : ''}`}
+                                                    aria-current={cover?.sel && cover.head ? 'true' : undefined}
+                                                    aria-label={`${cover ? cover.label : row.label}, beat ${beat + 1}${c % p.perBeat ? `, 1/16 ${(c % p.perBeat) + 1}` : ''}${cover?.sel ? ', selected' : ''}`}
                                                     onClick={() => p.onTap(row.step, c, len)}
-                                                />
+                                                >
+                                                    {cover?.head && cover.acc !== 0 && <span className="mel-acc" aria-hidden="true">{cover.acc > 0 ? '♯' : '♭'}</span>}
+                                                </button>
                                             );
                                         })}
                                     </div>

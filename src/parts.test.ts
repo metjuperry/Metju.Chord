@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     BassPart, ChordPart, Harmony, MelodyPart, Part, audibleParts, bassNotes, chordPartNotes, melodyMidi, melodyNotes, musicLoopEnd,
     newPart, placeNote, noteAt, fitNotes, outsideRests, restSpans, shapeAttack, shapeRelease, shapeBrightness, shapePan, glideSeconds, glides, noFx,
+    noteMidi, withAcc,
 } from './parts';
 import { Clip, TICKS_PER_STEP as S, PPQ } from './progression';
 
@@ -246,5 +247,33 @@ describe('strummed chord parts', () => {
         expect(first.strum![first.midi.indexOf(Math.min(...first.midi))]).toBe(0);
         expect(second.strum![second.midi.indexOf(Math.max(...second.midi))]).toBe(0);
         expect(Math.max(...first.strum!)).toBeCloseTo(0.04);
+    });
+});
+
+describe('melody accidentals', () => {
+    const mel = (notes: MelodyPart['notes'], octave = 4): MelodyPart => ({ ...(newPart('melody', []) as MelodyPart), octave, notes });
+    it('plays a semitone up or down from the scale step', () => {
+        const am: Harmony = { key: 'A', scale: 'minor', chords: [] };
+        const part = mel([{ start: 0, len: 24, step: 5 }, { start: 24, len: 24, step: 5, acc: 1 }, { start: 48, len: 24, step: 6, acc: -1 }]);
+        expect(melodyNotes(part, am).map(n => named(n.midi[0]))).toEqual(['F5', 'F#5', 'F#5']);
+        expect(noteMidi(part, am, { step: 5, acc: 1 })).toBe(melodyMidi(part, am, 5) + 1);
+    });
+    it('stays a scale step, so it follows key and scale: F♯ in A minor is C♯ in E minor', () => {
+        const part = mel([{ start: 0, len: 24, step: 5, acc: 1 }], 4);
+        const pitch = (h: Omit<Harmony, 'chords'>) => named(melodyNotes(part, { ...h, chords: [] })[0].midi[0]);
+        expect(pitch({ key: 'A', scale: 'minor' })).toBe('F#5');
+        expect(pitch({ key: 'E', scale: 'minor' })).toBe('C#5');
+        expect(pitch({ key: 'A', scale: 'major' })).toBe('G5'); // the 6th of A major is F♯, raised: G
+    });
+    it('withAcc sets or clears it, leaving no field when natural', () => {
+        const n = { start: 0, len: 24, step: 3 };
+        expect(withAcc(n, 1)).toEqual({ start: 0, len: 24, step: 3, acc: 1 });
+        expect(withAcc({ ...n, acc: -1 as const }, 0)).toEqual(n);
+        expect('acc' in withAcc({ ...n, acc: 1 as const }, 0)).toBe(false);
+    });
+    it('placing and trimming keep a note\'s accidental', () => {
+        const notes = placeNote([{ start: 0, len: 96, step: 2, acc: 1 }], { start: 48, len: 24, step: 4, acc: -1 });
+        expect(notes).toEqual([{ start: 0, len: 48, step: 2, acc: 1 }, { start: 48, len: 24, step: 4, acc: -1 }]);
+        expect(fitNotes(notes, 24)).toEqual([{ start: 0, len: 24, step: 2, acc: 1 }]);
     });
 });
