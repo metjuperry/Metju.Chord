@@ -196,6 +196,14 @@
     white-space: nowrap;
 }
 
+/* Notes mode: "8va", "♯", "♭" as written, big enough to read the accidental */
+.dir-rule.note-rule {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
 .stick-dir.active {
     color: var(--cap-ink);
 }

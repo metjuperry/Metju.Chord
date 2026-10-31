@@ -371,7 +371,7 @@ const Stick: React.FC<{
                             onClick={e => { if (e.detail === 0) onStick(latched === d ? 'C' : d); }}
                         >
                             <span className="dir-name">{chords[d]}</span>
-                            <span className="dir-rule">{rule(d)}</span>
+                            <span className={`dir-rule ${ariaRules ? 'note-rule' : ''}`}>{rule(d)}</span>
                         </button>
                     );
                 })}
