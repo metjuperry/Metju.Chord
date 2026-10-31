@@ -95,6 +95,10 @@ export interface Song {
     space: Space;
 }
 
+/** Light, dark, or following the system (`prefers-color-scheme`). */
+export type ThemeSetting = 'dark' | 'light' | 'auto';
+export const THEMES: ThemeSetting[] = ['light', 'dark', 'auto'];
+
 /** Live playing settings, saved with the song but not part of undo. */
 export interface Settings {
     /** Pick each chord's inversion automatically so it moves as little as possible from the last one. */
@@ -102,9 +106,13 @@ export interface Settings {
     octave: number;
     inversion: number;
     loop: boolean;
-    theme: 'dark' | 'light';
+    theme: ThemeSetting;
     /** Show the chords that commonly come next on the screen. */
     nextHint: boolean;
+    /** The chord part the pads play through ('' = the first chord part). */
+    padPart: string;
+    /** The click plays the downbeat higher (and the middle of compound bars a little higher). */
+    clickAccent: boolean;
 }
 
 export interface SavedState {
@@ -133,7 +141,7 @@ export function newSong(): Song {
 }
 
 export const defaultSettings = (): Settings => ({
-    voiceLeading: false, octave: 4, inversion: 0, loop: true, theme: 'dark', nextHint: true,
+    voiceLeading: false, octave: 4, inversion: 0, loop: true, theme: 'dark', nextHint: true, padPart: '', clickAccent: true,
 });
 
 // ---- reading saved data: anything malformed is dropped or replaced with a default --------
@@ -314,8 +322,10 @@ export function readSettings(v: unknown): Settings {
         octave: int(v.octave, 2, 6, d.octave),
         inversion: int(v.inversion, 0, 3, d.inversion),
         loop: bool(v.loop, d.loop),
-        theme: oneOf<'dark' | 'light'>(v.theme, ['dark', 'light'], d.theme),
+        theme: oneOf<ThemeSetting>(v.theme, THEMES, d.theme),
         nextHint: bool(v.nextHint, d.nextHint),
+        padPart: typeof v.padPart === 'string' ? v.padPart.slice(0, 24) : d.padPart,
+        clickAccent: bool(v.clickAccent, d.clickAccent),
     };
 }
 

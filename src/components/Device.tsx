@@ -1,6 +1,6 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import './Device.css';
-import { NOTE_NAMES, StickDir, STICK_LABELS } from '../theory';
+import { NOTE_NAMES, NoteTag, StickDir, STICK_LABELS } from '../theory';
 
 export interface PadView {
     degree: number;
@@ -10,25 +10,56 @@ export interface PadView {
     held: boolean;
 }
 
-export interface ScreenView {
+/** What the chord info on the device shows: the chord (or note) played last, live. */
+export interface ChordInfoView {
+    /** Nothing played yet. */
     idle: boolean;
+    /** Something is being held right now (otherwise the last chord stays, calmer). */
+    live: boolean;
     symbol: string;
     long: string;
+    /** "i", "IV"… for a chord; the scale degree ("3") for a note. */
     numeral: string;
-    notes: string[];
-    stick: StickDir;
-    inversionLabel: string;
-    status: string[];
-    /** Right-hand status flag, e.g. "REC" or "BEAT 3 · HELD 2/3". */
-    flag?: string;
-    /** What the stick did, when it isn't a chord type (Notes mode: "Octave up"). */
-    stickLabel?: string;
-    /** Chords that commonly come next, e.g. [{ numeral: 'IV', symbol: 'F' }]. */
+    /** What the stick did: "7th", "Triad"; for a note "note" or "octave up". */
+    typeLabel: string;
+    /** Extra detail, e.g. "1st inv". */
+    extra?: string;
+    /** The chord's notes (or, for a note, the scale with it marked). */
+    tags: NoteTag[];
+    /** Chords that commonly come next. */
     next?: { numeral: string; symbol: string }[];
+    /** While recording: where the next chord or note goes. */
+    flag?: string;
+}
+
+/** A part the pads can play through (chord parts) or record into (melody parts in Notes mode). */
+export interface PadTarget {
+    id: string;
+    name: string;
+    color: string;
+    instrument: string;
+}
+
+/** The thin strip under the chord info: octave, inversion, voice leading, and which part the pads play. */
+export interface PlayStripProps {
+    padMode: 'chords' | 'notes';
+    octave: number;
+    octaveMin: number;
+    octaveMax: number;
+    onOctave: (octave: number) => void;
+    inversion: number;
+    maxInversion: number;
+    onInversion: (inversion: number) => void;
+    voiceLeading: boolean;
+    onVoiceLeading: (on: boolean) => void;
+    /** The part the pads play through (Chords) or record into (Notes), and the others they could. */
+    target: PadTarget;
+    targets: PadTarget[];
+    onTarget: (id: string) => void;
 }
 
 interface DeviceProps {
-    screen: ScreenView;
+    info: ChordInfoView;
     /** MIDI notes sounding now, for the keyboard strip. */
     sounding: number[];
     scalePcs: number[];
@@ -40,18 +71,13 @@ interface DeviceProps {
     stickChords: { [d in StickDir]: string };
     /** Which pad the stick labels are for, e.g. "6 · vi". */
     stickFor: string;
-    inversion: number;
-    maxInversion: number;
     recording: boolean;
-    voiceLeading: boolean;
-    onVoiceLeading: (on: boolean) => void;
     onPadDown: (degree: number) => void;
     onPadUp: (degree: number) => void;
     onStick: (dir: StickDir) => void;
     /** The stick held by touch or mouse (null when let go). */
     onStickHold: (dir: StickDir | null) => void;
-    onInversion: (inversion: number) => void;
-    /** Phone layout: no keyboard strip or voicing row, slim screen. */
+    /** Phone layout: no keyboard strip, no label row. */
     compact?: boolean;
     /** Override the small label under a stick direction (Notes mode: "Octave up"). */
     stickRules?: Partial<Record<StickDir, string>>;
@@ -60,6 +86,7 @@ interface DeviceProps {
     /** The melody part Notes mode plays, if the song has one. */
     notesPart?: string;
     onPadMode: (mode: 'chords' | 'notes') => void;
+    strip: PlayStripProps;
 }
 
 /** Chords / Notes: what the pads play. Notes needs a melody part to play on. */
@@ -81,7 +108,6 @@ const DIR_VECTOR: { [d in StickDir]: [number, number] } = {
     C: [0, 0], U: [0, -1], UR: [0.71, -0.71], R: [1, 0], DR: [0.71, 0.71],
     D: [0, 1], DL: [-0.71, 0.71], L: [-1, 0], UL: [-0.71, -0.71],
 };
-const DIR_ANGLE: { [d in StickDir]: number } = { C: 0, U: 0, UR: 45, R: 90, DR: 135, D: 180, DL: 225, L: 270, UL: 315 };
 const DIR_KEYS: { [d in StickDir]: string } = { UL: 'Q', U: 'W', UR: 'E', L: 'A', C: 'S', R: 'D', DL: 'Z', D: 'X', DR: 'C' };
 const RING: StickDir[] = ['U', 'UR', 'R', 'DR', 'D', 'DL', 'L', 'UL'];
 /** The ring's eight wedges, in a -50..50 box: 45° each with a small gap, around the knob. */
@@ -97,61 +123,131 @@ const SEGMENTS: { [d in StickDir]?: string } = {
 };
 const INVERSIONS = ['Root', '1st', '2nd', '3rd'];
 
-/** "NEXT IV F · V G · vi Am": a learning aid on the screen, never on the pads. */
-const NextHint: React.FC<{ next: { numeral: string; symbol: string }[] }> = ({ next }) => (
-    <span className="oled-next">
-        <span className="oled-next-label">NEXT</span>
-        {next.map((c, i) => (
-            <span key={c.numeral} className="oled-next-chord">
-                {i > 0 && <span className="oled-next-dot">·</span>}
-                <span className="oled-next-numeral">{c.numeral}</span> {c.symbol}
-            </span>
-        ))}
-    </span>
-);
-
-const Screen: React.FC<{ view: ScreenView; recording: boolean }> = ({ view, recording }) => (
+/**
+ * The chord just played, drawn on the instrument's body in the app's own type: the name large,
+ * the numeral and chord type, its notes as tags (root dark, what the stick added yellow), and the
+ * chords that often come next. Playback never touches it: it follows live playing only.
+ */
+const ChordInfo: React.FC<{ view: ChordInfoView }> = ({ view }) => (
     <div
-        className="oled"
+        className={`chord-info ${view.idle ? 'idle' : ''} ${view.live ? 'live' : ''}`}
         role="status"
         aria-live="polite"
-        aria-label={view.idle ? 'Ready' : `${view.long}, ${view.numeral}${view.next?.length ? `. Often next: ${view.next.map(c => c.symbol).join(', ')}` : ''}`}
+        aria-label={view.idle ? 'Ready: hold a pad and push the stick' : `${view.long}, ${view.numeral}${view.next?.length ? `. Often next: ${view.next.map(c => c.symbol).join(', ')}` : ''}`}
     >
-        <div className="oled-status">
-            {view.status.map(s => <span key={s}>{s}</span>)}
-            <span className={`oled-flag ${recording ? 'rec' : ''}`}>{view.flag ?? (recording ? '● REC' : '')}</span>
-        </div>
         {view.idle ? (
-            <div className="oled-main idle">
-                <span className="oled-symbol">PRESS 1–7</span>
-            </div>
+            <span className="ci-prompt">Hold a pad · push the stick</span>
         ) : (
-            <div className="oled-main">
-                <span className="oled-symbol">{view.symbol}</span>
-                <span className="oled-side">
-                    <span className="oled-numeral">{view.numeral}</span>
-                    <span className="oled-stick">
-                        <StickGlyph dir={view.stick} /> {(view.stickLabel ?? STICK_LABELS[view.stick]).toUpperCase()}
+            <>
+                <span className="ci-symbol">{view.symbol}</span>
+                <span className="ci-detail" aria-hidden="true">
+                    <span className="ci-type">{[view.numeral, view.typeLabel, view.extra].filter(Boolean).join(' · ')}</span>
+                    <span className="ci-tags">
+                        {view.tags.map((t, i) => <span key={`${t.name}${i}`} className={`ci-tag ${t.role}`}>{t.name}</span>)}
                     </span>
                 </span>
-            </div>
+            </>
         )}
-        <div className="oled-foot">
-            <span className="oled-notes">{view.idle ? 'HOLD A PAD · PUSH THE STICK' : view.notes.join(' ')}</span>
-            {!view.idle && view.next && view.next.length > 0 && <NextHint next={view.next} />}
-            <span className="oled-inv">{view.idle ? '' : view.inversionLabel}</span>
-        </div>
+        <span className="ci-space" />
+        {view.flag && <span className="ci-rec">{view.flag}</span>}
+        {!view.idle && view.next && view.next.length > 0 && (
+            <span className="ci-next" aria-hidden="true">
+                <span className="ci-next-label">Often next</span>
+                {view.next.map(c => (
+                    <span key={c.numeral} className="ci-next-card"><span className="ci-next-numeral">{c.numeral}</span>{c.symbol}</span>
+                ))}
+            </span>
+        )}
     </div>
 );
 
-const StickGlyph: React.FC<{ dir: StickDir; size?: number }> = ({ dir, size = 12 }) =>
-    dir === 'C' ? (
-        <svg width={size} height={size} viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="3" fill="currentColor" /></svg>
-    ) : (
-        <svg width={size} height={size} viewBox="0 0 12 12" aria-hidden="true" style={{ transform: `rotate(${DIR_ANGLE[dir]}deg)` }}>
-            <path d="M6 1.5 10 7H7v3.5H5V7H2z" fill="currentColor" />
-        </svg>
+/** "PADS → ● Keys · Piano ▾": which part the pads play through, made explicit, with a menu of the others. */
+const PadsPicker: React.FC<{ notes: boolean; target: PadTarget; targets: PadTarget[]; onPick: (id: string) => void }> = ({ notes, target, targets, onPick }) => {
+    const [open, setOpen] = useState(false);
+    const root = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (!open) return;
+        const close = (e: PointerEvent | KeyboardEvent) => {
+            if (e instanceof KeyboardEvent ? e.key === 'Escape' : !root.current?.contains(e.target as Node)) setOpen(false);
+        };
+        document.addEventListener('pointerdown', close);
+        document.addEventListener('keydown', close);
+        return () => {
+            document.removeEventListener('pointerdown', close);
+            document.removeEventListener('keydown', close);
+        };
+    }, [open]);
+    const label = notes ? 'Notes' : 'Pads';
+    return (
+        <div className="pads-picker" ref={root}>
+            <button
+                className="strip-button pads-target"
+                aria-haspopup="menu"
+                aria-expanded={open}
+                aria-label={`${label} play ${notes ? 'into' : 'through'} ${target.name}, ${target.instrument}. Change part`}
+                disabled={targets.length < 2}
+                onClick={() => setOpen(o => !o)}
+            >
+                <span className="strip-label">{label} →</span>
+                <span className="track-dot" style={{ background: target.color }} />
+                <b>{target.name}</b>
+                <span className="pads-inst">· {target.instrument}</span>
+                {targets.length > 1 && (
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M2 3.5l3 3 3-3" /></svg>
+                )}
+            </button>
+            {open && (
+                <div className="song-popover pads-popover panel" role="menu" aria-label={notes ? 'Melody part the pads play' : 'Chord part the pads play'}>
+                    {targets.map(t => (
+                        <button key={t.id} role="menuitemradio" aria-checked={t.id === target.id} onClick={() => { setOpen(false); onPick(t.id); }}>
+                            <span className="pads-option"><span className="track-dot" style={{ background: t.color }} />{t.name}</span>
+                            <span className="kbd">{t.instrument}</span>
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
     );
+};
+
+/** Octave, inversion, voice leading and the pads' part: a thin strip on the device, under the chord info. */
+export const PlayStrip: React.FC<PlayStripProps> = s => {
+    const notes = s.padMode === 'notes';
+    return (
+        <div className="play-strip">
+            <div className="strip-group" role="group" aria-label={notes ? 'Melody octave' : 'Octave'}>
+                <span className="strip-label">Oct</span>
+                <button className="strip-step" aria-label="Octave down" disabled={s.octave <= s.octaveMin} onClick={() => s.onOctave(s.octave - 1)}>−</button>
+                <span className="strip-value" aria-live="polite">C{s.octave}</span>
+                <button className="strip-step" aria-label="Octave up" disabled={s.octave >= s.octaveMax} onClick={() => s.onOctave(s.octave + 1)}>+</button>
+            </div>
+            <span className="strip-rule" aria-hidden="true" />
+            <div className="strip-group" role="group" aria-label="Inversion">
+                <span className="strip-label">Inv</span>
+                <div className="segmented dark strip-seg">
+                    {INVERSIONS.map((label, i) => (
+                        <button key={label} aria-pressed={!s.voiceLeading && !notes && s.inversion === i} disabled={notes || s.voiceLeading || i > s.maxInversion} onClick={() => s.onInversion(i)}>
+                            {label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+            <button
+                className="strip-button vl-button"
+                role="switch"
+                aria-checked={s.voiceLeading}
+                disabled={notes}
+                title="Pick each chord's inversion so it moves as little as possible from the last chord"
+                onClick={() => s.onVoiceLeading(!s.voiceLeading)}
+            >
+                <span className="mini-switch" aria-hidden="true"><span /></span>
+                Voice leading
+            </button>
+            <span className="strip-space" />
+            <PadsPicker notes={notes} target={s.target} targets={s.targets} onPick={s.onTarget} />
+        </div>
+    );
+};
 
 const ScaleKeys: React.FC<{ sounding: number[]; scalePcs: number[]; octave: number }> = ({ sounding, scalePcs, octave }) => {
     const base = 12 * (octave + 1);
@@ -322,42 +418,14 @@ const Pad: React.FC<{ pad: PadView; onDown: (d: number) => void; onUp: (d: numbe
     );
 };
 
-/** Inversion buttons and the voice-leading switch: on the device on wide screens, in Sound mode on phones. */
-export const VoicingControls: React.FC<{
-    inversion: number;
-    maxInversion: number;
-    voiceLeading: boolean;
-    onInversion: (inversion: number) => void;
-    onVoiceLeading: (on: boolean) => void;
-}> = ({ inversion, maxInversion, voiceLeading, onInversion, onVoiceLeading }) => (
-    <div className="inversion">
-        <span className="device-caption" id="inv-label">Inversion</span>
-        <div className="segmented dark" role="group" aria-labelledby="inv-label">
-            {INVERSIONS.map((label, i) => (
-                <button key={label} aria-pressed={!voiceLeading && inversion === i} disabled={voiceLeading || i > maxInversion} onClick={() => onInversion(i)}>
-                    {label}
-                </button>
-            ))}
-        </div>
-        <label className="vl-toggle" title="Pick each chord's inversion so it moves as little as possible from the last chord">
-            <button className="switch" role="switch" aria-checked={voiceLeading} onClick={() => onVoiceLeading(!voiceLeading)}>
-                <span />
-            </button>
-            <span>Voice leading{voiceLeading ? ' · auto' : ''}</span>
-        </label>
-    </div>
-);
-
 const Device: React.FC<DeviceProps> = ({
-    screen, sounding, scalePcs, octave, pads, stickDir, latchedDir, stickChords, stickFor, inversion, maxInversion, recording,
-    voiceLeading, onVoiceLeading, onPadDown, onPadUp, onStick, onStickHold, onInversion, compact = false,
-    stickRules, padMode, notesPart, onPadMode,
+    info, sounding, scalePcs, octave, pads, stickDir, latchedDir, stickChords, stickFor, recording,
+    onPadDown, onPadUp, onStick, onStickHold, compact = false, stickRules, padMode, notesPart, onPadMode, strip,
 }) => (
     <section className={`device ${compact ? 'compact' : ''}`} aria-label="Instrument">
         {!compact && (
             <div className="device-top">
                 <span className="device-label">metju.chord</span>
-                <ModeToggle mode={padMode} notesPart={notesPart} onMode={onPadMode} />
                 <span className="device-leds" aria-hidden="true">
                     <span className={recording ? 'led-rec' : ''} />
                     <span className={pads.some(p => p.held) ? 'led-play' : ''} />
@@ -365,14 +433,11 @@ const Device: React.FC<DeviceProps> = ({
             </div>
         )}
 
-        {compact ? (
-            <div className="screen-row">
-                <Screen view={screen} recording={recording} />
-                <ModeToggle mode={padMode} notesPart={notesPart} onMode={onPadMode} />
-            </div>
-        ) : (
-            <Screen view={screen} recording={recording} />
-        )}
+        <div className="info-row">
+            <ChordInfo view={info} />
+            <ModeToggle mode={padMode} notesPart={notesPart} onMode={onPadMode} />
+        </div>
+        <PlayStrip {...strip} />
         {!compact && <ScaleKeys sounding={sounding} scalePcs={scalePcs} octave={octave} />}
 
         <div className="device-controls">
@@ -395,12 +460,9 @@ const Device: React.FC<DeviceProps> = ({
         </div>
 
         {!compact && (
-            <div className="device-foot">
-                <VoicingControls inversion={inversion} maxInversion={maxInversion} voiceLeading={voiceLeading} onInversion={onInversion} onVoiceLeading={onVoiceLeading} />
-                <p className="device-hint">
-                    Press and slide the stick, or tap a direction to lock it. Keys: hold <kbd>Q W E</kbd> <kbd>A D</kbd> <kbd>Z X C</kbd> while playing <kbd>1–7</kbd>.
-                </p>
-            </div>
+            <p className="device-hint">
+                Press and slide the stick, or tap a direction to lock it. Keys: hold <kbd>Q W E</kbd> <kbd>A D</kbd> <kbd>Z X C</kbd> while playing <kbd>1–7</kbd>.
+            </p>
         )}
     </section>
 );

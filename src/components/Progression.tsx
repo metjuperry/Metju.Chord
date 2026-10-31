@@ -1,11 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React from 'react';
 import './Progression.css';
 import './SongMenu.css';
 import { Clip, clipAt, clipEnd } from '../progression';
 import { TIME_SIGNATURES, TimeSignature, isCompound, tsLabel } from '../song';
-import { INSTRUMENTS, InstrumentId } from '../audio/instruments';
+import { InstrumentId } from '../audio/instruments';
 import { DrumPattern, DrumVoice, hasHit } from '../drums';
-import { MAX_PARTS, PART_LABELS, Part, PartKind, hasInstrument, outsideRests, playsThroughRest, restSpans } from '../parts';
+import { Part, outsideRests, playsThroughRest, restSpans } from '../parts';
 
 /** Which drums show on which line of a drum lane's miniature: cymbals, the backbeat, the kick. */
 const MINI_LINES: DrumVoice[][] = [['hat', 'openhat', 'rim'], ['snare', 'clap', 'tomhi', 'tomlo'], ['kick']];
@@ -43,8 +43,6 @@ interface ProgressionProps {
     recording: boolean;
     canPaste: boolean;
     describe: (clip: Clip) => { symbol: string; numeral: string };
-    /** The part the pads play through, e.g. "Keys". */
-    padPart: string;
     /** In Notes mode: the melody part the pads record into. */
     recordInto?: string;
     /** 1/16 steps per sequencer step and per bar, for drum lanes. */
@@ -57,15 +55,10 @@ interface ProgressionProps {
     onSelect: (step: number, lane: string) => void;
     onSelectLane: (lane: string) => void;
     onUpdatePart: (id: string, patch: PartPatch) => void;
-    onAddPart: (kind: PartKind) => void;
-    onRemovePart: (id: string) => void;
-    canRemovePart: (id: string) => boolean;
-    onTogglePlay: () => void;
     onFirst: () => void;
     onPrev: () => void;
     onNext: () => void;
     onToggleLoop: () => void;
-    onToggleRecord: () => void;
     onAddRow: () => void;
     onRemoveRow: () => void;
     onLonger: () => void;
@@ -77,10 +70,10 @@ interface ProgressionProps {
     /** Whether the selected rest lets a part play through. */
     onRestPart: (id: string, plays: boolean) => void;
     onDelete: () => void;
-    onClearAll: () => void;
-    canClearAll: boolean;
-    /** Undo/redo and the Song menu, shown in the header. */
+    /** The Song menu, shown at the end of the header. */
     songMenu?: React.ReactNode;
+    /** Undo and redo, shown with the cursor buttons. */
+    undoRedo?: React.ReactNode;
 }
 
 const steps = (n: number) => (n === 1 ? '1 step' : `${n} steps`);
@@ -89,95 +82,8 @@ const Icon = {
     first: <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><rect x="2" y="2" width="2" height="10" /><path d="M12 2v10L5 7z" /></svg>,
     prev: <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M11 2v10L4 7z" /></svg>,
     next: <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 2v10l7-5z" /></svg>,
-    play: <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 1.5v11L12.5 7z" /></svg>,
-    stop: <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><rect x="3" y="3" width="8" height="8" /></svg>,
     loop: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M3 9V7a3 3 0 0 1 3-3h7M11 2l2 2-2 2M13 7v2a3 3 0 0 1-3 3H3M5 14l-2-2 2-2" /></svg>,
 };
-
-const KIND_HINT: { [k in PartKind]: string } = {
-    chords: 'plays the chords',
-    bass: 'follows the roots',
-    melody: 'your notes',
-    drums: 'loops a beat',
-};
-
-/** One "+ Part" button that opens a short menu of part kinds. */
-const AddPartMenu: React.FC<{ full: boolean; onAdd: (kind: PartKind) => void }> = ({ full, onAdd }) => {
-    const [open, setOpen] = useState(false);
-    const root = useRef<HTMLDivElement>(null);
-    useEffect(() => {
-        if (!open) return;
-        const close = (e: PointerEvent | KeyboardEvent) => {
-            if (e instanceof KeyboardEvent ? e.key === 'Escape' : !root.current?.contains(e.target as Node)) setOpen(false);
-        };
-        document.addEventListener('pointerdown', close);
-        document.addEventListener('keydown', close);
-        return () => {
-            document.removeEventListener('pointerdown', close);
-            document.removeEventListener('keydown', close);
-        };
-    }, [open]);
-    return (
-        <div className="add-part" ref={root}>
-            <button
-                className="chip-button add-track"
-                aria-haspopup="menu"
-                aria-expanded={open}
-                disabled={full}
-                title={full ? `Up to ${MAX_PARTS} parts` : 'Add a part'}
-                onClick={() => setOpen(o => !o)}
-            >
-                + Part
-            </button>
-            {open && (
-                <div className="song-popover add-part-popover panel" role="menu">
-                    {(['chords', 'bass', 'melody', 'drums'] as PartKind[]).map(k => (
-                        <button key={k} role="menuitem" onClick={() => { setOpen(false); onAdd(k); }}>
-                            {PART_LABELS[k]} <span className="add-part-hint">{KIND_HINT[k]}</span>
-                        </button>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-};
-
-const PartStrip: React.FC<{
-    part: Part;
-    selected: boolean;
-    silenced: boolean;
-    canRemove: boolean;
-    onSelect: () => void;
-    onUpdate: ProgressionProps['onUpdatePart'];
-    onRemove: () => void;
-}> = ({ part, selected, silenced, canRemove, onSelect, onUpdate, onRemove }) => (
-    <div className={`track-strip ${selected ? 'selected' : ''} ${silenced ? 'silenced' : ''}`} style={{ '--track': part.color } as React.CSSProperties}>
-        <button className="track-pick" aria-pressed={selected} onClick={onSelect} title={`${part.name} ${KIND_HINT[part.kind]}`}>
-            <span className="track-dot" />
-            <span className="track-name">{part.name}</span>
-        </button>
-        {hasInstrument(part) ? (
-            <select
-                aria-label={`${part.name} instrument`}
-                value={part.instrument}
-                onChange={e => onUpdate(part.id, { instrument: e.target.value as InstrumentId })}
-            >
-                {INSTRUMENTS.map(i => <option key={i.id} value={i.id}>{i.label}</option>)}
-            </select>
-        ) : (
-            <span className="track-kit">Drum kit</span>
-        )}
-        <label className="track-volume" title={`Volume ${part.volume > 0 ? '+' : ''}${part.volume} dB`}>
-            <span className="visually-hidden">{part.name} volume</span>
-            <input type="range" min={-24} max={6} step={1} value={part.volume} onChange={e => onUpdate(part.id, { volume: parseInt(e.target.value, 10) })} />
-        </label>
-        <button className="ms-button" aria-pressed={part.mute} aria-label={`Mute ${part.name}`} title="Mute in playback" onClick={() => onUpdate(part.id, { mute: !part.mute })}>M</button>
-        <button className="ms-button solo" aria-pressed={part.solo} aria-label={`Solo ${part.name}`} title="Solo in playback" onClick={() => onUpdate(part.id, { solo: !part.solo })}>S</button>
-        {canRemove && (
-            <button className="ms-button remove" aria-label={`Remove ${part.name}`} title="Remove part" onClick={onRemove}>×</button>
-        )}
-    </div>
-);
 
 const Progression: React.FC<ProgressionProps> = props => {
     const { total, chords, parts, selectedLane, selected, playhead, playing, loop, recording, canPaste, describe } = props;
@@ -271,10 +177,12 @@ const Progression: React.FC<ProgressionProps> = props => {
         }
         return (
             <div key="chords" className={`lane-row chord-lane ${onChords ? 'current' : ''}`} style={{ '--track': 'var(--accent)' } as React.CSSProperties}>
-                <button className="lane-label" onClick={() => props.onSelectLane(CHORD_LANE)} aria-label="Select the chord row">
-                    <span className="track-dot" />
-                    <span>Chords</span>
-                </button>
+                <div className="lane-label">
+                    <button className="lane-pick" onClick={() => props.onSelectLane(CHORD_LANE)} aria-label="Edit the chord row" aria-pressed={onChords}>
+                        <span className="track-dot" />
+                        <span className="lane-name">Chords</span>
+                    </button>
+                </div>
                 <div className="lane" style={cols}>{items}</div>
             </div>
         );
@@ -351,10 +259,14 @@ const Progression: React.FC<ProgressionProps> = props => {
             className={`lane-row part-lane ${part.id === selectedLane ? 'current' : ''} ${silenced(part) ? 'silenced' : ''}`}
             style={{ '--track': part.color } as React.CSSProperties}
         >
-            <button className="lane-label" onClick={() => props.onSelectLane(part.id)} aria-label={`Select ${part.name}`}>
-                <span className="track-dot" />
-                <span>{part.name}</span>
-            </button>
+            <div className="lane-label">
+                <button className="lane-pick" onClick={() => props.onSelectLane(part.id)} aria-label={`Edit ${part.name}`} aria-pressed={part.id === selectedLane}>
+                    <span className="track-dot" />
+                    <span className="lane-name">{part.name}</span>
+                </button>
+                <button className="ms-button lane-ms" aria-pressed={part.mute} aria-label={`Mute ${part.name}`} title="Mute in playback" onClick={() => props.onUpdatePart(part.id, { mute: !part.mute })}>M</button>
+                <button className="ms-button lane-ms solo" aria-pressed={part.solo} aria-label={`Solo ${part.name}`} title="Solo in playback" onClick={() => props.onUpdatePart(part.id, { solo: !part.solo })}>S</button>
+            </div>
             <div className="lane" style={cols}>
                 {part.kind === 'drums' ? renderDrumSteps(part, part.drums, rowStart, rowEnd) : renderNoteStrip(part, rowStart, rowEnd)}
             </div>
@@ -399,26 +311,20 @@ const Progression: React.FC<ProgressionProps> = props => {
         <section className="panel progression" aria-label="Sequencer">
             <div className="prog-head">
                 <h2 className="seq-title">SEQ-{total}</h2>
-                <div className="transport">
+                <div className="transport" role="group" aria-label="Cursor">
                     <button className="icon-button" aria-label="Back to start" onClick={props.onFirst}>{Icon.first}</button>
                     <button className="icon-button" aria-label="Previous chord" onClick={props.onPrev}>{Icon.prev}</button>
-                    <button className="play-button" aria-label={playing ? 'Stop (Space)' : 'Play (Space)'} onClick={props.onTogglePlay}>
-                        {playing ? Icon.stop : Icon.play}
-                    </button>
                     <button className="icon-button" aria-label="Next chord" onClick={props.onNext}>{Icon.next}</button>
-                    <button className="icon-button" aria-label="Loop" aria-pressed={loop} onClick={props.onToggleLoop}>{Icon.loop}</button>
+                    <button className="icon-button" aria-label="Loop" title="Loop: play to the end of the music and start again" aria-pressed={loop} onClick={props.onToggleLoop}>{Icon.loop}</button>
                 </div>
-                <button className={`rec-button ${recording ? 'on' : ''}`} aria-pressed={recording} onClick={props.onToggleRecord}>
-                    <span className="rec-dot" />{recording ? 'Recording' : 'Record'} <kbd className="kbd">R</kbd>
-                </button>
-                <span className="section-note prog-hint">
-                    {recording && props.recordInto
-                        ? `Notes mode: play pads to write notes into ${props.recordInto}. Stopped, each note goes at the cursor; while playing, they land where you play them.`
-                        : recording
-                        ? `Play a pad to write it into the chord row at step ${selected + 1}; the cursor moves on.`
-                        : 'Pads record into the chord row. Every part below plays those chords in its own way.'}
-                </span>
-                {props.songMenu}
+                {props.undoRedo}
+                {recording && (
+                    <span className="rec-note" role="status">
+                        ● {props.recordInto
+                            ? `Pads write notes into ${props.recordInto}${playing ? ' where you play them' : ' at the cursor'}`
+                            : `Pads write chords at step ${selected + 1}`}
+                    </span>
+                )}
                 <div className="bars">
                     <span className="section-note">{Math.round((total / beatsPerBar) * 10) / 10} bars</span>
                     <select
@@ -429,27 +335,10 @@ const Progression: React.FC<ProgressionProps> = props => {
                     >
                         {TIME_SIGNATURES.map(t => <option key={tsLabel(t)} value={tsLabel(t)}>{tsLabel(t)}</option>)}
                     </select>
-                    {rows > 1 && <button className="chip-button" onClick={props.onRemoveRow}>− Remove row</button>}
-                    <button className="chip-button" onClick={props.onAddRow}>+ Add row</button>
+                    {rows > 1 && <button className="chip-button" onClick={props.onRemoveRow}>− Row</button>}
+                    <button className="chip-button" onClick={props.onAddRow}>+ Row</button>
+                    {props.songMenu}
                 </div>
-            </div>
-
-            <div className="track-bar" role="group" aria-label="Parts">
-                <div className="track-strips">
-                    {parts.map(p => (
-                        <PartStrip
-                            key={p.id}
-                            part={p}
-                            selected={p.id === selectedLane}
-                            silenced={silenced(p)}
-                            canRemove={props.canRemovePart(p.id)}
-                            onSelect={() => props.onSelectLane(p.id)}
-                            onUpdate={props.onUpdatePart}
-                            onRemove={() => props.onRemovePart(p.id)}
-                        />
-                    ))}
-                </div>
-                <AddPartMenu full={parts.length >= MAX_PARTS} onAdd={props.onAddPart} />
             </div>
 
             <div className="seq-rows">{Array.from({ length: rows }, (_, r) => renderRow(r))}</div>
@@ -457,37 +346,27 @@ const Progression: React.FC<ProgressionProps> = props => {
             {selPart && props.partEditor}
 
             {onChords && (
-                <>
-                    <div className="legend" aria-hidden="true">
-                        <span><i className="lg-strike" />chord is struck</span>
-                        <span><i className="lg-sustain" />keeps ringing (held, not struck again)</span>
-                        <span><i className="lg-passed" />already played</span>
-                    </div>
-
-                    <div className="toolbar" role="toolbar" aria-label="Chord actions">
+                <div className="dock" role="toolbar" aria-label="Selected chord">
+                    <div className="dock-row">
                         <span className="sel-label">
                             <span className="track-dot" style={{ background: 'var(--accent)' }} />
-                            Chords · {selClip && selClip.len > 1 ? `Steps ${selClip.start + 1}–${clipEnd(selClip)}` : `Step ${selected + 1}`}
-                            <span className="section-note"> · {selClip ? (selInfo ? selInfo.symbol : 'rest') : 'empty'}</span>
+                            <b className="sel-name">{selClip ? (selInfo ? selInfo.symbol : 'Rest') : 'Empty'}</b>
+                            <span className="section-note">{selClip && selClip.len > 1 ? `steps ${selClip.start + 1}–${clipEnd(selClip)}` : `step ${selected + 1}`}</span>
                         </span>
                         <div className="length" role="group" aria-label="Length">
-                            <span>Length</span>
-                            <button aria-label="Shorter" disabled={!selClip || selClip.len < 2} onClick={props.onShorter}>−</button>
+                            <button aria-label="Shorter ( [ )" disabled={!selClip || selClip.len < 2} onClick={props.onShorter}>−</button>
                             <b>{selClip ? steps(selClip.len) : '—'}</b>
-                            <button aria-label="Longer" disabled={!selClip || clipEnd(selClip) >= total} onClick={props.onLonger}>+</button>
-                            <kbd className="kbd">[ ]</kbd>
+                            <button aria-label="Longer ( ] )" disabled={!selClip || clipEnd(selClip) >= total} onClick={props.onLonger}>+</button>
                         </div>
-                        <button className="chip-button" disabled={!selClip || selClip.len < 2} onClick={props.onSplit}>Split at cursor <kbd>/</kbd></button>
+                        <button className="chip-button" disabled={!selClip || selClip.len < 2} title="Split at the cursor ( / )" onClick={props.onSplit}>Split</button>
                         <button className="chip-button" disabled={!selClip} onClick={props.onCopy}>Copy</button>
                         <button className="chip-button" disabled={!canPaste} onClick={props.onPaste}>Paste</button>
-                        <button className="chip-button" onClick={props.onRest}>Make rest <kbd>.</kbd></button>
-                        <button className="chip-button" disabled={!selClip} onClick={props.onDelete}>Delete <kbd>⌫</kbd></button>
-                        <button className="chip-button danger" disabled={!props.canClearAll} onClick={props.onClearAll}>Clear all</button>
+                        <button className="chip-button" title="Make this a rest ( . )" onClick={props.onRest}>Rest</button>
+                        <button className="chip-button" disabled={!selClip} title="Delete ( ⌫ )" onClick={props.onDelete}>Delete</button>
                     </div>
-
                     {selClip?.rest && (
-                        <div className="rest-parts" role="group" aria-label="Parts that keep playing through this rest">
-                            <span className="sel-label">During this rest<span className="section-note"> · lit parts keep playing</span></span>
+                        <div className="dock-row rest-parts" role="group" aria-label="Parts that keep playing through this rest">
+                            <span className="section-note">Plays through:</span>
                             {parts.map(p => {
                                 const plays = playsThroughRest(selClip, p);
                                 return (
@@ -505,7 +384,7 @@ const Progression: React.FC<ProgressionProps> = props => {
                             })}
                         </div>
                     )}
-                </>
+                </div>
             )}
         </section>
     );

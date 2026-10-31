@@ -2,21 +2,33 @@ import React, { useEffect, useRef, useState } from 'react';
 import './SongMenu.css';
 
 interface SongMenuProps {
-    canUndo: boolean;
-    canRedo: boolean;
-    onUndo: () => void;
-    onRedo: () => void;
     onNew: () => void;
     onOpenFile: (file: File) => void;
     onSaveFile: () => void;
     onShare: () => void;
     onHooktheory: () => void;
+    /** Empty the chord row, melodies and beats (undoable). */
+    onClearAll: () => void;
+    canClearAll: boolean;
 }
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 const mod = isMac ? '⌘' : 'Ctrl+';
 
-const SongMenu: React.FC<SongMenuProps> = ({ canUndo, canRedo, onUndo, onRedo, onNew, onOpenFile, onSaveFile, onShare, onHooktheory }) => {
+/** Undo and redo (Ctrl/⌘ Z, Shift+Ctrl/⌘ Z), for every song edit. */
+export const UndoRedo: React.FC<{ canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void }> = ({ canUndo, canRedo, onUndo, onRedo }) => (
+    <div className="undo-redo" role="group" aria-label="History">
+        <button className="icon-button" aria-label={`Undo (${mod}Z)`} title={`Undo (${mod}Z)`} disabled={!canUndo} onClick={onUndo}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M5 3 2 6l3 3M2 6h8a4 4 0 0 1 0 8H7" /></svg>
+        </button>
+        <button className="icon-button" aria-label={`Redo (${mod}Shift+Z)`} title={`Redo (${mod}Shift+Z)`} disabled={!canRedo} onClick={onRedo}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m11 3 3 3-3 3M14 6H6a4 4 0 0 0 0 8h3" /></svg>
+        </button>
+    </div>
+);
+
+/** The Song menu: new, open, save, share link, Paste from Hooktheory, Clear all. */
+const SongMenu: React.FC<SongMenuProps> = ({ onNew, onOpenFile, onSaveFile, onShare, onHooktheory, onClearAll, canClearAll }) => {
     const [open, setOpen] = useState(false);
     const root = useRef<HTMLDivElement>(null);
     const fileInput = useRef<HTMLInputElement>(null);
@@ -41,14 +53,9 @@ const SongMenu: React.FC<SongMenuProps> = ({ canUndo, canRedo, onUndo, onRedo, o
 
     return (
         <div className="song-menu" ref={root}>
-            <button className="icon-button" aria-label={`Undo (${mod}Z)`} title={`Undo (${mod}Z)`} disabled={!canUndo} onClick={onUndo}>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M5 3 2 6l3 3M2 6h8a4 4 0 0 1 0 8H7" /></svg>
-            </button>
-            <button className="icon-button" aria-label={`Redo (${mod}Shift+Z)`} title={`Redo (${mod}Shift+Z)`} disabled={!canRedo} onClick={onRedo}>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m11 3 3 3-3 3M14 6H6a4 4 0 0 0 0 8h3" /></svg>
-            </button>
-            <button className="chip-button song-button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(o => !o)}>
-                Song ▾
+            <button className="chip-button song-button" aria-haspopup="menu" aria-expanded={open} aria-label="Song menu: new, open, save, share, paste from Hooktheory" onClick={() => setOpen(o => !o)}>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M2 3.5h4l1.2 1.5H12v6.5H2z" /></svg>
+                Song menu ▾
             </button>
             {open && (
                 <div className="song-popover panel" role="menu">
@@ -57,6 +64,7 @@ const SongMenu: React.FC<SongMenuProps> = ({ canUndo, canRedo, onUndo, onRedo, o
                     <button role="menuitem" onClick={run(onSaveFile)}>Save to file</button>
                     <button role="menuitem" onClick={run(onShare)}>Copy share link</button>
                     <button role="menuitem" onClick={run(onHooktheory)}>Paste from Hooktheory…</button>
+                    <button role="menuitem" className="danger" disabled={!canClearAll} onClick={run(onClearAll)}>Clear all <span className="kbd">undoable</span></button>
                     <p className="song-note">Your song saves automatically in this browser.</p>
                 </div>
             )}

@@ -1,0 +1,118 @@
+/* ⚙ Settings: a sheet from the right over the current mode, with a backdrop */
+.ss-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 12;
+    background: rgba(23, 22, 15, 0.42);
+    display: flex;
+    justify-content: flex-end;
+    padding:
+        max(8px, env(safe-area-inset-top))
+        max(8px, env(safe-area-inset-right))
+        max(8px, env(safe-area-inset-bottom))
+        max(8px, env(safe-area-inset-left));
+}
+
+.ss-sheet {
+    width: min(360px, 100%);
+    max-height: 100%;
+    overflow-y: auto;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: 0 16px 40px rgba(23, 22, 15, 0.28);
+    animation: ss-in 0.16s ease-out;
+}
+
+@keyframes ss-in {
+    from {
+        transform: translateX(24px);
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ss-sheet {
+        animation: none;
+    }
+}
+
+.ss-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.ss-head h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 18px;
+}
+
+.ss-space {
+    flex: 1 1 0;
+}
+
+.ss-close {
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--panel-2);
+    font-size: 16px;
+}
+
+.ss-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.ss-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.ss-title {
+    font-weight: 700;
+    font-size: 12px;
+}
+
+.ss-row .segmented > button {
+    min-height: 30px;
+}
+
+.ss-rule {
+    height: 1px;
+    background: var(--line);
+}
+
+.ss-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.ss-buttons .chip-button {
+    flex: 1 1 0;
+    min-height: 40px;
+    font-weight: 700;
+    font-size: 12px;
+}
+
+.ss-foot {
+    margin-top: auto;
+}
+
+/* Credits opens over the sheet */
+.credits-backdrop {
+    z-index: 14;
+}
+
+.credits a {
+    color: var(--hot-text);
+}

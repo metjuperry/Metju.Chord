@@ -421,3 +421,29 @@ export function nextChords(key: MusicalKey, scale: ScaleId, degree: number): Nex
         symbol: resolveChord(key, { degree: d, type: 'triad', inversion: 0, octave: 4, scale }).name.symbol,
     }));
 }
+
+/** One note of a chord as the play screen tags it: its root, a note the stick added, or a plain triad note. */
+export interface NoteTag {
+    name: string;
+    role: 'root' | 'added' | 'triad';
+}
+
+/**
+ * The notes of the chord on `degree` with chord type `type`, stacked up from the root (root position,
+ * so A C E G for Am7 whatever the inversion), each tagged: the root, a note the stick added beyond the
+ * plain diatonic triad (a 7th, 9th, sus note, a flipped 3rd…), or one of the triad's own notes.
+ */
+export function chordTags(key: MusicalKey, scale: ScaleId, degree: number, type: ChordType): NoteTag[] {
+    const keyPc = keyPitchClass(key);
+    const base = buildChordMidi(keyPc, degree, type, 4, scale);
+    const triad = new Set(buildChordMidi(keyPc, degree, 'triad', 4, scale).map(m => m % 12));
+    const names = noteNames(key, scale);
+    const rootPc = base[0] % 12;
+    const seen = new Set<number>();
+    return base.flatMap(m => {
+        const pc = m % 12;
+        if (seen.has(pc)) return [];
+        seen.add(pc);
+        return [{ name: names[pc], role: pc === rootPc ? 'root' : triad.has(pc) ? 'triad' : 'added' } as NoteTag];
+    });
+}

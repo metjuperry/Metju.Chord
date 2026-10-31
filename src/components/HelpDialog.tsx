@@ -1,4 +1,5 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useRef } from 'react';
+import { useDialog } from './useDialog';
 import './HelpDialog.css';
 import { STICK_LABELS, StickDir } from '../theory';
 
@@ -33,24 +34,21 @@ const SHORTCUTS: [string, string][] = [
     ['⌫', 'Delete the selected chord'],
     ['Ctrl/⌘ Z', 'Undo'],
     ['Shift Ctrl/⌘ Z  ·  Ctrl Y', 'Redo'],
-    ['Esc', 'Centre the stick, close this panel'],
+    ['Esc', 'Centre the stick, close a panel'],
 ];
 
 const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose }) => {
-    const closeRef = useRef<HTMLButtonElement>(null);
-
-    useEffect(() => {
-        if (open) closeRef.current?.focus();
-    }, [open]);
+    const box = useRef<HTMLDivElement>(null);
+    useDialog(box, open, onClose);
 
     if (!open) return null;
 
     return (
         <div className="help-backdrop" onClick={onClose}>
-            <div className="help-dialog panel" role="dialog" aria-modal="true" aria-labelledby="help-title" onClick={e => e.stopPropagation()}>
+            <div ref={box} className="help-dialog panel" role="dialog" aria-modal="true" aria-labelledby="help-title" onClick={e => e.stopPropagation()}>
                 <div className="help-head">
                     <h2 id="help-title">How to play</h2>
-                    <button ref={closeRef} className="icon-button" aria-label="Close" onClick={onClose}>✕</button>
+                    <button data-autofocus className="icon-button" aria-label="Close" onClick={onClose}>✕</button>
                 </div>
 
                 <p className="help-lead">
@@ -58,6 +56,23 @@ const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose }) => {
                     Push the stick to change the chord type: press and slide toward a direction, and let go to spring back. A quick tap locks a
                     direction. The pads show what they will play with the stick where it is.
                 </p>
+
+                <h3 className="eyebrow">Three modes</h3>
+                <dl className="help-keys">
+                    <dt><b>Play</b></dt>
+                    <dd>The instrument: the stick on the left, the pads on the right. Above them the chord you played, its notes (the root dark,
+                        the notes the stick added yellow) and the chords that often come next. The strip under it sets the octave, inversion,
+                        voice leading, and which part the pads play through (<b>Pads →</b>).</dd>
+                    <dt><b>Song</b></dt>
+                    <dd><i>What</i> plays: the chord row the pads record into, and a lane per part. Tap a lane's name to edit that part's notes or
+                        beat below; <b>M</b> / <b>S</b> mute and solo it. The chord tools stay docked at the bottom. New, open, save, share and Paste from
+                        Hooktheory are in the Song menu.</dd>
+                    <dt><b>Parts</b></dt>
+                    <dd><i>How</i> it sounds: every part with its volume, mute and solo, and for the selected one its instrument, how it plays
+                        (chord, strum, arpeggio; bass style; melody range), tone knobs and effects. <b>Master</b> holds the shared reverb, delay and output.</dd>
+                    <dt><b>⚙</b></dt>
+                    <dd>Theme, the click, the next-chord hint, this help and the credits.</dd>
+                </dl>
 
                 <h3 className="eyebrow">The stick</h3>
                 <table className="help-table">
@@ -83,6 +98,13 @@ const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose }) => {
                     Switch the pads from Chords to Notes (or press N) and they play single notes of the key on your Melody part,
                     1–7 up the scale; push the stick up for the octave above. With Record on, a stopped song writes each note at the
                     cursor (length set in the Melody editor) and moves on; a playing song records notes where you play them, snapped to 1/16.
+                </p>
+
+                <h3 className="eyebrow">The chord row</h3>
+                <p className="section-note">
+                    Each chord shows a dot where it's struck and a bar while it keeps ringing (held, not struck again); while playing, the part
+                    already played turns orange. Lengthen with the grip or <kbd>]</kbd>; a rest can let some parts play on through it (by default
+                    chords and bass stop, melody and drums carry on).
                 </p>
 
                 <h3 className="eyebrow">Keyboard</h3>
