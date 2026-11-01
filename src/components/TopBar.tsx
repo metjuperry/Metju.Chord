@@ -30,7 +30,7 @@ interface TopBarProps {
     /** Beat lit by the click or the playhead, or null when nothing runs. */
     beat: number | null;
     beats: number;
-    /** Which modes are offered; on a wide desktop the instrument is always on screen, so Play can go. */
+    /** Which modes are offered (none: the desktop layout shows the instrument and has its own Song | Parts tabs). */
     modes?: AppMode[];
     onMode: (mode: AppMode) => void;
     onKeyChange: (key: MusicalKey) => void;
@@ -115,11 +115,13 @@ const TopBar: React.FC<TopBarProps> = p => (
             </button>
         </div>
 
-        <nav className="tb-modes segmented" aria-label="Mode">
-            {MODES.filter(m => !p.modes || p.modes.includes(m.id)).map(m => (
-                <button key={m.id} aria-pressed={p.mode === m.id} title={`${m.label}: ${m.hint}`} onClick={() => p.onMode(m.id)}>{m.label}</button>
-            ))}
-        </nav>
+        {(!p.modes || p.modes.length > 0) && (
+            <nav className="tb-modes segmented" aria-label="Mode">
+                {MODES.filter(m => !p.modes || p.modes.includes(m.id)).map(m => (
+                    <button key={m.id} aria-pressed={p.mode === m.id} title={`${m.label}: ${m.hint}`} onClick={() => p.onMode(m.id)}>{m.label}</button>
+                ))}
+            </nav>
+        )}
 
         <button className="tb-gear" aria-label="Settings" title="Settings" aria-haspopup="dialog" onClick={p.onOpenSettings}>
             <GearIcon />

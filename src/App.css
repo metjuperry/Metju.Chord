@@ -12,11 +12,145 @@
     padding-right: max(24px, env(safe-area-inset-right));
 }
 
-/* desktop Play: the instrument on its own, centred at a comfortable size */
-.app.wide.mode-play > .device {
-    width: 100%;
-    max-width: 1040px;
-    margin: 0 auto;
+/* ---- desktop: the instrument on the left, Song | Parts on the right ------------------------ */
+
+.app.desk {
+    max-width: 1680px;
+    padding-bottom: 24px;
+}
+
+.desk-split {
+    display: grid;
+    grid-template-columns: minmax(470px, 48fr) minmax(0, 52fr);
+    gap: 16px;
+    align-items: start;
+}
+
+/* the instrument stays in view while the right side scrolls (in a short window it scrolls on its own) */
+.desk-left {
+    position: sticky;
+    top: 16px;
+    min-width: 0;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    border-radius: 24px;
+}
+
+.desk-right {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.desk-tabs {
+    align-self: flex-start;
+    background: var(--panel-2);
+}
+
+.desk-tabs > button {
+    min-height: 34px;
+    padding: 0 16px;
+}
+
+.desk-tabs > button {
+    white-space: nowrap;
+}
+
+.desk-tab-hint {
+    margin-left: 8px;
+    font-size: 11px;
+    font-weight: 400;
+    opacity: 0.7;
+}
+
+.desk-panel {
+    min-width: 0;
+}
+
+/* the device a little tighter, so stick and pads sit side by side in the left column */
+.desk .device {
+    padding: 14px 18px 16px;
+    gap: 12px;
+    border-radius: 24px;
+}
+
+.desk .device-controls {
+    flex-wrap: nowrap;
+    gap: 16px;
+}
+
+.desk .stick {
+    --stick-size: clamp(184px, 15vw, 248px);
+}
+
+.desk .pads {
+    flex: 1 1 auto;
+    max-width: none;
+    height: clamp(130px, 11vw, 160px);
+}
+
+.desk .device:not(.compact) .ci-symbol {
+    font-size: 38px;
+}
+
+.desk .device:not(.compact) .info-row {
+    min-height: 54px;
+}
+
+.desk .ci-next-label {
+    display: none;
+}
+
+.desk .pads-inst {
+    display: none;
+}
+
+/* the instrument's own label row is redundant next to the top bar's brand */
+.desk .device-top {
+    display: none;
+}
+
+/* narrower desktop windows: the pads go under the stick, at full width */
+@media (max-width: 1279px) {
+    .desk .device-controls {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .desk .pads {
+        flex-basis: 100%;
+    }
+}
+
+@media (max-width: 1100px) {
+    .desk .pad-numeral {
+        display: none;
+    }
+
+    .desk .pad {
+        padding: 7px;
+    }
+
+    .desk .pad-symbol {
+        font-size: 13px;
+    }
+
+    .desk-tab-hint {
+        display: none;
+    }
+}
+
+/* Parts in the narrower right column: the list on top of the part from ~1200px down */
+@media (max-width: 1199px) {
+    .desk .parts-view {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .desk .pl-rows {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    }
 }
 
 /* ---- compact layout (phones, small windows): one mode at a time ---------------------- */
@@ -60,4 +194,8 @@
 /* a chord or bass lane selected in Song: a pointer to where its style lives */
 .follow-note .part-head {
     justify-content: space-between;
+}
+
+.desk .pad.upper .pad-symbol {
+    font-size: 13px;
 }

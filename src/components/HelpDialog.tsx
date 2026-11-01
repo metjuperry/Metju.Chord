@@ -75,6 +75,8 @@ const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose }) => {
                     <dt><b>Parts</b></dt>
                     <dd><i>How</i> it sounds: every part with its volume, mute and solo, and for the selected one its instrument, how it plays
                         (chord, strum, arpeggio; bass style; melody range), tone knobs and effects. <b>Master</b> holds the shared reverb, delay and output. Mute and solo here are for the whole song.</dd>
+                    <dt><b>Desktop</b></dt>
+                    <dd>On a wide screen the instrument stays on the left and Song and Parts are tabs on the right.</dd>
                     <dt><b>⚙</b></dt>
                     <dd>Theme, the click, the next-chord hint, this help and the credits.</dd>
                 </dl>
