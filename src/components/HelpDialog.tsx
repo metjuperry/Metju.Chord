@@ -31,7 +31,8 @@ const SHORTCUTS: [string, string][] = [
     ['[  ]', 'Shorten / lengthen the selected chord'],
     ['/', 'Split the selected chord at the cursor'],
     ['.', 'Make the selected beat a rest (then pick which parts keep playing through it)'],
-    ['⌫', 'Delete the selected chord'],
+    ['⌫', 'Delete the selected chord (or the selected melody note)'],
+    ['Shift ↑ / Shift ↓', 'With a melody note selected: sharpen / flatten it (♭ → ♮ → ♯)'],
     ['Ctrl/⌘ Z', 'Undo'],
     ['Shift Ctrl/⌘ Z  ·  Ctrl Y', 'Redo'],
     ['Esc', 'Centre the stick, close a panel'],
@@ -103,8 +104,19 @@ const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose }) => {
                 <h3 className="eyebrow">Notes mode</h3>
                 <p className="section-note">
                     Switch the pads from Chords to Notes (or press N) and they play single notes of the key on your Melody part,
-                    1–7 up the scale; push the stick up for the octave above. With Record on, a stopped song writes each note at the
-                    cursor (length set in the Melody editor) and moves on; a playing song records notes where you play them, snapped to 1/16.
+                    1–7 up the scale. The stick changes the note: <b>↑</b> the octave above (8va), <b>→</b> sharp (♯), <b>←</b> flat (♭),
+                    and <b>↗</b> / <b>↖</b> both (octave up and sharp / flat), so an F♯ in A minor is pad 6 with the stick right. The lower
+                    three directions do nothing here. With Record on, a stopped song writes each note at the cursor (length set in the
+                    Melody editor) and moves on; a playing song records notes where you play them, snapped to 1/16. Sharps and flats are
+                    recorded too.
+                </p>
+
+                <h3 className="eyebrow">Melody grid</h3>
+                <p className="section-note">
+                    One row per note of the scale. Tap an empty cell to add a note, tap a note to select it (yellow edge), tap it again to
+                    remove it. With a note selected, <b>♭ ♮ ♯</b> in the toolbar at the bottom (or <kbd>Shift ↑</kbd> / <kbd>Shift ↓</kbd>)
+                    make it a semitone lower or higher: it stays on its row with a small ♯ or ♭ and is named as written (F♯, G♭). It's still
+                    that scale note, so it moves with the key: F♯ in A minor becomes C♯ in E minor.
                 </p>
 
                 <h3 className="eyebrow">The chord row</h3>

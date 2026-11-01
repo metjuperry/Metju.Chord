@@ -52,6 +52,8 @@ interface ProgressionProps {
     loopSteps: number;
     /** Shown instead of the chord toolbar while a part is selected. */
     partEditor?: React.ReactNode;
+    /** The selected melody note's tools (♭ ♮ ♯, Delete), docked like the chord toolbar while a part is selected. */
+    partDock?: React.ReactNode;
     onSelect: (step: number, lane: string) => void;
     onSelectLane: (lane: string) => void;
     onUpdatePart: (id: string, patch: PartPatch) => void;
@@ -369,6 +371,7 @@ const Progression: React.FC<ProgressionProps> = props => {
             <div className="seq-rows">{Array.from({ length: rows }, (_, r) => renderRow(r))}</div>
 
             {selPart && props.partEditor}
+            {selPart && props.partDock}
 
             {onChords && (
                 <div className="dock" role="toolbar" aria-label="Selected chord">

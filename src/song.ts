@@ -306,7 +306,9 @@ function readNotes(v: unknown, maxTick: number): Note[] {
         const start = int(n.start, 0, maxTick, -1);
         const len = int(n.len, 1, maxTick, -1);
         if (start < 0 || len < 1 || start + len > maxTick) return [];
-        return [{ start, len, step: int(n.step, 0, MELODY_STEPS - 1, 0) }];
+        const step = int(n.step, 0, MELODY_STEPS - 1, 0);
+        // only a flat or a sharp is kept; anything else (missing, 0, 2, "#"...) is natural and left out
+        return [n.acc === 1 || n.acc === -1 ? { start, len, step, acc: n.acc } : { start, len, step }];
     });
     // one note at a time: drop any that overlaps the one before
     return notes.sort((a, b) => a.start - b.start).filter((n, i, all) => i === 0 || n.start >= all[i - 1].start + all[i - 1].len);
