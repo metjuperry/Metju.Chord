@@ -39,6 +39,9 @@ interface TopBarProps {
     onTogglePlay: () => void;
     onToggleRecord: () => void;
     onOpenSettings: () => void;
+    /** 📖 Learn: open (yellow edge while it's showing) or closed. */
+    learnOpen: boolean;
+    onToggleLearn: () => void;
 }
 
 const Chevron = () => (
@@ -51,6 +54,13 @@ export const GearIcon: React.FC<{ size?: number }> = ({ size = 16 }) => (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
         <circle cx="8" cy="8" r="2.2" />
         <path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" />
+    </svg>
+);
+
+/** 📖 an open book, for Learn. */
+export const BookIcon: React.FC<{ size?: number }> = ({ size = 16 }) => (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+        <path d="M8 4.2C6.6 3 4.6 2.6 2 2.8v9.4c2.6-.2 4.6.2 6 1.4 1.4-1.2 3.4-1.6 6-1.4V2.8c-2.6-.2-4.6.2-6 1.4zM8 4.2v9.4" />
     </svg>
 );
 
@@ -122,6 +132,17 @@ const TopBar: React.FC<TopBarProps> = p => (
                 ))}
             </nav>
         )}
+
+        <button
+            className="tb-gear tb-learn"
+            aria-label="Learn: progressions, chords, melody"
+            title="Learn: progressions, chords, melody"
+            aria-pressed={p.learnOpen}
+            onClick={p.onToggleLearn}
+        >
+            <BookIcon />
+            <span className="tb-learn-label">Learn</span>
+        </button>
 
         <button className="tb-gear" aria-label="Settings" title="Settings" aria-haspopup="dialog" onClick={p.onOpenSettings}>
             <GearIcon />

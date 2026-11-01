@@ -225,7 +225,34 @@
     }
 }
 
-/* no mode switch (desktop has its own tabs): settings goes to the right end */
-.tb-group + .tb-gear {
+/* 📖 Learn, beside ⚙ in the same style; on narrow phones just the book */
+.tb-learn {
+    width: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 10px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.tb-learn[aria-pressed='true'] {
+    border-color: var(--accent);
+}
+
+@media (max-width: 760px) {
+    .top-bar.compact .tb-learn {
+        width: 36px;
+        padding: 0;
+        justify-content: center;
+    }
+
+    .top-bar.compact .tb-learn-label {
+        display: none;
+    }
+}
+
+/* no mode switch (desktop has its own tabs): Learn and settings go to the right end */
+.tb-group + .tb-learn {
     margin-left: auto;
 }

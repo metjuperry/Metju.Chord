@@ -1,0 +1,557 @@
+/* 📖 Learn: a calm reference page. Phones: full screen over the current mode. Desktop: the right column. */
+.lp-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 11;
+    background: var(--bg);
+    display: flex;
+    padding:
+        max(6px, env(safe-area-inset-top))
+        max(6px, env(safe-area-inset-right))
+        0
+        max(6px, env(safe-area-inset-left));
+}
+
+.lp {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.lp.sheet {
+    flex: 1 1 auto;
+    width: 100%;
+    max-height: 100%;
+    animation: lp-in 0.16s ease-out;
+}
+
+@keyframes lp-in {
+    from {
+        transform: translateY(12px);
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .lp.sheet {
+        animation: none;
+    }
+}
+
+.lp-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    padding: 6px 4px 8px;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg);
+}
+
+.lp.docked {
+    padding: 0 14px 16px;
+}
+
+.lp.docked .lp-head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--panel);
+    padding: 12px 0 10px;
+}
+
+.lp-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.lp-title-row h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 18px;
+}
+
+.lp-key {
+    white-space: nowrap;
+}
+
+.lp-tabs {
+    margin-left: auto;
+    background: var(--panel-2);
+    padding: 2px;
+}
+
+.lp-tabs > button {
+    min-height: 30px;
+    padding: 0 12px;
+    white-space: nowrap;
+}
+
+.lp-close {
+    flex: 0 0 auto;
+}
+
+.lp-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding: 12px 4px calc(24px + env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    line-height: 1.5;
+}
+
+.lp.docked .lp-body {
+    overflow: visible;
+    padding: 12px 0 0;
+}
+
+.lp-body:focus {
+    outline: none;
+}
+
+/* on a wide phone (landscape) the text keeps a readable width */
+.lp.sheet .lp-body > * {
+    width: 100%;
+    max-width: 960px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.lp-lead {
+    margin: 0;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.lp-lead b {
+    color: var(--text);
+}
+
+.lp-h {
+    margin: 10px 0 0;
+    font-family: var(--font-display);
+    font-size: 15px;
+}
+
+.lp-where {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+}
+
+.lp-where .segmented > button {
+    min-height: 30px;
+}
+
+.lp-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr));
+    gap: 10px;
+}
+
+.lp-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr));
+}
+
+.lp-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.lp.docked .lp-card {
+    background: var(--panel-2);
+}
+
+.lp-card-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+}
+
+.lp-card-head h3 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 15px;
+}
+
+.lp-numerals {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted);
+}
+
+.lp-arrow,
+.lp-num {
+    width: 24px;
+    height: 24px;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--line-2);
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 13px;
+    align-self: center;
+}
+
+.lp-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.lp-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    padding: 3px 8px;
+    border: 1px solid var(--line-2);
+    border-radius: 6px;
+    background: var(--bg);
+    font-size: 13px;
+}
+
+.lp-chip.small {
+    font-size: 11px;
+    padding: 2px 6px;
+    color: var(--muted);
+}
+
+.lp-chip.small b {
+    color: var(--text);
+}
+
+.lp-times,
+.lp-pad {
+    font-size: 10px;
+    color: var(--muted);
+}
+
+.lp-fit {
+    margin: 0;
+    font-size: 11px;
+    color: var(--muted);
+}
+
+.lp-fit.needs {
+    color: var(--hot-text);
+}
+
+.lp-facts {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 12px;
+}
+
+.lp-facts > div {
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    gap: 6px;
+}
+
+.lp-facts dt {
+    color: var(--muted);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding-top: 2px;
+}
+
+.lp-facts dd {
+    margin: 0;
+}
+
+.lp-note {
+    line-height: 1.45;
+}
+
+.lp-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    margin-top: auto;
+}
+
+/* ▶ hear: a flat chip; yellow while it plays (on) */
+.lp-hear {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--line-2);
+    border-radius: 6px;
+    background: var(--panel-2);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.lp-hear > span:first-child {
+    font-size: 10px;
+}
+
+.lp-hear.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+}
+
+.lp-use {
+    min-height: 32px;
+    font-weight: 700;
+    font-size: 12px;
+}
+
+.lp-added {
+    font-size: 11px;
+    color: var(--muted);
+}
+
+.lp-link {
+    border: 0;
+    background: none;
+    padding: 0;
+    font-size: 11px;
+    font-weight: 700;
+    text-decoration: underline;
+    color: var(--text);
+}
+
+.lp-choice {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 10px;
+    border: 1px solid var(--line-2);
+    border-radius: 8px;
+    background: var(--bg);
+}
+
+.lp-choice .chip-button {
+    text-align: left;
+    font-size: 12px;
+    min-height: 36px;
+    width: 100%;
+}
+
+.lp-mood {
+    margin: 0;
+    font-weight: 700;
+    font-size: 12px;
+}
+
+.lp-text {
+    margin: 0;
+    font-size: 12px;
+}
+
+.lp-small .lp-text {
+    color: var(--muted);
+}
+
+.lp-small .lp-chips {
+    margin-top: auto;
+}
+
+/* the pads as a list: number, numeral + role, ▶ */
+.lp-pads,
+.lp-combos {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.lp-pad-row {
+    display: grid;
+    grid-template-columns: 26px 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-size: 12px;
+}
+
+.lp.docked .lp-pad-row,
+.lp.docked .lp-combo {
+    background: var(--panel-2);
+}
+
+.lp-pad-num {
+    width: 26px;
+    height: 26px;
+    display: grid;
+    place-items: center;
+    border-radius: 6px;
+    background: var(--panel-2);
+    border: 1px solid var(--line-2);
+    font-weight: 700;
+}
+
+.lp-pad-text b {
+    margin-right: 6px;
+}
+
+.lp-pad-hear {
+    display: flex;
+    gap: 4px;
+}
+
+.lp-combo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 10px;
+    padding: 8px 10px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-size: 12px;
+}
+
+.lp-combo p {
+    margin: 0;
+    flex: 1 1 260px;
+}
+
+.lp-combo-name {
+    font-size: 14px;
+}
+
+.lp-foot {
+    line-height: 1.5;
+}
+
+.lp-try {
+    margin: 0;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.lp-try b {
+    color: var(--text);
+}
+
+/* the example: a tiny read-only melody grid */
+.lp-grid-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 6px 0;
+}
+
+.lp-g-row {
+    display: grid;
+    grid-template-columns: 30px repeat(var(--cols), minmax(0, 1fr));
+    gap: 0;
+    height: 9px;
+}
+
+.lp-g-name {
+    font-size: 8px;
+    line-height: 9px;
+    color: var(--faint);
+    padding-right: 4px;
+    text-align: right;
+}
+
+.lp-g-row.tonic .lp-g-name {
+    color: var(--muted);
+}
+
+.lp-g-cell {
+    background: var(--panel-2);
+    border-left: 1px solid transparent;
+    font-size: 8px;
+    line-height: 9px;
+    color: #000;
+    overflow: visible;
+    white-space: nowrap;
+}
+
+.lp.docked .lp-g-cell {
+    background: var(--bg);
+}
+
+.lp-g-cell.beat {
+    border-left-color: var(--line);
+}
+
+.lp-g-cell.bar {
+    border-left-color: var(--line-2);
+}
+
+.lp-g-cell.tone {
+    background: var(--line);
+}
+
+.lp-g-cell.note {
+    background: var(--track);
+}
+
+.lp-g-cell.note.head {
+    border-left-color: var(--panel);
+}
+
+.lp-ex-chords {
+    flex: 1 1 auto;
+}
+
+/* narrow phones (portrait): tabs on their own line under the title */
+@media (max-width: 560px) {
+    .lp-head {
+        gap: 6px;
+    }
+
+    .lp-tabs {
+        order: 3;
+        flex: 1 1 100%;
+        margin-left: 0;
+    }
+
+    .lp-title-row {
+        flex: 1 1 auto;
+    }
+
+    .lp-tabs > button {
+        padding: 0 6px;
+    }
+}
+
+/* landscape phones: little height, so the header stays one slim line */
+@media (max-height: 440px) {
+    .lp-head {
+        padding: 2px 4px 6px;
+    }
+
+    .lp-key {
+        display: none;
+    }
+
+    .lp-body {
+        padding-top: 10px;
+    }
+}
