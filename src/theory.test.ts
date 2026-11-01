@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildChordMidi, invert, nameChord, resolveChord, toToneNotes, arpOrder, ChordType, maxInversion, stickChordType, triadQuality, romanNumeral, STICK_DIRS, SCALES, KEYS, scalePitchClasses, noteNames, voiceLead, spreadVoicing, strumOffsets, nextChords, NEXT_DEGREES, chordTags } from './theory';
+import { buildChordMidi, invert, nameChord, resolveChord, toToneNotes, arpOrder, ChordType, maxInversion, stickChordType, triadQuality, romanNumeral, STICK_DIRS, SCALES, KEYS, scalePitchClasses, noteNames, voiceLead, spreadVoicing, strumOffsets, nextChords, NEXT_DEGREES, chordTags, spellNote, spellNoteOctave } from './theory';
 
 const TYPES: ChordType[] = ['root', 'triad', 'flip', 'minor', 'dim', 'aug', 'six', 'dom7', 'diatonic7', 'diatonic9', 'sus2', 'sus4'];
 const intervals = (m: number[]) => m.map(n => n - m[0]);
@@ -398,5 +398,29 @@ describe('chordTags (the play screen\'s note tags)', () => {
 
     it('spells with flats in flat keys', () => {
         expect(chordTags('F', 'major', 3, 'triad').map(n => n.name)).toEqual(['B♭', 'D', 'F']);
+    });
+});
+
+describe('spellNote (melody accidentals, spelled as written)', () => {
+    const am = noteNames('A', 'minor');
+    it('puts the ♯ or ♭ on the scale note\'s own letter', () => {
+        expect(spellNote(am, 5, 1)).toBe('F♯'); // F in A minor, sharpened
+        expect(spellNote(am, 7, -1)).toBe('G♭'); // G flattened (sounds as F♯, still written on G)
+        expect(spellNote(am, 4, 1)).toBe('E♯'); // even when it sounds like another scale note (F)
+        expect(spellNote(am, 0, -1)).toBe('C♭');
+        expect(spellNote(am, 5, 0)).toBe('F');
+    });
+    it('cancels the key\'s own accidental instead of doubling it', () => {
+        const f = noteNames('F', 'major'); // B♭ in the key
+        expect(spellNote(f, 10, 1)).toBe('B');
+        expect(spellNote(f, 10, -1)).toBe('A'); // no double flats: the key's name for the pitch
+        const e = noteNames('E', 'major'); // F♯ in the key
+        expect(spellNote(e, 6, -1)).toBe('F');
+        expect(spellNote(e, 6, 1)).toBe('G'); // no double sharps
+    });
+    it('writes the octave of the scale note, before the accidental', () => {
+        expect(spellNoteOctave(noteNames('C', 'major'), 59, 1)).toBe('B♯3'); // sounds as C4
+        expect(spellNoteOctave(noteNames('C', 'major'), 60, -1)).toBe('C♭4'); // sounds as B3
+        expect(spellNoteOctave(am, 77, 1)).toBe('F♯5');
     });
 });

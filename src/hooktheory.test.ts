@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
     HtChord, ImportOptions, MAX_NOTES, chordTones, closestScale, fitWindows, importHooktheory, keyChoice, matchChord, monophonic,
-    parseHooktheory, parseSd, parseTonic, snapToScale,
+    parseHooktheory, parseSd, parseTonic, snapToScale, spellInScale,
 } from './hooktheory';
-import { MelodyPart, Part, melodyMidi, newPart } from './parts';
+import { MelodyPart, Part, melodyMidi, newPart, noteMidi } from './parts';
 import { Song, newSong, readSong } from './song';
-import { SCALES, ScaleId, keyPitchClass } from './theory';
+import { SCALES, ScaleId, keyPitchClass, noteNames, spellNoteOctave } from './theory';
 import { ChordClip, Clip } from './progression';
 
 // ---- fixtures: small invented lines and public-domain tunes only -----------------------------
@@ -52,8 +52,10 @@ const run = (song: Song, text: string, o: Partial<ImportOptions> = {}) => import
 const melodies = (s: Song) => s.parts.filter((p): p is MelodyPart => p.kind === 'melody');
 const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const named = (m: number) => NAMES[m % 12] + (Math.floor(m / 12) - 1);
-/** The melody of a part as note names, in time order. */
-const sung = (s: Song, p: MelodyPart) => p.notes.map(n => named(melodyMidi(p, s, n.step)));
+/** The melody of a part as the pitches it plays (sharp names), in time order. */
+const sung = (s: Song, p: MelodyPart) => p.notes.map(n => named(noteMidi(p, s, n)));
+/** The melody as the grid writes it: the scale note's letter with its ♯ / ♭ ("F♯4", "A♭4"). */
+const written = (s: Song, p: MelodyPart) => p.notes.map(n => spellNoteOctave(noteNames(s.key, s.scale), melodyMidi(p, s, n.step), n.acc ?? 0));
 const pcsOf = (tones: { pc: number }[]) => tones.map(t => NAMES[t.pc]).sort();
 const chord = (c: Partial<HtChord>): HtChord => ({
     start: 0, len: 4, rest: false, root: 0, type: 5, inversion: 0, applied: 0, adds: [], omits: [], alterations: [], suspensions: [], borrowed: null, ignored: [], ...c,
@@ -192,28 +194,73 @@ describe('pitch', () => {
         expect(sung(out, melodies(out)[0])).toEqual(['A3', 'C4', 'E4']);
     });
 
-    it('moves notes outside the scale to the nearest scale note, the lower one on a tie, and lists them', () => {
+    it('finds the nearest scale note, the lower one on a tie (snapToScale)', () => {
         expect(snapToScale(6, steps('major'))).toEqual({ index: 3, exact: false }); // F♯ → F
         expect(snapToScale(1, steps('major'))).toEqual({ index: 0, exact: false }); // C♯ → C
         expect(snapToScale(-1, steps('major'))).toEqual({ index: -1, exact: true }); // B below
         expect(snapToScale(9, steps('harmonicMinor'))).toEqual({ index: 5, exact: false }); // A in C harm. minor: A♭ (8) wins over B (11)
         expect(snapToScale(10, steps('harmonicMinor'))).toEqual({ index: 6, exact: false }); // B♭: B (11) is nearer than A♭
         expect(snapToScale(-5, steps('major'))).toEqual({ index: -3, exact: true });
+    });
 
-        const { song, summary } = run(newSong(), clipboard([[1, 1, '5'], [2, 1, '#6'], [3, 1, '#7'], [4, 1, '1', 1]], { tonic: 'A', scale: 'minor' }));
-        expect(sung(song, melodies(song)[0])).toEqual(['E5', 'F5', 'G5', 'A5']);
+    it('writes a note a semitone off the scale as a scale note with ♯ or ♭ (spellInScale)', () => {
+        const major = steps('major');
+        expect(spellInScale(4, major, 2, 0)).toEqual({ index: 2, acc: 0 }); // E is in the scale
+        // F♯ / G♭ (6): on the 4th it's a sharp, on the 5th a flat
+        expect(spellInScale(6, major, 3, 1)).toEqual({ index: 3, acc: 1 });
+        expect(spellInScale(6, major, 4, -1)).toEqual({ index: 4, acc: -1 });
+        // no spelling to go on: the way it was written, else the sharp
+        expect(spellInScale(6, major, 9, -1)).toEqual({ index: 4, acc: -1 });
+        expect(spellInScale(6, major, 9, 0)).toEqual({ index: 3, acc: 1 });
+        // octaves below and above work the same
+        expect(spellInScale(-2, major, -1, -1)).toEqual({ index: -1, acc: -1 }); // B♭ below: the 7th, flat
+        expect(spellInScale(-2, major, -2, 1)).toEqual({ index: -2, acc: 1 }); // or A♯, when written on the 6th
+        expect(spellInScale(13, major, 7, 1)).toEqual({ index: 7, acc: 1 }); // C♯ an octave up
+        // harmonic minor's 3-semitone gap: A (9) is only the ♭6 raised, B♭ (10) only the 7th lowered
+        expect(spellInScale(9, steps('harmonicMinor'), 6, 0)).toEqual({ index: 5, acc: 1 });
+        expect(spellInScale(10, steps('harmonicMinor'), 5, 0)).toEqual({ index: 6, acc: -1 });
+    });
+
+    it('keeps notes outside the scale as ♯ / ♭ on their scale degree, and lists them', () => {
+        // an invented line in A minor with the raised 6th and 7th (melodic minor going up)
+        const { song, summary } = run(newSong(), clipboard([[1, 1, '5'], [2, 1, '#6'], [3, 1, '#7'], [4, 1, '1', 1], [5, 1, '#6'], [9, 1, 'b2']], { tonic: 'A', scale: 'minor' }));
+        const [m] = melodies(song);
+        expect(sung(song, m)).toEqual(['E5', 'F#5', 'G#5', 'A5', 'F#5', 'A#4']);
+        expect(written(song, m)).toEqual(['E5', 'F♯5', 'G♯5', 'A5', 'F♯5', 'B♭4']);
+        // stored as the scale step plus an accidental, the naturals with no field at all
+        expect(m.notes.map(n => n.acc)).toEqual([undefined, 1, 1, undefined, 1, -1]);
+        expect(summary.warnings.some(x => /moved to the nearest/.test(x.text))).toBe(false);
         const w = summary.warnings.find(x => /outside A minor/.test(x.text))!;
-        expect(w.text).toMatch(/^2 notes/);
-        expect(w.details).toEqual(['F♯ → F at bar 1', 'G♯ → G at bar 1']);
+        expect(w.text).toMatch(/^4 notes outside A minor kept with a ♯ or ♭/);
+        expect(w.details).toEqual(['2 notes kept as F♯ (bars 1, 2)', '1 note kept as G♯ (bar 1)', '1 note kept as B♭ (bar 3)']);
+    });
+
+    it('an altered note follows key changes as a scale step: F♯ in A minor becomes C♯ in E minor', () => {
+        const { song } = run(newSong(), clipboard([[1, 1, '#6']], { tonic: 'A', scale: 'minor' }));
+        const [m] = melodies(song);
+        expect(written(song, m)).toEqual(['F♯5']);
+        const inE = { ...song, key: 'E' as const };
+        expect(written(inE, m)).toEqual(['C♯5']);
+        expect(sung(inE, m)).toEqual(['C#5']);
+    });
+
+    it('keeping the song’s key puts the alteration on the same degree of the song’s key', () => {
+        const text = clipboard([[1, 1, '1'], [2, 1, '#4'], [3, 1, '5']], { tonic: 'D', scale: 'major' });
+        const { song } = run(newSong(), text, { keyMode: 'song' });
+        expect(written(song, melodies(song)[0])).toEqual(['C4', 'F♯4', 'G4']);
+        // and a relative key keeps its pitches: the ♯6 of A minor is F♯ in C major too
+        const rel = run(newSong(), clipboard([[1, 1, '#6']], { tonic: 'A', scale: 'minor' }), { keyMode: 'song' }).song;
+        expect(written(rel, melodies(rel)[0])).toEqual(['F♯4']);
     });
 
     it('reads a scale the app lacks in its own notes, then fits it into the closest one', () => {
-        // D locrian 1 ♭2 ♭3 4 ♭5: everything but the ♭5 is in D phrygian
+        // D locrian 1 ♭2 ♭3 4 ♭5: everything but the ♭5 is in D phrygian; the ♭5 stays, as A♭ (the 5th, flat)
         const { song, summary } = run(newSong(), clipboard([[1, 1, '1'], [2, 1, '2'], [3, 1, '3'], [4, 1, '5']], { tonic: 'D', scale: 'locrian' }));
         expect(song.scale).toBe('phrygian');
-        expect(sung(song, melodies(song)[0])).toEqual(['D4', 'D#4', 'F4', 'G4']);
+        expect(sung(song, melodies(song)[0])).toEqual(['D4', 'D#4', 'F4', 'G#4']);
+        expect(written(song, melodies(song)[0])).toEqual(['D4', 'E♭4', 'F4', 'A♭4']);
         expect(summary.warnings.map(w => w.text).join(' ')).toMatch(/no locrian scale; the closest it has is phrygian/);
-        expect(summary.warnings.find(w => /outside/.test(w.text))?.details).toEqual(['A♭ → G at bar 1']);
+        expect(summary.warnings.find(w => /outside/.test(w.text))?.details).toEqual(['1 note kept as A♭ (bar 1)']);
     });
 });
 

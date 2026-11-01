@@ -1,6 +1,6 @@
-import { ChordType, KEYS, MusicalKey, SCALES, ScaleId, buildChordMidi, keyPitchClass, noteNames, resolveChord, scaleLabel } from './theory';
+import { ChordType, KEYS, MusicalKey, SCALES, ScaleId, buildChordMidi, keyPitchClass, noteNames, resolveChord, scaleLabel, spellNote } from './theory';
 import { Clip, place } from './progression';
-import { MAX_PARTS, MELODY_STEPS, MelodyPart, Note, Part, newPart } from './parts';
+import { Accidental, MAX_PARTS, MELODY_STEPS, MelodyPart, Note, Part, newPart, withAcc } from './parts';
 import { Song, stepsPerRow, ticksPerBar, ticksPerStep } from './song';
 import { TICKS_PER_SIXTEENTH } from './drums';
 
@@ -344,6 +344,29 @@ export function snapToScale(semis: number, steps: number[]): { index: number; ex
     return { index: best, exact: bestDist === 0 };
 }
 
+/**
+ * Write `semis` semitones above the tonic as a scale index plus at most one ♯ or ♭. A scale note is
+ * itself (natural). A note a semitone off the scale is kept: as the scale note below raised or the
+ * one above lowered. Where both work, the one on `written` (the scale index the paste spelled it
+ * on: "#4" is on the 4th) wins, else the direction it was written in (`shift`), else the sharp.
+ * Only when neither neighbour is a semitone away (not possible in the app's scales, whose steps are
+ * at most 3 semitones) does it fall back to snapping, and `acc` is null.
+ */
+export function spellInScale(semis: number, steps: number[], written: number, shift: number): { index: number; acc: Accidental | null } {
+    const snap = snapToScale(semis, steps);
+    if (snap.exact) return { index: snap.index, acc: 0 };
+    const below = snapToScale(semis - 1, steps);
+    const above = snapToScale(semis + 1, steps);
+    const sharp = below.exact ? { index: below.index, acc: 1 as const } : null;
+    const flat = above.exact ? { index: above.index, acc: -1 as const } : null;
+    if (sharp && flat) {
+        if (sharp.index === written) return sharp;
+        if (flat.index === written) return flat;
+        return shift < 0 ? flat : sharp;
+    }
+    return sharp ?? flat ?? { index: snap.index, acc: null };
+}
+
 /** -6…5: the nearest way to move from one pitch class to another. */
 const nearest = (semis: number) => ((((semis + 6) % 12) + 12) % 12) - 6;
 
@@ -493,6 +516,8 @@ interface Placed {
     len: number;
     /** Scale index from the target tonic in app octave 4 (Hooktheory octave 0). */
     index: number;
+    /** ♯ / ♭ on that scale note (a note a semitone off the scale), 0 natural. */
+    acc?: Accidental;
     /** Semitones above that tonic before snapping, to pick the highest of overlapping notes. */
     semis: number;
 }
@@ -652,18 +677,20 @@ export function importHooktheory(song: Song, clip: HtClip, opts: ImportOptions):
         for (const n of clip.notes) {
             const f = frame(n.start);
             const semis = f.offset + pitchOf(f.steps, n.degree) + n.shift + 12 * n.octave;
-            const snap = snapToScale(semis, targetSteps);
+            // the scale index the paste wrote it on: its degree, counted from where its tonic sits in the target scale
+            const written = snapToScale(f.offset, targetSteps).index + n.degree + 7 * n.octave;
+            const spelled = spellInScale(semis, targetSteps, written, n.shift);
             const rawStart = n.start * beat;
             const rawLen = n.len * beat;
             const start = Math.round(rawStart / TICKS_PER_SIXTEENTH) * TICKS_PER_SIXTEENTH;
             const len = Math.max(TICKS_PER_SIXTEENTH, Math.round(rawLen / TICKS_PER_SIXTEENTH) * TICKS_PER_SIXTEENTH);
             if (Math.abs(start - rawStart) > 1e-6 || Math.abs(len - rawLen) > 1e-6) offGrid++;
-            if (!snap.exact) {
+            const naturalPc = (targetPc + pitchOf(targetSteps, spelled.index) + 1200) % 12;
+            if (spelled.acc === null) {
                 const from = names[(((targetPc + semis) % 12) + 12) % 12];
-                const to = names[(targetPc + pitchOf(targetSteps, snap.index) + 1200) % 12];
-                chromatic.push(`${from} → ${to} at bar ${barOf(start)}`);
+                chromatic.push(`${from} → ${names[naturalPc]} at bar ${barOf(start)}`);
             }
-            placed.push({ start, len, index: snap.index, semis });
+            placed.push({ start, len, index: spelled.index, acc: spelled.acc ?? 0, semis });
         }
     }
     const { kept, dropped: overlapped } = monophonic(placed);
@@ -706,7 +733,7 @@ export function importHooktheory(song: Song, clip: HtClip, opts: ImportOptions):
             ks.forEach((k, i) => {
                 const notes: Note[] = inSong
                     .filter((_, j) => windows[j] === k)
-                    .map(n => ({ start: at + n.start, len: n.len, step: n.index - 7 * k }));
+                    .map(n => withAcc({ start: at + n.start, len: n.len, step: n.index - 7 * k } as Note, n.acc ?? 0));
                 const octave = 4 + k + shift;
                 const reuse = empty[i];
                 const part: MelodyPart = reuse
@@ -786,6 +813,23 @@ export function importHooktheory(song: Song, clip: HtClip, opts: ImportOptions):
     if (!first.known) warnings.push({ text: `Hooktheory’s “${first.scaleName}” scale isn’t one this app knows; it was read as major.` });
     else if (!first.exact) warnings.push({ text: `The app has no ${first.scaleName.replace(/([A-Z])/g, ' $1').toLowerCase()} scale; the closest it has is ${scaleLabel(first.scale).toLowerCase()}, so its odd notes are moved to it.` });
     if (clip.keys.length > 1) warnings.push({ text: `The paste changes key ${plural(clip.keys.length - 1, 'time')}; everything is fitted into ${target.label}.` });
+    // notes kept a semitone off the scale, by name as written ("F♯"), counted over the notes that went in
+    const keptAs = new Map<string, number[]>();
+    for (const x of inSong) {
+        if (!x.acc) continue;
+        const name = pretty(spellNote(noteNames(target.key, target.scale), (targetPc + pitchOf(targetSteps, x.index) + 1200) % 12, x.acc));
+        keptAs.set(name, [...(keptAs.get(name) ?? []), barOf(x.start)]);
+    }
+    if (keptAs.size) {
+        const total = [...keptAs.values()].reduce((a, b) => a + b.length, 0);
+        warnings.push({
+            text: `${plural(total, 'note')} outside ${target.label} kept with a ♯ or ♭, on the row of the scale note:`,
+            details: capped([...keptAs.entries()].map(([name, bars]) => {
+                const where = [...new Set(bars)];
+                return `${plural(bars.length, 'note')} kept as ${name} (bar${where.length === 1 ? '' : 's'} ${where.join(', ')})`;
+            })),
+        });
+    }
     if (chromatic.length) warnings.push({ text: `${plural(chromatic.length, 'note')} outside ${target.label} ${chromatic.length === 1 ? 'was' : 'were'} moved to the nearest note of the scale (between two, the lower):`, details: capped(chromatic) });
     if (offGrid) warnings.push({ text: `${plural(offGrid, 'note')} didn’t sit on the 1/16 grid and ${offGrid === 1 ? 'was' : 'were'} moved to the nearest 1/16.` });
     if (overlapped) warnings.push({ text: `${plural(overlapped, 'overlapping note')} dropped: a Melody part plays one note at a time, so the highest was kept.` });

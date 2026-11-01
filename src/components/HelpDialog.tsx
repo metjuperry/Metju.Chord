@@ -31,7 +31,8 @@ const SHORTCUTS: [string, string][] = [
     ['[  ]', 'Shorten / lengthen the selected chord'],
     ['/', 'Split the selected chord at the cursor'],
     ['.', 'Make the selected beat a rest (then pick which parts keep playing through it)'],
-    ['⌫', 'Delete the selected chord'],
+    ['⌫', 'Delete the selected chord (or the selected melody note)'],
+    ['Shift ↑ / Shift ↓', 'With a melody note selected: sharpen / flatten it (♭ → ♮ → ♯)'],
     ['Ctrl/⌘ Z', 'Undo'],
     ['Shift Ctrl/⌘ Z  ·  Ctrl Y', 'Redo'],
     ['Esc', 'Centre the stick, close a panel'],
@@ -64,14 +65,24 @@ const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose }) => {
                         the notes the stick added yellow) and the chords that often come next. The strip under it sets the octave, inversion,
                         voice leading, and which part the pads play through (<b>Pads →</b>).</dd>
                     <dt><b>Song</b></dt>
-                    <dd><i>What</i> plays: the chord row the pads record into, and a lane per part. Tap a lane's name to edit that part's notes or
-                        beat below; <b>M</b> / <b>S</b> mute and solo it. The chord tools stay docked at the bottom. New, open, save, share and Paste from
-                        Hooktheory are in the Song menu.</dd>
+                    <dd><i>What</i> plays, in <b>sections</b> (verse, chorus…) put in order in the <b>chain</b>. The song view shows the sections as
+                        tiles (tap one to open it; long-press or ⋯ to rename, duplicate, delete or add it to the chain) and the chain as blocks
+                        (tap to open that section, or while the chain plays to jump there; long-press to move, duplicate or remove; + adds the open
+                        section). <b>Chain</b> plays the sections in order; <b>Loop</b> loops the open one, and picking another while it plays
+                        switches at the next bar line. Record works in Loop (in Chain it switches to Loop first).
+                        Inside a section: the chord row the pads record into and a lane per part. Tap a lane's name to edit that part's notes or
+                        beat below; its <b>M</b> mutes it in this section only. The chord tools stay docked at the bottom. ‹ › and the section name
+                        switch sections; ‹ Song goes back. New, open, save, share and Paste from Hooktheory (into the open section) are in the Song menu.</dd>
                     <dt><b>Parts</b></dt>
                     <dd><i>How</i> it sounds: every part with its volume, mute and solo, and for the selected one its instrument, how it plays
-                        (chord, strum, arpeggio; bass style; melody range), tone knobs and effects. <b>Master</b> holds the shared reverb, delay and output.</dd>
+                        (chord, strum, arpeggio; bass style; melody range), tone knobs and effects. <b>Master</b> holds the shared reverb, delay and output. Mute and solo here are for the whole song.</dd>
+                    <dt><b>Desktop</b></dt>
+                    <dd>On a wide screen the instrument stays on the left and Song and Parts are tabs on the right.</dd>
+                    <dt><b>Learn</b></dt>
+                    <dd>A reference for a blank song: chord progressions in your key (hear one, or put it into the open section), what each
+                        stick direction and pad tends to sound like, and short melody guidelines with tiny examples. On desktop it opens on the right.</dd>
                     <dt><b>⚙</b></dt>
-                    <dd>Theme, the click, the next-chord hint, this help and the credits.</dd>
+                    <dd>Theme, the click, the next-chord hint, the chord mood in Play mode, this help and the credits.</dd>
                 </dl>
 
                 <h3 className="eyebrow">The stick</h3>
@@ -96,8 +107,19 @@ const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose }) => {
                 <h3 className="eyebrow">Notes mode</h3>
                 <p className="section-note">
                     Switch the pads from Chords to Notes (or press N) and they play single notes of the key on your Melody part,
-                    1–7 up the scale; push the stick up for the octave above. With Record on, a stopped song writes each note at the
-                    cursor (length set in the Melody editor) and moves on; a playing song records notes where you play them, snapped to 1/16.
+                    1–7 up the scale. The stick changes the note: <b>↑</b> the octave above (8va), <b>→</b> sharp (♯), <b>←</b> flat (♭),
+                    and <b>↗</b> / <b>↖</b> both (octave up and sharp / flat), so an F♯ in A minor is pad 6 with the stick right. The lower
+                    three directions do nothing here. With Record on, a stopped song writes each note at the cursor (length set in the
+                    Melody editor) and moves on; a playing song records notes where you play them, snapped to 1/16. Sharps and flats are
+                    recorded too.
+                </p>
+
+                <h3 className="eyebrow">Melody grid</h3>
+                <p className="section-note">
+                    One row per note of the scale. Tap an empty cell to add a note, tap a note to select it (yellow edge), tap it again to
+                    remove it. With a note selected, <b>♭ ♮ ♯</b> in the toolbar at the bottom (or <kbd>Shift ↑</kbd> / <kbd>Shift ↓</kbd>)
+                    make it a semitone lower or higher: it stays on its row with a small ♯ or ♭ and is named as written (F♯, G♭). It's still
+                    that scale note, so it moves with the key: F♯ in A minor becomes C♯ in E minor.
                 </p>
 
                 <h3 className="eyebrow">The chord row</h3>

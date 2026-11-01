@@ -196,6 +196,14 @@
     white-space: nowrap;
 }
 
+/* Notes mode: "8va", "♯", "♭" as written, big enough to read the accidental */
+.dir-rule.note-rule {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
 .stick-dir.active {
     color: var(--cap-ink);
 }
@@ -536,7 +544,8 @@
 }
 
 .ci-symbol {
-    flex: 0 1 auto;
+    flex: 0 0 auto;
+    max-width: 50%;
     min-width: 0;
     font-family: var(--font-display);
     font-size: 34px;
@@ -634,8 +643,11 @@
     flex: 0 1 auto;
     min-width: 0;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 5px;
+    gap: 0 5px;
+    /* one line: cards that don't fit drop out whole instead of being cut */
+    height: 34px;
     overflow: hidden;
 }
 
@@ -892,4 +904,11 @@
     .device.compact .ci-next-label {
         display: inline;
     }
+}
+
+/* short pads: the numeral sits above the chord name, so the name gets the whole width */
+.pad.upper .pad-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
 }

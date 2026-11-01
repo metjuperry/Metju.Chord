@@ -11,10 +11,12 @@ import IntroScreen, { IntroPhase } from './components/IntroScreen';
 import MelodyEditor from './components/MelodyEditor';
 import PartsView, { MASTER, instrumentLabel } from './components/PartsView';
 import SettingsSheet, { CreditsDialog } from './components/SettingsSheet';
+import LearnPanel, { HearEvent, UseHow } from './components/LearnPanel';
+import { LearnTab, Progression as LearnProgression, chordMood, fitProgression, insertProgression, progressionClips } from './learn';
 import {
-    ChordParams, ChordType, KEYS, ResolvedChord, StickDir,
+    ChordParams, ChordType, KEYS, NoteTag, ResolvedChord, StickDir, scaleLabel,
     STICK_DIRS, ScaleId, buildChordMidi, chordTags, keyPitchClass, resolveChord, romanNumeral, scalePitchClasses,
-    nextChords, noteNames, stickChordType, strumOffsets, triadQuality, voiceLead,
+    nextChords, noteNames, spellNoteOctave, stickChordType, strumOffsets, triadQuality, voiceLead,
 } from './theory';
 import { getEngine } from './audio/engine';
 import { useHistory } from './useHistory';
@@ -23,18 +25,24 @@ import SongMenu, { UndoRedo } from './components/SongMenu';
 import HooktheoryDialog from './components/HooktheoryDialog';
 import { HtClip, ImportOptions, ImportSummary, importHooktheory } from './hooktheory';
 import {
-    STORAGE_KEY, SAVE_VERSION, SavedState, Song, ThemeSetting, TimeSignature, changeTimeSignature, decodeShare, defaultSettings, encodeShare,
-    isCompound, newSong, readSaved, stepsPerRow, ticksPerBar, ticksPerStep, transportBpm,
+    FullSong, LEGACY_STORAGE_KEY, PlaybackMode, STORAGE_KEY, SAVE_VERSION, SavedState, Song, ThemeSetting, decodeShare, defaultSettings, encodeShare,
+    isCompound, newFullSong, readSaved, stepsPerRow, ticksPerBar, ticksPerStep, transportBpm,
 } from './song';
+import {
+    ChainSlot, addSection, appendToChain, applySectionEdit, chainCount, chainLayout, changeSongTimeSignature, clearSections, deleteSection,
+    duplicateEntry, duplicateSection, findSection, moveEntry, removeEntry, renameSection, sectionView, sectionsHaveContent, setSectionMute, slotAt,
+} from './sections';
+import { Scheduled, chainEvents, kickTicks, sectionEvents, sectionLoopLength, sectionMusicEnd } from './playback';
+import SongView from './components/SongView';
+import SectionSwitcher from './components/SectionSwitcher';
 import { Clip, clipAt, fitTo, isChordClip, place, remove, setLength, split } from './progression';
 import {
-    ChordPart, Harmony, MAX_PARTS, MelodyPart, Part, PartFx, PartKind, PartTone, noFx,
-    audibleParts, fitNotes, hasInstrument, melodyMidi, musicEnd, musicLoopEnd, newPart, noteAt, outsideRests, partNotes, placeNote, removeNote, resolveClip,
-    restSpans,
+    Accidental, ChordPart, Harmony, MAX_PARTS, MelodyPart, Note, Part, PartFx, PartKind, PartTone, noFx,
+    fitNotes, hasInstrument, melodyMidi, newPart, noteAt, noteMidi, partNotes, placeNote, removeNote, resolveClip, withAcc,
 } from './parts';
 import { SeqEvent, SeqOptions, SequencerPlayer, ticksToSeconds } from './audio/sequencer';
 import {
-    DrumPattern, DrumVoice, PatternBars, TICKS_PER_SIXTEENTH, emptyPattern, expandPattern, hasHit, presetsFor, setBars,
+    DrumPattern, DrumVoice, PatternBars, TICKS_PER_SIXTEENTH, emptyPattern, hasHit, presetsFor, setBars,
     sixteenthsPerBar, sixteenthsPerStep, toggleHit,
 } from './drums';
 import { CHORD_LANE, MiniNote, PartPatch } from './components/Progression';
@@ -54,14 +62,6 @@ const MELODY_OCT_MIN = 3;
 const MELODY_OCT_MAX = 5;
 const MAX_INVERSION = 3;
 
-/** What the sequencer schedules: some notes or a drum hit, and the part that plays them. */
-type Scheduled =
-    | { midi: number[]; gate?: number; strum?: number[]; legato: number; part: string; drum?: undefined }
-    | { drum: DrumVoice; part: string };
-
-/** How much of each note's length it actually sounds, so repeated notes are struck rather than smeared. */
-const LEGATO: { [k in Exclude<PartKind, 'drums'>]: number } = { chords: 0.98, bass: 0.85, melody: 0.95 };
-
 /** Keep the engine's strips in step with the parts: an instrument per instrument part, a kit per drum part. */
 function syncParts(engine: ReturnType<typeof getEngine>, parts: Part[]) {
     parts.forEach(p => (hasInstrument(p)
@@ -69,19 +69,8 @@ function syncParts(engine: ReturnType<typeof getEngine>, parts: Part[]) {
         : engine.setDrumTrack(p.id, { volume: p.volume, fx: p.fx })));
 }
 
-/**
- * Every kick hit of the song's drum parts, in song ticks up to `end`, for a bass that follows the
- * kick. Muted drums still count: muting the drums shouldn't rewrite the bass line.
- */
-function kickTicks(parts: Part[], ts: TimeSignature, end: number): number[] {
-    return parts.flatMap(p => (p.kind === 'drums' ? expandPattern(p.drums, ts, end).filter(h => h.voice === 'kick').map(h => h.tick) : []));
-}
-
-interface PlayState { chords: Clip[]; parts: Part[]; barTicks: number; stepTicks: number; total: number; loop: boolean }
-/** Where looping playback wraps: the end of the music, rounded up to a bar, but never past the sequencer's length. */
-const loopLength = (s: PlayState) => Math.min(musicLoopEnd(s.chords, s.parts, s.barTicks), s.total * s.stepTicks);
-/** How far playback goes before it wraps or stops. */
-const playLength = (s: PlayState) => (s.loop ? loopLength(s) : musicEnd(s.chords, s.parts, s.barTicks));
+/** How far a section plays on its own (Loop mode) before it wraps, or stops when loop is off. */
+const playLength = (view: Song, loop: boolean) => (loop ? sectionLoopLength(view) : sectionMusicEnd(view));
 
 /**
  * A chord for the intro: a random press on the instrument itself. Any key, any of the 7 pads,
@@ -99,7 +88,8 @@ function introChord(scale: ScaleId): { name: string; midi: number[] } {
 /** The song and settings saved in this browser, if any. */
 function loadSaved(): SavedState | null {
     try {
-        const raw = localStorage.getItem(STORAGE_KEY);
+        // version 3; before that the song lived under the v2 key, and is moved into one section
+        const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
         return raw ? readSaved(JSON.parse(raw)) : null;
     } catch {
         return null;
@@ -117,12 +107,15 @@ interface Shown {
     type?: ChordType;
     /** A single melody note (Notes mode) rather than a chord. */
     note?: boolean;
+    /** That note's accidental (the stick's → / ←). */
+    acc?: Accidental;
 }
 
 /** A note being recorded live (while the song plays): where it started, in 1/16s, and what it is. */
 interface LiveNote {
     start16: number;
     step: number;
+    acc: Accidental;
     part: string;
 }
 
@@ -135,8 +128,39 @@ interface Hold {
 /** What the pads play: chords (with the stick), or single melody notes on the melody part. */
 export type PadMode = 'chords' | 'notes';
 
-/** A melody note's name with its octave, e.g. "E4". */
-const noteLabel = (midi: number, names: string[]) => `${names[midi % 12]}${Math.floor(midi / 12) - 1}`;
+/**
+ * What the stick does to a pad in Notes mode: ↑ the octave above, → sharp, ← flat, and the upper
+ * diagonals both (↗ octave up + sharp, ↖ octave up + flat). The lower directions do nothing.
+ */
+const NOTE_STICK: { [d in StickDir]: { octave: boolean; acc: Accidental } | null } = {
+    C: { octave: false, acc: 0 }, U: { octave: true, acc: 0 }, R: { octave: false, acc: 1 }, L: { octave: false, acc: -1 },
+    UR: { octave: true, acc: 1 }, UL: { octave: true, acc: -1 }, D: null, DR: null, DL: null,
+};
+/** The small label under each stick direction in Notes mode. */
+const NOTE_STICK_RULES: Partial<Record<StickDir, string>> = { C: 'Note', U: '8va', R: '♯', L: '♭', UR: '8va ♯', UL: '8va ♭' };
+/** The same, read out by screen readers. */
+const NOTE_STICK_ARIA: Partial<Record<StickDir, string>> = {
+    C: 'note', U: 'octave up', R: 'sharp', L: 'flat', UR: 'octave up and sharp', UL: 'octave up and flat',
+};
+/** The melody row and accidental a pad plays in Notes mode with the stick in `dir`. */
+const noteFor = (degree: number, dir: StickDir): { step: number; acc: Accidental } => {
+    const m = NOTE_STICK[dir] ?? NOTE_STICK.C!;
+    return { step: degree + (m.octave ? 7 : 0), acc: m.acc };
+};
+/** What the chord info says the stick did to a note. */
+const noteTypeLabel = (dir: StickDir, acc: Accidental) =>
+    [NOTE_STICK[dir]?.octave ? 'octave up' : '', acc > 0 ? 'sharp' : acc < 0 ? 'flat' : ''].filter(Boolean).join(' · ') || 'scale note';
+
+/**
+ * A note shown in its scale (the chord info in Notes mode): the scale's notes, the one played dark.
+ * An altered note isn't in the scale, so it's slotted in beside its scale note (after it when sharp,
+ * before it when flat) and marked like a note the stick added.
+ */
+function noteScaleTags(pcs: number[], names: string[], playedPc: number, degree: number, acc: Accidental, symbol: string): NoteTag[] {
+    const tags: NoteTag[] = pcs.map(pc => ({ name: names[pc], role: !acc && pc === playedPc ? 'root' : 'triad' }));
+    if (acc) tags.splice(degree + (acc > 0 ? 1 : 0), 0, { name: symbol.replace(/-?\d+$/, ''), role: 'added' });
+    return tags;
+}
 
 const App: React.FC = () => {
     // ---- settings ---------------------------------------------------------------
@@ -158,6 +182,10 @@ const App: React.FC = () => {
     const [htOpen, setHtOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [creditsOpen, setCreditsOpen] = useState(false);
+    /** 📖 Learn: the reference page (over everything on phones, in the right column on desktop) and its last tab. */
+    const [learnOpen, setLearnOpen] = useState(false);
+    const [learnTab, setLearnTab] = useState<LearnTab>(initial.learnTab);
+    const [chordMoodOn, setChordMoodOn] = useState(initial.chordMood);
 
     // ---- stick: a latched direction (mouse) and momentary ones (held keys) --------
     const [latchedDir, setLatchedDir] = useState<StickDir>('C');
@@ -175,11 +203,29 @@ const App: React.FC = () => {
     const [held, setHeld] = useState<number[]>([]);
     const [shown, setShown] = useState<Shown | null>(null);
 
-    // ---- progression ----------------------------------------------------------------
-    // The song is everything undo/redo and saving cover: tracks, length, tempo, time signature
-    const history = useHistory<Song>(() => saved?.song ?? newSong());
-    const song = history.state;
-    const editSong = history.commit;
+    // ---- the song, its sections, and the open section ---------------------------------
+    // The song is everything undo/redo and saving cover: parts, sections, chain, tempo, time signature
+    const history = useHistory<FullSong>(() => saved?.song ?? newFullSong());
+    const full = history.state;
+    /** The section open in Song (and looped in Loop mode). Which one it is is a setting, not undoable. */
+    const [openId, setOpenId] = useState(initial.openSection);
+    const openKey = findSection(full, openId).id;
+    const openRef = useRef(openKey);
+    openRef.current = openKey;
+    /** The open section as an ordinary single-section song: everything below edits and plays this. */
+    const song = useMemo(() => sectionView(full, openKey), [full, openKey]);
+    /** Edit the open section (and anything song-wide) through its view; the edit is written back into the section. */
+    const editSong = useCallback((update: (s: Song) => Song, mergeKey?: string) => history.commit(f => {
+        const id = findSection(f, openRef.current).id;
+        const view = sectionView(f, id);
+        const next = update(view);
+        return next === view ? f : applySectionEdit(f, id, next);
+    }, mergeKey), [history.commit]);
+    /** Edit the whole song: sections, chain, every section at once. */
+    const editFull = history.commit;
+    const [playMode, setPlayModeState] = useState<PlaybackMode>(initial.playMode);
+    /** Song mode shows the whole song (sections and chain) or zooms into the open section. */
+    const [songZoom, setSongZoom] = useState<'song' | 'section'>('song');
     const { chords, parts, steps: total, bpm, timeSignature: ts, key: selectedKey, scale } = song;
     const harmony: Harmony = useMemo(() => ({ chords, key: selectedKey, scale }), [chords, selectedKey, scale]);
     // One step is one beat of the time signature; rows hold whole bars
@@ -217,6 +263,8 @@ const App: React.FC = () => {
     const [melodyLen, setMelodyLen] = useState(2);
     /** Where the next step-recorded note goes, in 1/16s from the top. */
     const [melCursor, setMelCursor] = useState(0);
+    /** The melody note selected in the grid (its part and start tick: one note at a time, so that's unique). */
+    const [selNoteKey, setSelNoteKey] = useState<{ part: string; start: number } | null>(null);
     const pickLane = (lane: string) => {
         setSelectedLane(lane);
         const kind = parts.find(p => p.id === lane)?.kind;
@@ -253,7 +301,7 @@ const App: React.FC = () => {
     // Latest state for Transport callbacks and the global key handler
     const liveState = {
         ts, stepTicks: T, barTicks, selectedKey, scale, voiceLeading, octave, inversion, stickDir, padPart, chords, parts, total, selected, loop, recording,
-        padMode, padMelody, melodyLen, melCursor, playing, clickAccent,
+        padMode, padMelody, melodyLen, melCursor, playing, clickAccent, full, view: song,
     };
     const live = useRef(liveState);
     live.current = liveState;
@@ -320,22 +368,21 @@ const App: React.FC = () => {
     /** Chords strummed live, so an alternating strum goes down, up, down... */
     const strumHits = useRef(0);
 
-    /** The melody row a pad plays in Notes mode: its scale degree, an octave up with the stick pushed up. */
-    const noteStep = (degree: number, dir: StickDir) => degree + (dir === 'U' ? 7 : 0);
-
     /** Start a chord (or, in Notes mode, a melody note) sounding; returns how to stop it. */
-    const sound = (degree: number): { params?: ChordParams; step?: number; stop: () => void } => {
+    const sound = (degree: number): { params?: ChordParams; step?: number; acc?: Accidental; stop: () => void } => {
         const s = live.current;
         if (s.padMode === 'notes' && s.padMelody) {
-            const step = noteStep(degree, s.stickDir);
-            const midi = melodyMidi(s.padMelody, { key: s.selectedKey, scale: s.scale }, step);
-            const name = noteLabel(midi, noteNames(s.selectedKey, s.scale));
+            const { step, acc } = noteFor(degree, s.stickDir);
+            const h = { key: s.selectedKey, scale: s.scale };
+            const midi = melodyMidi(s.padMelody, h, step, acc);
+            // spelled on the scale note's letter: F + ♯ is F♯, G + ♭ is G♭
+            const name = spellNoteOctave(noteNames(s.selectedKey, s.scale), melodyMidi(s.padMelody, h, step), acc);
             const stop = getEngine().attack([midi], undefined, s.padMelody.id);
             setShown({
                 chord: { midi: [midi], rootPc: midi % 12, notes: [name], name: { symbol: name, long: `Note ${name}` } },
-                degree, scale: s.scale, dir: s.stickDir, inversion: 0, note: true,
+                degree, scale: s.scale, dir: s.stickDir, inversion: 0, note: true, acc,
             });
-            return { step, stop };
+            return { step, acc, stop };
         }
         let params = paramsFor(degree, s.stickDir, s);
         if (s.voiceLeading) {
@@ -363,17 +410,17 @@ const App: React.FC = () => {
     const syncHeld = () => setHeld(Array.from(holds.current.values()).map(h => h.degree));
 
     /** Write a melody note into a melody part (newest wins: it trims or replaces what it lands on). */
-    const writeNote = (partId: string, start16: number, len16: number, step: number) => {
+    const writeNote = (partId: string, start16: number, len16: number, step: number, acc: Accidental = 0) => {
         const total16 = live.current.total * live.current.stepTicks / TICKS_PER_SIXTEENTH;
         const len = Math.min(len16, total16 - start16);
         if (len <= 0) return;
-        const note = { start: start16 * TICKS_PER_SIXTEENTH, len: len * TICKS_PER_SIXTEENTH, step };
+        const note = withAcc({ start: start16 * TICKS_PER_SIXTEENTH, len: len * TICKS_PER_SIXTEENTH, step } as Note, acc);
         setParts(ps => ps.map(p => (p.id === partId && p.kind === 'melody' ? { ...p, notes: placeNote(p.notes, note) } : p)));
     };
 
     const pressPad = (id: string, degree: number) => {
         if (!audioReady || holds.current.has(id)) return;
-        const { params, step, stop } = sound(degree);
+        const { params, step, acc = 0, stop } = sound(degree);
         const hold: Hold = { degree, stop };
         holds.current.set(id, hold);
         syncHeld();
@@ -386,10 +433,10 @@ const App: React.FC = () => {
             const pos = s.playing ? player.current?.position() : null;
             if (pos !== null && pos !== undefined) {
                 // live: the note starts on the nearest 1/16 and lasts until the pad is let go
-                hold.rec = { start16: Math.round(pos / TICKS_PER_SIXTEENTH) % total16, step, part: s.padMelody.id };
+                hold.rec = { start16: Math.round(pos / TICKS_PER_SIXTEENTH) % total16, step, acc, part: s.padMelody.id };
             } else {
                 // step recording: a note of the chosen length at the cursor, then the cursor moves on
-                writeNote(s.padMelody.id, s.melCursor, s.melodyLen, step);
+                writeNote(s.padMelody.id, s.melCursor, s.melodyLen, step, acc);
                 const next = Math.min(s.melCursor + s.melodyLen, total16 - 1);
                 setMelCursor(next);
                 setSelected(Math.floor(next / perStep));
@@ -415,12 +462,12 @@ const App: React.FC = () => {
             const pos = player.current?.position();
             let len16 = s.melodyLen;
             if (pos !== null && pos !== undefined) {
-                const loop16 = loopLength(s) / TICKS_PER_SIXTEENTH;
+                const loop16 = sectionLoopLength(s.view) / TICKS_PER_SIXTEENTH;
                 let end16 = Math.round(pos / TICKS_PER_SIXTEENTH);
                 if (end16 < hold.rec.start16) end16 += loop16; // the loop wrapped while the pad was held
                 len16 = Math.max(1, end16 - hold.rec.start16);
             }
-            writeNote(hold.rec.part, hold.rec.start16, len16, hold.rec.step);
+            writeNote(hold.rec.part, hold.rec.start16, len16, hold.rec.step, hold.rec.acc);
         }
     };
 
@@ -434,28 +481,50 @@ const App: React.FC = () => {
         if (!audioReady || holds.current.size === 0) return;
         holds.current.forEach((hold, id) => {
             hold.stop();
-            holds.current.set(id, { degree: hold.degree, stop: sound(hold.degree).stop });
+            const now = sound(hold.degree);
+            // a note being recorded live keeps its start and takes the pitch it's now held at (e.g. stick → after the pad: sharp)
+            const rec = hold.rec && now.step !== undefined ? { ...hold.rec, step: now.step, acc: now.acc ?? 0 } : undefined;
+            holds.current.set(id, { degree: hold.degree, stop: now.stop, rec });
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [stickDir, inversion, octave, selectedKey, scale, voiceLeading, padPart.instrument, padPart.playMode, padPart.arpPattern, padPart.arpRate, padPart.strumSpread, padPart.strumDirection, padMode, padMelody?.id, padMelody?.octave]);
 
     // ---- progression playback (Transport) --------------------------------------------
 
-    /** The song as timed events, and how it loops (the grid is in steps, the events in ticks). */
-    const schedule = (s = live.current): { events: SeqEvent<Scheduled>[]; opts: SeqOptions } => {
-        const h: Harmony = { chords: s.chords, key: s.selectedKey, scale: s.scale };
-        return {
-            // Mute and solo only affect playback, so a muted part can still be played live from the pads
-            events: audibleParts(s.parts).flatMap((p): SeqEvent<Scheduled>[] => (p.kind === 'drums'
-                // a drum pattern repeats from the top until the loop (or the song) ends
-                ? expandPattern(p.drums, s.ts, playLength(s))
-                    .filter(hit => outsideRests(restSpans(s.chords, p), hit.tick))
-                    .map(hit => ({ tick: hit.tick, duration: TICKS_PER_SIXTEENTH, data: { drum: hit.voice, part: p.id } }))
-                : partNotes(p, h, { beatTicks: s.stepTicks, kicks: kickTicks(s.parts, s.ts, s.total * s.stepTicks) }).map(n => ({
-                    tick: n.start, duration: n.len, data: { midi: n.midi, gate: n.gate, strum: n.strum, legato: LEGATO[p.kind], part: p.id },
-                })))),
-            opts: { loop: s.loop, loopEnd: loopLength(s), end: musicEnd(s.chords, s.parts, s.barTicks) },
-        };
+    /**
+     * What playback is playing right now: the chain, or one section looping. It follows the UI, except that
+     * a section switch in Loop mode waits for the next bar line (and a mode change for the next 1/16).
+     */
+    const transport = useRef<{ mode: PlaybackMode; section: string }>({ mode: initial.playMode, section: openKey });
+    /** Loop mode: the section playing (it can lag the open one until a queued switch lands). */
+    const [playingSection, setPlayingSection] = useState<string | null>(null);
+    /** Loop mode: the section waiting for the next bar line. */
+    const [queued, setQueued] = useState<string | null>(null);
+    /** Chain mode: the chain slot playing and the song tick, for the Song view. */
+    const [chainPos, setChainPos] = useState<{ index: number; tick: number } | null>(null);
+    const scheduleCache = useRef<{ full: FullSong; mode: PlaybackMode; section: string; loop: boolean; result: { events: SeqEvent<Scheduled>[]; opts: SeqOptions } } | null>(null);
+
+    /** The music as timed events, and how it loops: the whole chain, or the section being looped. Cached per song edit. */
+    const schedule = (): { events: SeqEvent<Scheduled>[]; opts: SeqOptions } => {
+        const s = live.current;
+        const t = transport.current;
+        const c = scheduleCache.current;
+        if (c && c.full === s.full && c.mode === t.mode && c.section === t.section && c.loop === s.loop) return c.result;
+        let result;
+        if (t.mode === 'chain') {
+            // each section from its start for its full length; drum patterns restart, notes are cut at its end
+            const { events, length } = chainEvents(s.full);
+            result = { events, opts: { loop: s.loop, loopEnd: length, end: length } };
+        } else {
+            const sec = findSection(s.full, t.section);
+            const view = sectionView(s.full, sec.id);
+            result = {
+                events: sectionEvents(view, sec.mutes, playLength(view, s.loop), 0, false),
+                opts: { loop: s.loop, loopEnd: sectionLoopLength(view), end: sectionMusicEnd(view) },
+            };
+        }
+        scheduleCache.current = { full: s.full, mode: t.mode, section: t.section, loop: s.loop, result };
+        return result;
     };
 
     // Every part plays the chord row its own way; the screen, stick and keyboard strip belong to live
@@ -477,19 +546,110 @@ const App: React.FC = () => {
     const stopPlayback = useCallback(() => {
         player.current?.stop();
         setPlaying(false);
+        setQueued(null);
+        setChainPos(null);
+        setPlayingSection(null);
     }, []);
 
     const startPlayback = async () => {
         await startAudio();
         if (player.current?.playing) return;
+        const t = transport.current;
+        t.mode = playMode;
+        t.section = openKey;
         const { opts } = schedule();
         if (!opts.loop && opts.end === 0) return;
         const limit = opts.loop ? opts.loopEnd : opts.end;
-        const from = playhead * T < limit ? playhead * T : 0;
-        // The player reads the latest clips on every pass, so edits while playing need no extra wiring
-        player.current = new SequencerPlayer<Scheduled>(() => schedule(), (e, t) => playEventRef.current(e, t), stopPlayback);
+        const local = Math.max(0, playhead) * T;
+        let from = local < limit ? local : 0;
+        if (t.mode === 'chain') {
+            // from the cursor in the open section's first place in the chain (or the top, if it isn't in it)
+            const slot = chainLayout(full).find(x => x.section.id === openKey);
+            from = slot ? slot.start + (local < slot.len ? local : 0) : 0;
+            if (from >= limit) from = 0;
+        }
+        // The player reads the latest song on every pass, so edits while playing need no extra wiring
+        player.current = new SequencerPlayer<Scheduled>(() => schedule(), (e, time) => playEventRef.current(e, time), stopPlayback);
         player.current.start(from);
         setPlaying(true);
+        setPlayingSection(t.mode === 'loop' ? t.section : null);
+    };
+
+    /** The next bar line at or after song tick `tick`. */
+    const nextBar = (tick: number) => Math.ceil(tick / barTicks) * barTicks;
+
+    /** Open a section. In Loop mode while playing, playback switches to it at the next bar line (it shows NEXT until then). */
+    const openSection = (id: string) => {
+        if (id !== openKey) {
+            setOpenId(id);
+            setSelected(0);
+            setMelCursor(0);
+            if (!playing) setPlayhead(0);
+        }
+        const p = player.current;
+        if (!p?.playing || transport.current.mode !== 'loop') return;
+        if (id === transport.current.section) {
+            p.cancelJump();
+            setQueued(null);
+            return;
+        }
+        setQueued(id);
+        p.queueJump(nextBar(p.cursorTick), 0, time => {
+            transport.current.section = id;
+            Tone.getDraw().schedule(() => {
+                setQueued(null);
+                setPlayingSection(id);
+            }, time);
+        });
+    };
+
+    /** Chain mode while playing: carry on from the start of chain slot `slot`. */
+    const jumpToSlot = (slot: ChainSlot) => {
+        const p = player.current;
+        if (p?.playing && transport.current.mode === 'chain') p.queueJump(p.cursorTick, slot.start);
+    };
+
+    /** Chain or Loop. While playing the music carries on: into the chain where this section is, or looping the section playing. */
+    const setPlayMode = (m: PlaybackMode) => {
+        if (m === playMode) return;
+        setPlayModeState(m);
+        const p = player.current;
+        const t = transport.current;
+        if (!p?.playing) {
+            t.mode = m;
+            return;
+        }
+        const cur = p.cursorTick;
+        const layout = chainLayout(live.current.full);
+        if (m === 'chain') {
+            const slot = layout.find(x => x.section.id === t.section);
+            p.queueJump(slot ? cur : nextBar(cur), slot ? slot.start + Math.min(cur, slot.len - 1) : 0, () => {
+                t.mode = 'chain';
+            });
+            setQueued(null);
+            setPlayingSection(null);
+        } else {
+            const slot = slotAt(layout, cur);
+            p.queueJump(cur, cur - slot.start, time => {
+                t.mode = 'loop';
+                t.section = slot.section.id;
+                Tone.getDraw().schedule(() => setPlayingSection(slot.section.id), time);
+            });
+            if (slot.section.id !== openKey) openSection(slot.section.id);
+        }
+    };
+
+    /** Record works on one section: in Chain mode it switches to Loop on the section playing (or open) first. */
+    const toggleRecord = () => {
+        if (recording) {
+            setRecording(false);
+            return;
+        }
+        if (playMode === 'chain') {
+            setPlayMode('loop');
+            flash('Recording loops one section, so playback switched to Loop.');
+        }
+        setRecording(true);
     };
 
     const togglePlay = () => (playing ? stopPlayback() : startPlayback());
@@ -500,15 +660,32 @@ const App: React.FC = () => {
         let frame = 0;
         let last = -1;
         let lastSixteenth = -1;
+        let lastGlobal = -1;
         const draw = () => {
             const pos = player.current?.position();
             if (pos !== null && pos !== undefined) {
-                const step = Math.floor(pos / live.current.stepTicks);
+                const t = transport.current;
+                let local = pos;
+                let sec = t.section;
+                if (t.mode === 'chain') {
+                    // the chain's song tick → which slot, and where in its section
+                    const slot = slotAt(chainLayout(live.current.full), pos);
+                    local = pos - slot.start;
+                    sec = slot.section.id;
+                    const g = Math.floor(pos / TICKS_PER_SIXTEENTH);
+                    if (g !== lastGlobal) {
+                        lastGlobal = g;
+                        setChainPos({ index: slot.index, tick: pos });
+                    }
+                }
+                // the sequencer and editors show the playhead only while their section is the one playing
+                const here = sec === openRef.current;
+                const step = here ? Math.floor(local / live.current.stepTicks) : -1;
                 if (step !== last) {
                     last = step;
                     setPlayhead(step);
                 }
-                const sixteenth = Math.floor(pos / TICKS_PER_SIXTEENTH);
+                const sixteenth = here ? Math.floor(local / TICKS_PER_SIXTEENTH) : -1;
                 if (sixteenth !== lastSixteenth) {
                     lastSixteenth = sixteenth;
                     setPlaySixteenth(sixteenth);
@@ -577,7 +754,16 @@ const App: React.FC = () => {
             if (parts.length >= MAX_PARTS) return undefined;
             // a drum part starts with the first starter beat for the time signature, so Play just works
             const part = newPart(kind, parts, kind === 'drums' ? presetsFor(ts)[0].make(ts) : undefined);
-            setParts(ps => [...ps, part]);
+            editFull(f => {
+                const id = findSection(f, openRef.current).id;
+                const view = sectionView(f, id);
+                const out = applySectionEdit(f, id, { ...view, parts: [...view.parts, part] });
+                // a new beat plays in every section, not just the open one
+                return part.kind !== 'drums' ? out : {
+                    ...out,
+                    sections: out.sections.map(sec => (sec.content[part.id] ? sec : { ...sec, content: { ...sec.content, [part.id]: { drums: part.drums } } })),
+                };
+            });
             // Song opens its lane next time (without switching the pads to it)
             setSelectedLane(part.id);
             return part.id;
@@ -640,20 +826,56 @@ const App: React.FC = () => {
 
     // ---- melody editing (the selected melody part) --------------------------------------------
     const melodyPart = selPart?.kind === 'melody' ? selPart : null;
+    /** The selected note, while it's still there (undo, a delete or another lane clear it). */
+    const selNote: Note | null = melodyPart && selNoteKey?.part === melodyPart.id
+        ? melodyPart.notes.find(n => n.start === selNoteKey.start) ?? null
+        : null;
+    /** Hear a melody note while stopped (when it's placed or picked). */
+    const auditionNote = (part: MelodyPart, n: Note) => {
+        if (!playing) getEngine().playChord([noteMidi(part, harmony, n)], { duration: Math.min(0.4, ticksToSeconds(n.len)), track: part.id });
+    };
     const melodyActions = {
+        /** Tap an empty cell: a new note, selected. Tap a note: select it. Tap the selected note: remove it. */
         tap: (step: number, sixteenth: number, len: number) => {
             setMelCursor(sixteenth);
             if (!melodyPart) return;
             const tick = sixteenth * TICKS_PER_SIXTEENTH;
             const hit = noteAt(melodyPart.notes, tick, step);
-            if (hit) {
+            if (hit && hit === selNote) {
                 updatePart(melodyPart.id, { notes: removeNote(melodyPart.notes, hit) });
+                setSelNoteKey(null);
+                return;
+            }
+            if (hit) {
+                setSelNoteKey({ part: melodyPart.id, start: hit.start });
+                auditionNote(melodyPart, hit);
                 return;
             }
             const note = { start: tick, len: Math.min(len * TICKS_PER_SIXTEENTH, totalTicks - tick), step };
             // while stopped, hear the note you just placed
-            if (!playing) getEngine().playChord([melodyMidi(melodyPart, harmony, step)], { duration: Math.min(0.4, ticksToSeconds(note.len)), track: melodyPart.id });
+            auditionNote(melodyPart, note);
             updatePart(melodyPart.id, { notes: placeNote(melodyPart.notes, note) });
+            setSelNoteKey({ part: melodyPart.id, start: tick });
+        },
+        /** ♭ ♮ ♯ on the selected note: one undo step. */
+        accidental: (acc: Accidental) => {
+            if (!melodyPart || !selNote || (selNote.acc ?? 0) === acc) return;
+            const next = withAcc(selNote, acc);
+            updatePart(melodyPart.id, { notes: melodyPart.notes.map(n => (n === selNote ? next : n)) });
+            auditionNote(melodyPart, next);
+        },
+        /** Shift+↑ / Shift+↓: a semitone up or down (♭ → ♮ → ♯), within one flat or sharp. */
+        nudge: (by: 1 | -1) => {
+            if (!selNote) return false;
+            const acc = Math.max(-1, Math.min(1, (selNote.acc ?? 0) + by)) as Accidental;
+            melodyActions.accidental(acc);
+            return true;
+        },
+        deleteSelected: () => {
+            if (!melodyPart || !selNote) return false;
+            updatePart(melodyPart.id, { notes: removeNote(melodyPart.notes, selNote) });
+            setSelNoteKey(null);
+            return true;
         },
         octave: (octave: number) => melodyPart && updatePart(melodyPart.id, { octave }),
         clear: () => melodyPart && updatePart(melodyPart.id, { notes: [] }),
@@ -681,13 +903,10 @@ const App: React.FC = () => {
             setChords(place(remove(clips, selClip), { ...selClip, plays: { ...selClip.plays, [id]: plays } }));
         }),
         del: chordEdit(() => selClip && setChords(remove(clips, selClip))),
+        /** Empty every section (chords, melodies, beats); the sections, chain and parts stay. */
         clearAll: () => {
             stopPlayback();
-            editSong(sg => ({
-                ...sg,
-                chords: [],
-                parts: sg.parts.map(p => (p.kind === 'melody' ? { ...p, notes: [] } : p.kind === 'drums' ? { ...p, drums: emptyPattern(p.drums.bars) } : p)),
-            }));
+            editFull(clearSections);
             setSelected(0);
             setPlayhead(0);
         },
@@ -704,11 +923,13 @@ const App: React.FC = () => {
             setSelected(Math.min(selected, next - 1));
             setPlayhead(Math.min(playhead, next - 1));
         },
-        timeSignature: (next: TimeSignature) => {
-            const changed = changeTimeSignature(song, next);
-            editSong(() => changed);
-            setSelected(sel => Math.min(sel, changed.steps - 1));
-            setPlayhead(ph => Math.min(ph, changed.steps - 1));
+        /** The time signature is song-wide: every section moves to it. */
+        timeSignature: (next: Song['timeSignature']) => {
+            const changed = changeSongTimeSignature(full, next);
+            editFull(() => changed);
+            const steps = findSection(changed, openKey).steps;
+            setSelected(sel => Math.min(sel, steps - 1));
+            setPlayhead(ph => Math.min(ph, steps - 1));
         },
         first: () => select(0),
         prev: () => {
@@ -732,8 +953,8 @@ const App: React.FC = () => {
 
     const snapshot = (): SavedState => ({
         version: SAVE_VERSION,
-        song,
-        settings: { voiceLeading, octave, inversion, loop, theme, nextHint, padPart: padPartId, clickAccent },
+        song: full,
+        settings: { voiceLeading, octave, inversion, loop, theme, nextHint, padPart: padPartId, clickAccent, openSection: openKey, playMode, learnTab, chordMood: chordMoodOn },
     });
 
     // Autosave a moment after any change
@@ -747,18 +968,22 @@ const App: React.FC = () => {
         }, 400);
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [song, voiceLeading, octave, inversion, loop, theme, nextHint, padPartId, clickAccent]);
+    }, [full, voiceLeading, octave, inversion, loop, theme, nextHint, padPartId, clickAccent, openKey, playMode, learnTab, chordMoodOn]);
 
     /** Replace the song (undoable) and take over its saved settings. */
     const loadState = (state: SavedState, message: string) => {
         stopPlayback();
-        editSong(() => state.song);
+        editFull(() => state.song);
         const st = state.settings;
+        setOpenId(st.openSection);
+        setPlayModeState(st.playMode);
+        transport.current.mode = st.playMode;
         setVoiceLeading(st.voiceLeading);
         setOctave(st.octave);
         setInversion(st.inversion);
         setLoop(st.loop);
         setNextHint(st.nextHint);
+        setChordMoodOn(st.chordMood);
         setPadPartId(st.padPart);
         setSelectedLane(CHORD_LANE);
         setSelected(0);
@@ -788,6 +1013,7 @@ const App: React.FC = () => {
             return done.summary.problem ? sg : done.song;
         });
         setHtOpen(false);
+        setSongZoom('section');
         // open the first Melody part it wrote, so you see what arrived
         const first = summary.parts[0];
         if (first) {
@@ -801,7 +1027,10 @@ const App: React.FC = () => {
     const songActions = {
         new: () => {
             stopPlayback();
-            editSong(() => newSong());
+            const fresh = newFullSong();
+            editFull(() => fresh);
+            setOpenId(fresh.sections[0].id);
+            setSongZoom('song');
             setSelectedLane(CHORD_LANE);
             setSelected(0);
             setPlayhead(0);
@@ -836,12 +1065,74 @@ const App: React.FC = () => {
         },
     };
 
+    // ---- 📖 Learn: hearing examples, putting a progression into the song -----------------------
+
+    const hearTimers = useRef<number[]>([]);
+    const [hearing, setHearing] = useState<string | null>(null);
+    const hearingRef = useRef<string | null>(null);
+    hearingRef.current = hearing;
+    const stopHearing = () => {
+        hearTimers.current.forEach(t => clearTimeout(t));
+        hearTimers.current = [];
+        if (hearingRef.current && audioReady) getEngine().releaseAll();
+        setHearing(null);
+    };
+    useEffect(() => () => hearTimers.current.forEach(t => clearTimeout(t)), []);
+    /**
+     * Play a Learn example once: chords on the pads' part, melody notes on the melody part the pads
+     * would play (or the pads' part if there is none). Each event is handed to the engine shortly
+     * before it's due, so ■ can stop what hasn't started yet. Song playback stops first.
+     */
+    const hear = async (id: string, events: HearEvent[]) => {
+        stopHearing();
+        if (playing) stopPlayback();
+        await startAudio();
+        const engine = getEngine();
+        const melodyTrack = (padMelody ?? padPart).id;
+        const t0 = Tone.now() + 0.06;
+        let end = 0;
+        for (const e of events) {
+            const at = ticksToSeconds(e.start);
+            const duration = ticksToSeconds(e.len) * 0.92;
+            end = Math.max(end, at + duration);
+            const track = e.layer === 'melody' ? melodyTrack : padPart.id;
+            const fire = () => engine.playChord(e.midi, { duration, time: Math.max(Tone.now(), t0 + at), track });
+            const wait = (at - 0.25) * 1000;
+            if (wait <= 0) fire();
+            else hearTimers.current.push(window.setTimeout(fire, wait));
+        }
+        setHearing(id);
+        hearTimers.current.push(window.setTimeout(() => setHearing(h => (h === id ? null : h)), (end + 0.25) * 1000));
+    };
+
+    /** The song right after a progression went in, so its card can offer Undo while that's still the last edit. */
+    const learnAdded = useRef<{ id: string; song: FullSong } | null>(null);
+    /**
+     * Write a progression into the open section's chord row at tick `at`, as one undo step: as it fits
+     * the song's scale, or (when it needs another one) after switching the song's scale, or as the
+     * closest version in the song's scale. The key never changes, and the scale only on 'switch'.
+     */
+    const addProgression = (prog: LearnProgression, how: UseHow, at: number) => {
+        const fit = fitProgression(prog, selectedKey, scale);
+        const sc = fit.kind === 'needs' && how === 'switch' ? fit.needs : scale;
+        const chosen = fit.kind !== 'needs' || how === 'switch' ? fit.chords : fit.closest;
+        const clips = progressionClips(chosen, selectedKey, sc, ts, octave);
+        const view = sectionView(full, openKey);
+        const done = insertProgression({ ...view, scale: sc }, clips, at);
+        const next = applySectionEdit(full, openKey, done.song);
+        editFull(() => next);
+        learnAdded.current = { id: prog.id, song: next };
+        const bar = Math.floor(at / barTicks) + 1;
+        const what = how === 'switch' ? ` and switched to ${scaleLabel(sc).toLowerCase()}` : how === 'closest' ? ' (closest in your scale)' : '';
+        flash(`${prog.name} added to ${openSec.name} at bar ${bar}${what}.${done.cut ? ` ${done.cut} chord${done.cut === 1 ? '' : 's'} past the end left out.` : ''} Undo to take it out.`);
+    };
+
     // ---- keyboard -----------------------------------------------------------------------
 
     // while a dialog is open the instrument's keys are off (typing or tabbing in it mustn't play pads)
-    const modalOpen = helpOpen || htOpen || settingsOpen || creditsOpen;
-    const keyActions = useRef({ pressPad, releasePad, releaseAll, togglePlay, edit, helpOpen: modalOpen, undo: history.undo, redo: history.redo });
-    keyActions.current = { pressPad, releasePad, releaseAll, togglePlay, edit, helpOpen: modalOpen, undo: history.undo, redo: history.redo };
+    const modalOpen = helpOpen || htOpen || settingsOpen || creditsOpen || (learnOpen && compact);
+    const keyActions = useRef({ pressPad, releasePad, releaseAll, togglePlay, toggleRecord, edit, melody: melodyActions, helpOpen: modalOpen, undo: history.undo, redo: history.redo });
+    keyActions.current = { pressPad, releasePad, releaseAll, togglePlay, toggleRecord, edit, melody: melodyActions, helpOpen: modalOpen, undo: history.undo, redo: history.redo };
 
     useEffect(() => {
         const isTyping = (t: EventTarget | null) =>
@@ -877,20 +1168,27 @@ const App: React.FC = () => {
                 return;
             }
             const handled = () => e.preventDefault();
+            // with a melody note selected, Shift+↑ / Shift+↓ sharpen or flatten it
+            if (e.shiftKey && (e.code === 'ArrowUp' || e.code === 'ArrowDown')) {
+                if (a.melody.nudge(e.code === 'ArrowUp' ? 1 : -1)) {
+                    handled();
+                    return;
+                }
+            }
             switch (e.code) {
                 case 'ArrowLeft': handled(); setInversion(i => Math.max(0, i - 1)); break;
                 case 'ArrowRight': handled(); setInversion(i => Math.min(MAX_INVERSION, i + 1)); break;
                 case 'ArrowUp': handled(); setOctave(o => Math.min(OCTAVE_MAX, o + 1)); break;
                 case 'ArrowDown': handled(); setOctave(o => Math.max(OCTAVE_MIN, o - 1)); break;
                 case 'Space': handled(); if (!e.repeat) a.togglePlay(); break;
-                case 'KeyR': if (!e.repeat) setRecording(r => !r); break;
+                case 'KeyR': if (!e.repeat) a.toggleRecord(); break;
                 case 'KeyN': if (!e.repeat) setPadMode(m => (m === 'notes' ? 'chords' : 'notes')); break;
                 case 'BracketLeft': a.edit.shorter(); break;
                 case 'BracketRight': a.edit.longer(); break;
                 case 'Slash': handled(); a.edit.split(); break;
                 case 'Period': a.edit.rest(); break;
                 case 'Backspace':
-                case 'Delete': handled(); a.edit.del(); break;
+                case 'Delete': handled(); if (!a.melody.deleteSelected()) a.edit.del(); break;
             }
         };
         const up = (e: KeyboardEvent) => {
@@ -915,8 +1213,11 @@ const App: React.FC = () => {
 
     const names = noteNames(selectedKey, scale);
     const notesOn = padMode === 'notes' && padMelody !== null;
-    /** In Notes mode, the note a pad plays with the stick in `dir`. */
-    const padNote = (degree: number, dir: StickDir) => noteLabel(melodyMidi(padMelody!, harmony, noteStep(degree, dir)), names);
+    /** In Notes mode, the note a pad plays with the stick in `dir`, spelled as written (F♯4, G♭4). */
+    const padNote = (degree: number, dir: StickDir) => {
+        const { step, acc } = noteFor(degree, dir);
+        return spellNoteOctave(names, melodyMidi(padMelody!, harmony, step), acc);
+    };
     const pads: PadView[] = useMemo(() => [0, 1, 2, 3, 4, 5, 6].map(degree => (notesOn
         ? { degree, numeral: '', symbol: padNote(degree, stickDir), held: held.includes(degree) }
         : {
@@ -929,13 +1230,13 @@ const App: React.FC = () => {
     [selectedKey, scale, stickDir, inversion, octave, held, notesOn, padMelody?.octave]);
 
     // The stick labels follow the pad you're using: a held pad, else the last chord played, else 1.
-    // In Notes mode only up does something: the same note an octave higher.
+    // In Notes mode ↑ is the octave above, → sharp, ← flat, ↗ / ↖ both; the lower three are unused.
     const refDegree = held.length ? held[held.length - 1] : shown ? shown.degree : 0;
     const stickChords = Object.fromEntries(STICK_DIRS.map(d => [d, notesOn
-        ? (d === 'C' || d === 'U' ? padNote(refDegree, d) : '')
+        ? (NOTE_STICK[d] ? padNote(refDegree, d) : '')
         : resolveChord(selectedKey, { degree: refDegree, type: stickChordType(d, triadQuality(refDegree, scale)), inversion, octave, scale }).name.symbol,
     ])) as { [d in StickDir]: string };
-    const stickRules: Partial<Record<StickDir, string>> | undefined = notesOn ? { C: 'Note', U: 'Octave up' } : undefined;
+    const stickRules: Partial<Record<StickDir, string>> | undefined = notesOn ? NOTE_STICK_RULES : undefined;
 
     // While recording, the chord info says where the next chord goes, so you can record from Play mode.
     // (Nothing about playback goes there: it only follows what you play.)
@@ -949,12 +1250,14 @@ const App: React.FC = () => {
             live: held.length > 0,
             symbol: shown.chord.name.symbol,
             long: shown.chord.name.long,
-            numeral: shown.note ? `${shown.degree + 1}` : romanNumeral(shown.degree, shown.scale),
-            typeLabel: shown.note ? (shown.dir === 'U' ? 'octave up' : 'scale note') : TYPE_LABELS[shown.type ?? 'triad'],
+            numeral: shown.note ? `${shown.acc ? (shown.acc > 0 ? '♯' : '♭') : ''}${shown.degree + 1}` : romanNumeral(shown.degree, shown.scale),
+            typeLabel: shown.note ? noteTypeLabel(shown.dir, shown.acc ?? 0)
+                : chordMoodOn ? `${TYPE_LABELS[shown.type ?? 'triad']} · ${chordMood(shown.type ?? 'triad', triadQuality(shown.degree, shown.scale))}`
+                    : TYPE_LABELS[shown.type ?? 'triad'],
             extra: shown.note ? padMelody?.name : INVERSION_LABELS[Math.min(shown.inversion, shown.chord.midi.length - 1)] || undefined,
             // a chord's notes from its root (root dark, what the stick added yellow); a note shown in its scale
             tags: shown.note
-                ? scalePitchClasses(selectedKey, shown.scale).map(pc => ({ name: names[pc], role: pc === shown.chord.rootPc ? 'root' : 'triad' }))
+                ? noteScaleTags(scalePitchClasses(selectedKey, shown.scale), names, shown.chord.rootPc, shown.degree, shown.acc ?? 0, shown.chord.name.symbol)
                 : chordTags(selectedKey, shown.scale, shown.degree, shown.type ?? 'triad'),
             flag: recFlag,
             // what usually follows the chord just played, in the song's key (chords only, live playing only)
@@ -1038,6 +1341,7 @@ const App: React.FC = () => {
                 perBeat={sixteenthsPerStep(ts)}
                 playSixteenth={playSixteenth}
                 onTap={melodyActions.tap}
+                selectedStart={selNote?.start}
                 len={melodyLen}
                 onLen={setMelodyLen}
                 cursor={recording && !playing && notesOn && padMelody?.id === selPart.id ? melCursor : -1}
@@ -1058,6 +1362,40 @@ const App: React.FC = () => {
             </div>
         );
 
+    // The selected melody note's tools, docked at the bottom like the chord toolbar
+    const ACCS: { acc: Accidental; mark: string; name: string }[] = [
+        { acc: -1, mark: '♭', name: 'Flat' }, { acc: 0, mark: '♮', name: 'Natural' }, { acc: 1, mark: '♯', name: 'Sharp' },
+    ];
+    const noteDock = melodyPart && selNote ? (() => {
+        const n16 = Math.round(selNote.start / TICKS_PER_SIXTEENTH);
+        const sub = n16 % perBeat;
+        const lenLabel = `${Math.round(selNote.len / TICKS_PER_SIXTEENTH)}/16`;
+        return (
+            <div className="dock" role="toolbar" aria-label="Selected note">
+                <div className="dock-row">
+                    <span className="sel-label">
+                        <span className="track-dot" style={{ background: melodyPart.color }} />
+                        <b className="sel-name">{spellNoteOctave(names, melodyMidi(melodyPart, harmony, selNote.step), selNote.acc ?? 0)}</b>
+                        <span className="section-note">beat {Math.floor(n16 / perBeat) + 1}{sub ? ` · 1/16 ${sub + 1}` : ''} · {lenLabel}</span>
+                    </span>
+                    <div className="segmented acc-group" role="group" aria-label="Accidental (Shift+↑ sharper, Shift+↓ flatter)">
+                        {ACCS.map(a => (
+                            <button
+                                key={a.acc}
+                                aria-pressed={(selNote.acc ?? 0) === a.acc}
+                                aria-label={a.name}
+                                title={`${a.name} (Shift+${a.acc < 0 ? '↓' : a.acc > 0 ? '↑' : '↑/↓'})`}
+                                onClick={() => melodyActions.accidental(a.acc)}
+                            >
+                                {a.mark}
+                            </button>
+                        ))}
+                    </div>
+                    <button className="chip-button" title="Delete ( ⌫ )" onClick={melodyActions.deleteSelected}>Delete</button>
+                </div>
+            </div>
+        );
+    })() : undefined;
 
     const htDialog = (
         <HooktheoryDialog
@@ -1082,6 +1420,7 @@ const App: React.FC = () => {
             latchedDir={latchedDir}
             stickChords={stickChords}
             stickRules={stickRules}
+            stickAria={notesOn ? NOTE_STICK_ARIA : undefined}
             padMode={notesOn ? 'notes' : 'chords'}
             notesPart={padMelody?.name}
             onPadMode={setPadMode}
@@ -1113,7 +1452,19 @@ const App: React.FC = () => {
         />
     );
 
-    const canClearAll = chords.length > 0 || parts.some(p => (p.kind === 'melody' && p.notes.length > 0) || (p.kind === 'drums' && Object.values(p.drums.hits).some(h => h?.length)));
+    const openSec = findSection(full, openKey);
+    const repeats = chainCount(full, openKey);
+    const songMenuEl = (
+        <SongMenu
+            onNew={songActions.new}
+            onOpenFile={songActions.open}
+            onSaveFile={songActions.save}
+            onShare={songActions.share}
+            onHooktheory={() => setHtOpen(true)}
+            onClearAll={edit.clearAll}
+            canClearAll={sectionsHaveContent(full)}
+        />
+    );
     const progressionEl = (
         <Progression
             total={total}
@@ -1128,9 +1479,10 @@ const App: React.FC = () => {
             onUpdatePart={updatePart}
             sixteenthsPerStep={sixteenthsPerStep(ts)}
             sixteenthsPerBar={sixteenthsPerBar(ts)}
-            loopSteps={loop ? loopLength({ chords, parts, barTicks, stepTicks: T, total, loop }) / T : total}
+            loopSteps={loop ? sectionLoopLength(song) / T : total}
             recordInto={notesOn ? padMelody!.name : undefined}
             partEditor={partEditor}
+            partDock={noteDock}
             selected={selected}
             playhead={playhead}
             playing={playing}
@@ -1154,17 +1506,67 @@ const App: React.FC = () => {
             onRestPart={edit.restPart}
             onDelete={edit.del}
             undoRedo={<UndoRedo canUndo={history.canUndo} canRedo={history.canRedo} onUndo={history.undo} onRedo={history.redo} />}
-            songMenu={(
-                <SongMenu
-                    onNew={songActions.new}
-                    onOpenFile={songActions.open}
-                    onSaveFile={songActions.save}
-                    onShare={songActions.share}
-                    onHooktheory={() => setHtOpen(true)}
-                    onClearAll={edit.clearAll}
-                    canClearAll={canClearAll}
+            songMenu={songMenuEl}
+            sectionHeader={(
+                <SectionSwitcher
+                    sections={full.sections}
+                    openId={openKey}
+                    timeSignature={ts}
+                    counts={Object.fromEntries(full.sections.map(sec => [sec.id, chainCount(full, sec.id)]))}
+                    queued={queued}
+                    onBack={() => setSongZoom('song')}
+                    onPick={openSection}
                 />
             )}
+            sectionName={openSec.name}
+            sectionMutes={openSec.mutes}
+            onSectionMute={(partId, muted) => editFull(f => setSectionMute(f, openKey, partId, muted))}
+            repeatNote={repeats > 1 ? `×${repeats} in the chain: edits change ${repeats === 2 ? 'both' : 'all of them'}` : undefined}
+        />
+    );
+
+    const songViewEl = (
+        <SongView
+            song={full}
+            openId={openKey}
+            playMode={playMode}
+            onPlayMode={setPlayMode}
+            playing={playing}
+            chainPos={chainPos}
+            playingSection={playingSection}
+            queued={queued}
+            onOpen={id => {
+                openSection(id);
+                setSongZoom('section');
+            }}
+            onPickSlot={slot => {
+                openSection(slot.section.id);
+                jumpToSlot(slot);
+            }}
+            onNew={() => {
+                const r = addSection(full);
+                if (!r.id) return;
+                editFull(() => r.song);
+                openSection(r.id);
+                setSongZoom('section');
+            }}
+            onRename={(id, name) => editFull(f => renameSection(f, id, name))}
+            onDuplicate={id => {
+                const r = duplicateSection(full, id);
+                if (r.id) editFull(() => r.song);
+            }}
+            onDelete={id => {
+                const gone = full.sections.find(sec => sec.id === id);
+                if (!gone || full.sections.length <= 1) return;
+                if (id === openKey) openSection(full.sections.find(sec => sec.id !== id)!.id);
+                editFull(f => deleteSection(f, id));
+                flash(`Deleted ${gone.name}. Undo to bring it back.`);
+            }}
+            onAddToChain={id => editFull(f => appendToChain(f, id))}
+            onMoveEntry={(i, dir) => editFull(f => moveEntry(f, i, dir))}
+            onDuplicateEntry={i => editFull(f => duplicateEntry(f, i))}
+            onRemoveEntry={i => editFull(f => removeEntry(f, i))}
+            songMenu={songMenuEl}
         />
     );
 
@@ -1189,16 +1591,49 @@ const App: React.FC = () => {
             canRemove={partActions.canRemove}
             onOpenBeat={id => {
                 pickLane(id);
+                setSongZoom('section');
                 setMode('song');
             }}
         />
     );
 
+    const learnEl = (docked: boolean) => (
+        <LearnPanel
+            open={learnOpen}
+            docked={docked}
+            onClose={() => {
+                stopHearing();
+                setLearnOpen(false);
+            }}
+            tab={learnTab}
+            onTab={setLearnTab}
+            songKey={selectedKey}
+            scale={scale}
+            ts={ts}
+            octave={octave}
+            melodyOctave={padMelody?.octave ?? 4}
+            melodyColor={(padMelody ?? padPart).color}
+            sectionName={openSec.name}
+            selectedStep={selected}
+            hearing={hearing}
+            onHear={hear}
+            onStopHearing={stopHearing}
+            onUse={addProgression}
+            justAdded={learnAdded.current && learnAdded.current.song === full ? learnAdded.current.id : null}
+            onUndoAdd={history.undo}
+        />
+    );
+
     const entering = intro === 'leaving' ? 'app-entering' : '';
+    const songEl = songZoom === 'song' ? songViewEl : progressionEl;
+    // Desktop: the instrument stays on the left; Song and Parts are tabs on the right
+    const rightTab: 'song' | 'parts' = mode === 'parts' ? 'parts' : 'song';
+    const deskTabs = (['song', 'parts'] as const).map(t => ({ id: t, label: t === 'song' ? 'Song' : 'Parts' }));
     return (<>
-        <div className={`app ${compact ? 'compact' : 'wide'} mode-${mode} ${entering}`}>
+        <div className={`app ${compact ? 'compact' : 'wide desk'} mode-${mode} ${entering}`}>
             <TopBar
                 compact={compact}
+                modes={compact ? undefined : []}
                 mode={mode}
                 selectedKey={selectedKey}
                 scale={scale}
@@ -1212,12 +1647,54 @@ const App: React.FC = () => {
                 onScaleChange={setScale}
                 onBpmChange={b => setBpm(Math.max(BPM_MIN, Math.min(BPM_MAX, b)))}
                 onTogglePlay={togglePlay}
-                onToggleRecord={() => setRecording(r => !r)}
+                onToggleRecord={toggleRecord}
                 onOpenSettings={() => setSettingsOpen(true)}
+                learnOpen={learnOpen}
+                onToggleLearn={() => setLearnOpen(o => !o)}
             />
-            {mode === 'play' && deviceEl}
-            {mode === 'song' && progressionEl}
-            {mode === 'parts' && partsEl}
+            {compact ? (
+                <>
+                    {mode === 'play' && deviceEl}
+                    {mode === 'song' && songEl}
+                    {mode === 'parts' && partsEl}
+                </>
+            ) : (
+                <div className="desk-split">
+                    <div className="desk-left">{deviceEl}</div>
+                    <div className="desk-right">
+                        {learnOpen ? learnEl(true) : (<>
+                        <div className="desk-tabs segmented" role="tablist" aria-label="Song or Parts">
+                            {deskTabs.map(t => (
+                                <button
+                                    key={t.id}
+                                    role="tab"
+                                    id={`tab-${t.id}`}
+                                    aria-selected={rightTab === t.id}
+                                    aria-pressed={rightTab === t.id}
+                                    aria-controls="desk-panel"
+                                    tabIndex={rightTab === t.id ? 0 : -1}
+                                    onClick={() => setMode(t.id)}
+                                    onKeyDown={e => {
+                                        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        const next = rightTab === 'song' ? 'parts' : 'song';
+                                        setMode(next);
+                                        document.getElementById(`tab-${next}`)?.focus();
+                                    }}
+                                >
+                                    {t.label}
+                                    <span className="desk-tab-hint">{t.id === 'song' ? 'what plays' : 'how it sounds'}</span>
+                                </button>
+                            ))}
+                        </div>
+                        <div id="desk-panel" role="tabpanel" aria-labelledby={`tab-${rightTab}`} className="desk-panel">
+                            {rightTab === 'song' ? songEl : partsEl}
+                        </div>
+                        </>)}
+                    </div>
+                </div>
+            )}
             <SettingsSheet
                 open={settingsOpen}
                 onClose={() => setSettingsOpen(false)}
@@ -1230,9 +1707,12 @@ const App: React.FC = () => {
                 meter={`${ts.beats}/${ts.unit}`}
                 nextHint={nextHint}
                 onNextHint={setNextHint}
+                chordMood={chordMoodOn}
+                onChordMood={setChordMoodOn}
                 onHelp={() => setHelpOpen(true)}
                 onCredits={() => setCreditsOpen(true)}
             />
+            {compact && learnEl(false)}
             <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
             <CreditsDialog open={creditsOpen} onClose={() => setCreditsOpen(false)} />
             {htDialog}

@@ -2,7 +2,8 @@ import { ArpPattern, KEYS, MusicalKey, ChordType, SCALE_IDS, ScaleId } from './t
 import type { ArpRate } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
 import { Clip, PPQ, STEPS_PER_ROW } from './progression';
-import { DRUM_VOICES, DrumPattern, PATTERN_BARS, PatternBars, TICKS_PER_SIXTEENTH, fitPattern, sixteenthsPerBar } from './drums';
+import { DRUM_VOICES, DrumPattern, PATTERN_BARS, PatternBars, TICKS_PER_SIXTEENTH, emptyPattern, fitPattern, isEmptyPattern, sixteenthsPerBar } from './drums';
+import type { LearnTab } from './learn';
 import { BASS_STYLES, BassStyle, FX_KEYS, MAX_PARTS, MELODY_STEPS, Note, PART_COLORS, Part, PartFx, PartKind, PartTone, PlayMode, STRUM_DIRECTIONS, TONE_KEYS, fxAvailable, neutralTone, newPart } from './parts';
 
 // ---- the song: everything undo/redo, saving and sharing cover ---------------------------
@@ -81,6 +82,12 @@ export const defaultSpace = (): Space => ({
     out: { level: 1 },
 });
 
+/**
+ * One section of the song as the editors and playback see it: its chord row and length, with every
+ * part's content for this section (melody notes, drum pattern) filled into the parts. This was the
+ * whole song before sections (save format v2); now `sectionView(fullSong, id)` builds one and
+ * `applySectionEdit` writes edits made to it back into that section.
+ */
 export interface Song {
     /** Key and scale of the whole song: changing them transposes or re-harmonises every part. */
     key: MusicalKey;
@@ -94,6 +101,51 @@ export interface Song {
     timeSignature: TimeSignature;
     space: Space;
 }
+
+/** What a section holds for one part: a Melody part's notes or a Drums part's pattern. */
+export interface PartContent {
+    notes?: Note[];
+    drums?: DrumPattern;
+}
+
+/** A section (verse, chorus…): its own chord row, length, melody notes and drum patterns, and per-section mutes. */
+export interface Section {
+    id: string;
+    name: string;
+    /** Shown on the dark badge, e.g. "V" for Verse. */
+    letter: string;
+    /** Length in sequencer steps (beats), whole rows. */
+    steps: number;
+    chords: Clip[];
+    content: { [partId: string]: PartContent };
+    /** Parts silenced in this section only. */
+    mutes: { [partId: string]: true };
+}
+
+/** One slot of the chain (the song's running order); a repeat is the same section twice in a row. */
+export interface ChainEntry {
+    sectionId: string;
+}
+
+/**
+ * The whole song (save format v3): everything song-wide (key, scale, tempo, time signature, the shared
+ * effects, and the parts: instrument, tone, effects, volume, style), its sections and the chain. Parts
+ * carry no content here (a Melody part's `notes` is empty, a Drums part's `drums` an empty pattern):
+ * that lives in each section's `content`.
+ */
+export interface FullSong {
+    key: MusicalKey;
+    scale: ScaleId;
+    bpm: number;
+    timeSignature: TimeSignature;
+    space: Space;
+    parts: Part[];
+    sections: Section[];
+    chain: ChainEntry[];
+}
+
+export const MAX_SECTIONS = 26;
+export const MAX_CHAIN = 128;
 
 /** Light, dark, or following the system (`prefers-color-scheme`). */
 export type ThemeSetting = 'dark' | 'light' | 'auto';
@@ -113,16 +165,28 @@ export interface Settings {
     padPart: string;
     /** The click plays the downbeat higher (and the middle of compound bars a little higher). */
     clickAccent: boolean;
+    /** The section open in Song (and looped in Loop mode). */
+    openSection: string;
+    /** Play the chain of sections, or loop the open one. */
+    playMode: PlaybackMode;
+    /** The Learn page's last tab. */
+    learnTab: LearnTab;
+    /** Play mode's chord info adds a one-word mood ("i · 9th · bittersweet"). */
+    chordMood: boolean;
 }
 
+export type PlaybackMode = 'loop' | 'chain';
+
 export interface SavedState {
-    version: 2;
-    song: Song;
+    version: 3;
+    song: FullSong;
     settings: Settings;
 }
 
-export const SAVE_VERSION = 2;
-export const STORAGE_KEY = 'metju.chord.v2';
+export const SAVE_VERSION = 3;
+export const STORAGE_KEY = 'metju.chord.v3';
+/** Where version 2 kept the song; read once if there's nothing under `STORAGE_KEY` yet (and left alone). */
+export const LEGACY_STORAGE_KEY = 'metju.chord.v2';
 
 /** A new song: Keys, Bass and an empty Melody, all following an empty chord row. */
 export function newSong(): Song {
@@ -142,7 +206,44 @@ export function newSong(): Song {
 
 export const defaultSettings = (): Settings => ({
     voiceLeading: false, octave: 4, inversion: 0, loop: true, theme: 'dark', nextHint: true, padPart: '', clickAccent: true,
+    openSection: '', playMode: 'loop', learnTab: 'progressions', chordMood: false,
 });
+
+/** A part without its content: what a FullSong keeps song-wide. */
+export function stripContent(p: Part): Part {
+    if (p.kind === 'melody') return p.notes.length ? { ...p, notes: [] } : p;
+    if (p.kind === 'drums') return p.drums.bars === 1 && Object.keys(p.drums.hits).length === 0 ? p : { ...p, drums: emptyPattern() };
+    return p;
+}
+
+/** A part's content in a section view, ready to store in the section. */
+export function contentOf(p: Part): PartContent | undefined {
+    if (p.kind === 'melody') return p.notes.length ? { notes: p.notes } : undefined;
+    if (p.kind === 'drums') return isEmptyPattern(p.drums) && p.drums.bars === 1 ? undefined : { drums: p.drums };
+    return undefined;
+}
+
+/** A version-2 song (one chord row) as a version-3 song: one section "A" holding all of it, chained once. */
+export function fromSingleSection(song: Song, id = 's1', name = 'A'): FullSong {
+    const content: Section['content'] = {};
+    song.parts.forEach(p => {
+        const c = contentOf(p);
+        if (c) content[p.id] = c;
+    });
+    return {
+        key: song.key,
+        scale: song.scale,
+        bpm: song.bpm,
+        timeSignature: song.timeSignature,
+        space: song.space,
+        parts: song.parts.map(stripContent),
+        sections: [{ id, name, letter: name.charAt(0).toUpperCase() || 'A', steps: song.steps, chords: song.chords, content, mutes: {} }],
+        chain: [{ sectionId: id }],
+    };
+}
+
+/** A new song: one section, Keys, Bass and an empty Melody. */
+export const newFullSong = (): FullSong => fromSingleSection(newSong());
 
 // ---- reading saved data: anything malformed is dropped or replaced with a default --------
 
@@ -210,7 +311,9 @@ function readNotes(v: unknown, maxTick: number): Note[] {
         const start = int(n.start, 0, maxTick, -1);
         const len = int(n.len, 1, maxTick, -1);
         if (start < 0 || len < 1 || start + len > maxTick) return [];
-        return [{ start, len, step: int(n.step, 0, MELODY_STEPS - 1, 0) }];
+        const step = int(n.step, 0, MELODY_STEPS - 1, 0);
+        // only a flat or a sharp is kept; anything else (missing, 0, 2, "#"...) is natural and left out
+        return [n.acc === 1 || n.acc === -1 ? { start, len, step, acc: n.acc } : { start, len, step }];
     });
     // one note at a time: drop any that overlaps the one before
     return notes.sort((a, b) => a.start - b.start).filter((n, i, all) => i === 0 || n.start >= all[i - 1].start + all[i - 1].len);
@@ -326,13 +429,93 @@ export function readSettings(v: unknown): Settings {
         nextHint: bool(v.nextHint, d.nextHint),
         padPart: typeof v.padPart === 'string' ? v.padPart.slice(0, 24) : d.padPart,
         clickAccent: bool(v.clickAccent, d.clickAccent),
+        openSection: typeof v.openSection === 'string' ? v.openSection.slice(0, 24) : d.openSection,
+        playMode: oneOf<PlaybackMode>(v.playMode, ['loop', 'chain'], d.playMode),
+        learnTab: oneOf<LearnTab>(v.learnTab, ['progressions', 'chords', 'melody'], d.learnTab),
+        chordMood: bool(v.chordMood, d.chordMood),
     };
 }
 
+/** A section's name, cleaned; an empty one falls back to `fallback`. */
+export const cleanName = (v: unknown, fallback: string) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 24) : fallback);
+/** The badge letter for a name: its first letter or digit, upper case. */
+export const letterFor = (name: string) => (name.match(/[\p{L}\p{N}]/u)?.[0] ?? '?').toUpperCase();
+
+/**
+ * Rebuild a version-3 song from untrusted data. Sections are repaired like a v2 song's chord row
+ * (clamped, overlaps dropped, unknown parts' content dropped); chain entries naming no section are
+ * dropped; there is always at least one section and the chain is never empty.
+ */
+export function readFullSong(v: unknown): FullSong | null {
+    if (!isObj(v) || !Array.isArray(v.parts) || !Array.isArray(v.sections)) return null;
+    const ts = isObj(v.timeSignature) ? v.timeSignature : {};
+    const timeSignature: TimeSignature = { beats: int(ts.beats, 2, 12, 4), unit: oneOf<4 | 8>(ts.unit, [4, 8], 4) };
+    const barLen = sixteenthsPerBar(timeSignature);
+    const parts: Part[] = [];
+    v.parts.slice(0, MAX_PARTS).forEach((p, i) => {
+        const part = readPart(p, i, parts, 0, barLen);
+        if (part) parts.push(stripContent(part));
+    });
+    if (!parts.some(p => p.kind === 'chords')) {
+        if (parts.length >= MAX_PARTS) parts.pop();
+        parts.unshift(newPart('chords', parts));
+    }
+    const sections: Section[] = [];
+    v.sections.slice(0, MAX_SECTIONS).forEach((raw, i) => {
+        if (!isObj(raw)) return;
+        const id = typeof raw.id === 'string' && raw.id && raw.id.length <= 24 && !sections.some(x => x.id === raw.id) ? raw.id : `s${i + 1}${sections.some(x => x.id === `s${i + 1}`) ? 'b' : ''}`;
+        const name = cleanName(raw.name, String.fromCharCode(65 + (i % 26)));
+        const letter = typeof raw.letter === 'string' && raw.letter.trim() ? raw.letter.trim().slice(0, 2).toUpperCase() : letterFor(name);
+        const steps = int(raw.steps, 1, 512, STEPS_PER_ROW);
+        const maxTick = steps * ticksPerStep(timeSignature);
+        const chords = Array.isArray(raw.chords) ? sortClips(raw.chords.map(c => readClip(c, maxTick)).filter((c): c is Clip => c !== null)) : [];
+        const content: Section['content'] = {};
+        const src = isObj(raw.content) ? raw.content : {};
+        for (const p of parts) {
+            const c = src[p.id];
+            if (!isObj(c)) continue;
+            if (p.kind === 'melody') {
+                const notes = readNotes(c.notes, maxTick);
+                if (notes.length) content[p.id] = { notes };
+            } else if (p.kind === 'drums' && isObj(c.drums)) {
+                content[p.id] = { drums: readPattern(c.drums, barLen) };
+            }
+        }
+        const mutes: Section['mutes'] = {};
+        if (isObj(raw.mutes)) for (const p of parts) if (raw.mutes[p.id] === true) mutes[p.id] = true;
+        sections.push({ id, name, letter, steps, chords, content, mutes });
+    });
+    if (sections.length === 0) sections.push(fromSingleSection({ ...newSong(), timeSignature, parts }).sections[0]);
+    const known = new Set(sections.map(x => x.id));
+    const chain = (Array.isArray(v.chain) ? v.chain : [])
+        .filter((e): e is Obj => isObj(e) && typeof e.sectionId === 'string' && known.has(e.sectionId))
+        .slice(0, MAX_CHAIN)
+        .map(e => ({ sectionId: e.sectionId as string }));
+    return {
+        key: oneOf(v.key, KEYS, 'C'),
+        scale: oneOf<ScaleId>(v.scale, SCALE_IDS, 'major'),
+        bpm: int(v.bpm, 40, 240, 100),
+        timeSignature,
+        space: readSpace(v.space),
+        parts,
+        sections,
+        chain: chain.length ? chain : [{ sectionId: sections[0].id }],
+    };
+}
+
+/** A saved state from storage, a file or a link: version 3 as is, version 2 moved into one section. */
 export function readSaved(v: unknown): SavedState | null {
-    if (!isObj(v) || v.version !== SAVE_VERSION) return null;
-    const song = readSong(v.song);
-    return song ? { version: SAVE_VERSION, song, settings: readSettings(v.settings) } : null;
+    if (!isObj(v)) return null;
+    let song: FullSong | null = null;
+    if (v.version === 3) song = readFullSong(v.song);
+    else if (v.version === 2) {
+        const old = readSong(v.song);
+        song = old && fromSingleSection(old);
+    }
+    if (!song) return null;
+    const settings = readSettings(v.settings);
+    if (!song.sections.some(x => x.id === settings.openSection)) settings.openSection = song.sections[0].id;
+    return { version: SAVE_VERSION, song, settings };
 }
 
 // ---- share links: the saved state, deflated and base64url-encoded into the URL hash -----

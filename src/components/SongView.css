@@ -1,0 +1,363 @@
+/* Song mode's top level: sections as tiles, the chain as blocks */
+.song-view {
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    min-width: 0;
+}
+
+.sv-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    min-height: 36px;
+}
+
+.sv-head .seq-title {
+    font-size: 18px;
+}
+
+.sv-status {
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.sv-space {
+    flex: 1 1 0;
+}
+
+.sv-mode > button {
+    min-height: 30px;
+}
+
+.sv-label {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    min-width: 0;
+}
+
+.sv-hint {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ---- section tiles: a fixed width, so the row scrolls and a cut-off tile says there's more ---- */
+
+.sec-row,
+.chain-row {
+    display: flex;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 3px;
+}
+
+.sec-row {
+    gap: 8px;
+}
+
+.sec-tile {
+    position: relative;
+    flex: 0 0 168px;
+    min-width: 0;
+}
+
+.sec-main {
+    width: 100%;
+    height: 104px;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--panel-2);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    text-align: left;
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* the open section: a yellow edge */
+.sec-tile.open .sec-main {
+    border: 2px solid var(--accent);
+    padding: 9px;
+}
+
+.sec-tile.playing .sec-main {
+    background: color-mix(in srgb, var(--accent) 22%, var(--panel-2));
+}
+
+.sec-top {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    padding-right: 20px;
+}
+
+.sec-name {
+    min-width: 0;
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sec-more {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 24px;
+    height: 24px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1;
+}
+
+.sec-more:hover,
+.sec-more:focus-visible {
+    background: var(--panel);
+}
+
+.chip-line {
+    position: relative;
+    display: flex;
+    gap: 4px;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.chord-chip {
+    flex: 0 0 auto;
+    padding: 2px 6px;
+    font-size: 11px;
+    font-weight: 500;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    white-space: nowrap;
+}
+
+.chord-chip.more {
+    font-weight: 700;
+    background: var(--text);
+    border-color: var(--text);
+    color: var(--bg);
+}
+
+.chip-empty {
+    font-size: 11px;
+    color: var(--faint);
+    padding: 3px 0;
+}
+
+/* a hidden copy of every chip, laid out only to measure them */
+.chip-measure {
+    position: absolute;
+    visibility: hidden;
+    pointer-events: none;
+    display: flex;
+    gap: 4px;
+    left: 0;
+    top: 0;
+    white-space: nowrap;
+}
+
+.sec-foot {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sec-parts {
+    flex: 1 1 0;
+    display: flex;
+    gap: 3px;
+}
+
+.sec-parts i {
+    flex: 1 1 0;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--track);
+}
+
+.sec-parts i.muted {
+    background: var(--line-2);
+}
+
+.sec-parts i.silent {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.sec-bars {
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+.sec-tag {
+    font-size: 10px;
+    font-weight: 700;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.sec-tag.playing {
+    padding: 2px 5px;
+    background: var(--text);
+    color: var(--accent);
+}
+
+.sec-tag.next {
+    padding: 1px 4px;
+    border: 1px solid var(--hot-text);
+    color: var(--hot-text);
+}
+
+.sec-new {
+    flex: 0 0 72px;
+    height: 104px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--panel);
+    color: var(--muted);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    font-size: 11px;
+}
+
+.sec-new .add-plus {
+    font-size: 22px;
+    line-height: 1;
+}
+
+/* ---- the chain: blocks as wide as they are long --------------------------------------------- */
+
+.chain-row {
+    gap: 4px;
+}
+
+.chain-block {
+    position: relative;
+    flex: 0 0 auto;
+    height: 48px;
+    padding: 5px 7px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: space-between;
+    text-align: left;
+    overflow: hidden;
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.chain-block.open {
+    border: 2px solid var(--accent);
+    padding: 4px 6px;
+}
+
+.cb-bar {
+    font-size: 10px;
+    color: var(--muted);
+}
+
+.cb-name {
+    max-width: 100%;
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* while the chain plays: the playing block yellow with the playhead, the ones already played dimmed */
+.chain-block.playing {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+}
+
+.chain-block.playing .cb-bar {
+    color: var(--accent-ink);
+}
+
+.chain-block.done {
+    background: transparent;
+    color: var(--muted);
+}
+
+.cb-head {
+    position: absolute;
+    top: -1px;
+    bottom: -1px;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--hot);
+    pointer-events: none;
+}
+
+.chain-add {
+    flex: 0 0 44px;
+    height: 48px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel);
+    color: var(--muted);
+    font-size: 18px;
+}
+
+.pop-menu {
+    z-index: 30;
+    min-width: 200px;
+}
+
+.rename-box {
+    display: flex;
+    gap: 6px;
+    padding: 4px;
+}
+
+.rename-box input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 34px;
+    padding: 0 8px;
+    border: 1px solid var(--line-2);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+    font-size: 13px;
+}
+
+@media (max-width: 720px) {
+    .sv-hint {
+        display: none;
+    }
+}
