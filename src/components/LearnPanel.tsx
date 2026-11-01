@@ -56,7 +56,7 @@ interface LearnPanelProps {
 
 
 /** ▶ / ■: hear something, or stop it. */
-const HearButton: React.FC<{ id: string; hearing: string | null; label: string; onHear: () => void; onStop: () => void; text?: string }> = p => {
+const HearButton: React.FC<{ id: string; hearing: string | null; label: string; onHear: () => void; onStop: () => void; text?: string; sub?: string }> = p => {
     const on = p.hearing === p.id;
     return (
         <button
@@ -66,7 +66,7 @@ const HearButton: React.FC<{ id: string; hearing: string | null; label: string; 
             title={on ? 'Stop' : 'Hear it'}
             onClick={() => (on ? p.onStop() : p.onHear())}
         >
-            <span aria-hidden="true">{on ? '■' : '▶'}</span>{p.text && <span>{p.text}</span>}
+            <span aria-hidden="true">{on ? '■' : '▶'}</span>{p.text && <span>{p.text}</span>}{p.sub && <span className="lp-hear-sub">{p.sub}</span>}
         </button>
     );
 };
@@ -163,7 +163,7 @@ const ProgressionsTab: React.FC<LearnPanelProps> = p => {
     return (
         <>
             <p className="lp-lead">
-                Chord loops to start from. Chords are in your key; <b>▶</b> plays one on the pads’ part, <b>Use in song</b> writes it into <b>{p.sectionName}</b> (one undo step).
+                Chord loops to start from. Chords are in your key; <b>▶</b> plays one on the pads’ part, <b>Use in song</b> writes it into the open section, <b>{p.sectionName}</b> (one undo step).
             </p>
             {p.selectedStep > 0 && (
                 <div className="lp-where">
@@ -218,7 +218,7 @@ const ProgressionCard: React.FC<LearnPanelProps & { prog: Progression; at: numbe
                     );
                 })}
             </div>
-            {fit.kind === 'relative' && <p className="lp-fit">On the relative {isMinor(scale) ? 'major' : 'minor'}: {keyLabel(fit.tonic, key, scale)}</p>}
+            {fit.kind === 'relative' && <p className="lp-fit">On the relative {isMinor(scale) ? 'major' : 'minor'}: {keyLabel(fit.tonic, key, scale, isMinor(scale) ? 'major' : 'minor')}</p>}
             {fit.kind === 'needs' && <p className="lp-fit needs">Needs {keyLabel(keyPitchClass(key), key, fit.needs)}; your song is in {here}.</p>}
             <dl className="lp-facts">
                 <div><dt>Feel</dt><dd>{prog.feel}</dd></div>
@@ -243,7 +243,6 @@ const ProgressionCard: React.FC<LearnPanelProps & { prog: Progression; at: numbe
             </div>
             {choosing && fit.kind === 'needs' && (
                 <div className="lp-choice" role="group" aria-label={`${prog.name} needs another scale`}>
-                    <p className="section-note">{prog.name} needs {keyLabel(keyPitchClass(key), key, fit.needs)}. Your song is in {here}.</p>
                     <button className="chip-button" onClick={() => use('switch')}>
                         Switch the song to <b>{keyLabel(keyPitchClass(key), key, fit.needs)}</b> and add it
                     </button>
@@ -303,7 +302,8 @@ const ChordsTab: React.FC<LearnPanelProps> = p => {
                                             id={`stick:${s.dir}:${d}`}
                                             hearing={p.hearing}
                                             label={`${nm}, pad ${d + 1} ${s.label}`}
-                                            text={`${nm} · ${d + 1}`}
+                                            text={nm}
+                                            sub={`pad ${d + 1}`}
                                             onHear={one(`stick:${s.dir}:${d}`, [{ degree: d, type: t, scale }])}
                                             onStop={p.onStopHearing}
                                         />

@@ -140,6 +140,8 @@ describe('progressions', () => {
         expect(keyLabel(9, 'C', 'major')).toBe('A major');
         expect(keyLabel(0, 'C', 'mixolydian')).toBe('C Mixolydian');
         expect(keyLabel(10, 'F', 'major')).toBe('B♭ major');
+        expect(keyLabel(9, 'C', 'major', 'minor')).toBe('A minor');
+        expect(keyLabel(3, 'C', 'minor', 'major')).toBe('E♭ major');
     });
 });
 

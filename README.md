@@ -2,7 +2,7 @@
 
 A chord instrument and song sketchpad in the browser, modelled on pocket chord machines like the HiChord: seven chord pads, an 8-way stick that changes the chord type, and the chord you're playing written on the instrument. Underneath is a sequencer where one chord row drives keys, bass, melody and drums, with per-part sound and effects. Built with React 19, TypeScript and Tone.js, no backend.
 
-Three modes, one rule: **Play** is the instrument; **Song** is *what* plays (chords, melody notes, drum hits, in sections chained into a song); **Parts** is *how* it sounds (instrument, style, tone, effects). **⚙** holds the app settings.
+Three modes, one rule: **Play** is the instrument; **Song** is *what* plays (chords, melody notes, drum hits, in sections chained into a song); **Parts** is *how* it sounds (instrument, style, tone, effects). **⚙** holds the app settings, and **📖 Learn** is a reference page for when you're facing a blank song.
 
 Live at <https://metjuperry.github.io/Metju.Chord/> (deployed from `master`).
 
@@ -57,9 +57,20 @@ Live at <https://metjuperry.github.io/Metju.Chord/> (deployed from `master`).
 - Samples load in the background once the app starts (only for instruments a part uses); until they arrive a synth version of the instrument plays, so the first chord never waits.
 - **Effects per part**: only the effects that are on show as knobs; **+ Effect** lists the ones that are off, and a double-tap (to 0) takes one away again. **Drive**, **Chorus** and **Tremolo** (a volume wobble in 1/8 notes of the tempo) colour one part (drive is level-compensated); **Glide** makes single notes slide into the next one (up to 0.5 s, never longer than 80% of the note), for bass, melody and arpeggios. Block chords never glide: there's no telling which note should slide where, so glide on a chord part only affects its arpeggios; **→ Reverb** and **→ Delay** send the part into one shared reverb and delay, whose size, time, feedback, return and the output level are under **Master** (with **All dry**, and a **Mix overview**: the old matrix of every part's effects at a glance). Drums get the sends only (no drive, chorus, tremolo or glide). Knobs: drag, scroll, arrow keys, double-tap for off (or, on tone knobs, as designed).
 
+### 📖 Learn
+
+A calm reference to read while writing, not a generator: it never writes a song for you. The **Learn** button sits next to ⚙ in the top bar (just the book on narrow phones). On a phone it opens full screen over the current mode; on a computer it takes the right-hand column, so the instrument stays playable beside it. Close with ×, Esc or the button again. Three tabs, **Progressions · Chords · Melody**; the last one is remembered. Everything is shown and played in the song's key and scale (flats in flat keys), and every **▶** plays once on the pads' part (melody examples on the melody part the pads would play), stopping song playback first; press it again (■) to stop.
+
+- **Progressions**: twelve cards, each with its numerals, the chords in your key (with the pad and stick that play them, e.g. `E 3 ↑`), a one-line feel, where you hear it (genre and era), and why it works. Pop anthem I–V–vi–IV, 50s / doo-wop I–vi–IV–V, Sad pop vi–IV–I–V, Pachelbel-style I–V–vi–iii–IV–I–IV–V, ii7–V7–Imaj7, 12-bar blues (I7 IV7 V7), Andalusian cadence i–VII–VI–V (natural minor with a major V, i.e. pad 5 ↑), Epic minor i–VI–III–VII, Royal road IVmaj7–V7–iii7–vi, Mixolydian rock I–♭VII–IV, Dreamy minor i7–iv7–VImaj7–v7, Calm minor loop VI–v–i–IV.
+  - A minor progression in a major song is shown on the relative minor (Epic minor in C major is Am F C G) and the other way round, as long as the pads play it exactly.
+  - When a progression needs another scale (Mixolydian rock in C major needs C Mixolydian's B♭), the card says so and **Use in song** offers a choice: switch the song's scale and add it, or add the closest version in the song's scale (C Dm F, with a note on what stands in). Nothing ever changes the key, and the scale only when you pick that.
+  - **Use in song** writes it into the open section's chord row at the start, or at the selected beat when one is selected (like Paste from Hooktheory): it replaces what's in that stretch, grows the section by whole rows if needed, and is one undo step (the card offers **Undo** while it's still the last edit). A 4-beat chord fills one bar in any time signature, and the chords are voice-led (each takes the inversion that moves least), the same voicing ▶ plays.
+- **Chords**: what chords tend to sound like, organised like the instrument. **The stick** (chord colour): a card per direction with its mood (triad bright / sad, flip 3rd, 7th dreamy / mellow, dom 7 tension, 9th airy / bittersweet, 6 sweet, sus2 floating, sus4 anticipation, dim restless, aug mysterious) and ▶ on a major and a minor pad. **The pads** (function): I … vii° in a major key or i … VII in a minor key (switchable; minor v also offers the borrowed major V), each with ▶. **Combining them**: worked sums, e.g. **Am9 = a minor chord (sad, reflective) + a 9th (air, softness) → bittersweet, gentle, jazzy**, with ▶ (and the chord it leads to). It says plainly that these are common associations, not rules.
+- **Melody**: eight short rules (chord tones on strong beats; mostly steps, step back after a leap; build from a motif; question and answer; rhythm first; end on a chord tone, end the song on the root; one high point; leave space), each with a tiny invented example as a read-only mini grid (chord tones shaded, notes in the melody part's colour) with ▶, and a "try this". Then **♭ and ♯, sparingly**: borrowed colour (♭6 over a minor iv) and a leading tone, with examples.
+
 ### ⚙ Settings
 
-- A sheet from the right (close with ×, Esc or a tap outside): **Theme** Light / Dark / **Auto** (follows the system), **Click**, **Accent the downbeat**, **Next chords on the screen**, **How to play** (the help) and **Credits** (the sample libraries' licences).
+- A sheet from the right (close with ×, Esc or a tap outside): **Theme** Light / Dark / **Auto** (follows the system), **Click**, **Accent the downbeat**, **Next chords on the screen**, **Chord mood in Play mode** (off by default: the chord info adds a word, "vi · 9th · bittersweet"), **How to play** (the help) and **Credits** (the sample libraries' licences).
 - The intro: tap the start key and a random chord (any key, pad and stick direction) rings out while the app fades in.
 
 ### Saving
@@ -91,7 +102,7 @@ Node 20+.
 ```bash
 npm install
 npm start          # dev server with HMR at http://localhost:3000
-npm test           # vitest: theory, song format, parts, drums, Hooktheory import
+npm test           # vitest: theory, song format, parts, drums, Hooktheory import, Learn content
 npm run build      # production bundle in dist/
 npm run levels     # renders every instrument offline in headless Chromium and checks levels
 ```
@@ -120,6 +131,10 @@ src/
                          reading untrusted saves (readSaved → readFullSong, or readSong + fromSingleSection for v2), share links
   sections.ts            the section projection (sectionView / applySectionEdit), section and chain edits, chain layout
   playback.ts            what plays: sectionEvents (one section), chainEvents (the whole chain), loop lengths
+  learn.ts               the Learn page's content as pure data: progressions (degree + ChordType + 4/4 beats in their own scale), fitting
+                         them into the song's scale (fitProgression: exact, on the relative major/minor, or "needs" + the closest
+                         in-scale version), numerals (chordNumeral), clips (progressionClips, voice-led) and insertProgression;
+                         stick and pad sounds, combos, chordMood; melody rules with invented examples (Note[] in scale steps)
   hooktheory.ts          Paste from Hooktheory: parses the clipboard JSON (untrusted, never throws), maps notes into Melody parts
                          (octave windows, ♯/♭ spelling via spellInScale, monophony) and chords onto pad chords (chordTones → matchChord)
   useHistory.ts          undo/redo with merge keys (one knob turn or slider drag = one step)
@@ -131,7 +146,7 @@ src/
     drumkit.ts           the synthesised drum kit
     sequencer.ts         lookahead scheduler on the Tone Transport (reads the song fresh every 1/16)
   components/
-    TopBar               the one header (phones and desktop): key, scale, tempo, Play/Pause, Record, modes, ⚙
+    TopBar               the one header (phones and desktop): key, scale, tempo, Play/Pause, Record, modes, 📖 Learn, ⚙
     Device               chord info (ChordInfo), play strip (PlayStrip: octave, inversion, voice leading, Pads → picker),
                          scale-key strip (desktop), stick (segmented ring), pads, Chords/Notes switch
     SongView             Song mode's top level: section tiles (ChipLine measures the chord chips), the chain, Chain | Loop
@@ -144,6 +159,8 @@ src/
                          effects), Master
     FxMatrix, Knob       SpaceControls (shared reverb/delay/out), the effects matrix (Mix overview), the knob control
     SettingsSheet        ⚙ sheet and the Credits dialog; useDialog.ts gives dialogs their focus trap and Esc
+    LearnPanel           📖 Learn: tabs, progression cards (▶, Use in song, the scale choice), chord cards, melody rules
+                         with the mini grid (MiniGrid); a modal on phones, a region in the right column on desktop
     SongMenu, HelpDialog, IntroScreen
     HooktheoryDialog     the Paste from Hooktheory dialog: paste box, options, preview
 scripts/levels*.ts       the level-matching check (npm run levels)
@@ -156,7 +173,7 @@ public/icons/, manifest.webmanifest   app icons (scripts/icons.cjs renders them 
 
 - `FullSong = { key, scale, bpm, timeSignature, space, parts: Part[], sections: Section[], chain: { sectionId }[] }` is the song: everything in it is undoable and saved. `Section = { id, name, letter, steps, chords: Clip[], content: { [partId]: { notes?: Note[] } | { drums?: DrumPattern } }, mutes: { [partId]: true } }`. Melody notes and drum patterns live in sections; chord and bass parts need nothing per section (they follow its chords). In a FullSong the parts carry no content (a Melody part's `notes` is `[]`, a Drums part's `drums` an empty pattern).
 - **The projection**: `sectionView(fullSong, id)` returns an ordinary single-section `Song = { key, scale, chords, parts (with that section's notes/drums), steps, bpm, timeSignature, space }`, the shape the whole song had before sections. The sequencer, melody and drum editors, recording, `partNotes`, rests and Hooktheory paste all work on it unchanged. App's `editSong(fn)` runs `fn` on the open section's view and `applySectionEdit` writes the result back (chords, length and content into the section; key, tempo, parts' sound song-wide; unchanged parts and sections keep their objects). Whole-song edits (sections, chain, time signature, Clear all) go through `editFull`.
-- `Settings` (voiceLeading, octave, inversion, loop, theme `light | dark | auto`, nextHint, padPart = the chord part the pads play through, clickAccent, openSection, playMode `loop | chain`) is saved but not undoable. `readSettings` fills a default for anything missing and ignores fields it doesn't know, so older saves load.
+- `Settings` (voiceLeading, octave, inversion, loop, theme `light | dark | auto`, nextHint, padPart = the chord part the pads play through, clickAccent, openSection, playMode `loop | chain`, learnTab `progressions | chords | melody`, chordMood) is saved but not undoable. `readSettings` fills a default for anything missing and ignores fields it doesn't know, so older saves load.
 - Time is in **ticks, 96 per quarter note** (`PPQ`). A sequencer step is one beat of the time signature (`ticksPerStep(ts)`: 96 in x/4, 48 in x/8). Melody and drums work in 1/16s (`TICKS_PER_SIXTEENTH` = 24).
 - A chord part's style: `playMode` ('Chord' | 'Strum' | 'Arp'), arp settings, and `strumSpread` (s) / `strumDirection`. `strumOffsets(midi, spread, direction, hit)` (theory.ts) gives each note's delay; `chordPartNotes` counts hits along the row so alternating strums don't depend on where playback starts, and the pads keep their own counter.
 - A chord clip stores only `{ degree, type, inversion, octave }`; key and scale come from the song, so `resolveClip(harmony, clip)` turns it into notes.
@@ -232,6 +249,7 @@ CC BY requires credit: the piano is by Alexander Holm (Salamander Grand Piano), 
 - **UI overhaul (Play · Song · Parts)**: done as approved: the LCD gave way to chord info on the body, Sound and FX became Parts, transport only in the top bar, part strips gone (instrument and volume in Parts, mute on the lane labels), chord tools docked, Clear all in the Song menu, ⚙ sheet. On desktop the instrument stays on the left with Song | Parts tabs on the right.
 - **Sections and the chain**: done. Chain blocks are reordered with Move ← / Move → in their long-press menu; real drag-to-reorder was left out (it's hard to make feel right with touch scrolling on iOS). Open questions for the owner: whether the sequencer should follow the playing section while the chain plays (now it stays on the open one and shows the playhead only there), and whether Record in Chain mode should be disabled instead of switching to Loop.
 - **Melody accidentals**: done (per-note ♭/♯, the Notes-mode stick → / ←, Hooktheory keeps alterations). Not done: step recording when the stick moves *after* the pad (the note was already written at the press, so it keeps the pitch it was pressed with; live recording takes the final pitch). Real-phone feel of the stick's sharp/flat flick is untested.
+- **Learn page**: done (Progressions · Chords · Melody, ▶ on everything, Use in song with the scale choice, the optional chord mood in Play mode). Deliberately not a generator. The moods and "where you hear it" lines are common associations written in genre/era terms; the only named piece is C418's "Living Mice" for the calm minor loop, as the owner's own reading. ▶ plays block chords (it ignores the pads' part strum/arp style) and stops song playback; the examples' timing follows the song's tempo. Not verifiable here: how the examples sound on a phone speaker, and reading comfort on a real iPhone (checked in Chromium at 844×390, 667×375, 932×430 and 390×844).
 - **Melody and bass generator** (Generate / Re-roll writing ordinary notes): designed, not built; the owner put it on hold. Bass would need its own note grid ("Custom" style) for that.
 - **Per-chord style overrides** (e.g. Keys arpeggiates only one chord): designed, the owner decided it isn't needed for now.
 - **Samples**: one velocity layer each, no round-robins, so fast repeated notes sound alike. More layers would mean more megabytes. The tonejs-instruments set (CC BY 3.0) has guitar, harp and other instruments if more are wanted.

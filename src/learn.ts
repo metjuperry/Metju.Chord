@@ -303,10 +303,13 @@ export function fitProgression(p: Progression, key: MusicalKey, scale: ScaleId):
 export const chordNames = (key: MusicalKey, scale: ScaleId, chords: { degree: number; type: ChordType }[]) =>
     chords.map(ch => resolveChord(key, { ...ch, inversion: 0, octave: 4, scale }).name.symbol);
 
-/** "C Mixolydian", "A minor". */
-export function keyLabel(pc: number, key: MusicalKey, scale: ScaleId): string {
-    const label = scaleLabel(scale);
-    const modal = !['major', 'minor', 'harmonicMinor', 'melodicMinor'].includes(scale);
+/**
+ * "C Mixolydian", "A minor": the note `pc` spelled as `key` and `scale` spell it (flats in flat keys),
+ * named as a key of `as` (default `scale`), e.g. the relative minor of C major is keyLabel(9, 'C', 'major', 'minor').
+ */
+export function keyLabel(pc: number, key: MusicalKey, scale: ScaleId, as: ScaleId = scale): string {
+    const label = scaleLabel(as);
+    const modal = !['major', 'minor', 'harmonicMinor', 'melodicMinor'].includes(as);
     return `${noteNames(key, scale)[((pc % 12) + 12) % 12]} ${modal ? label : label.toLowerCase()}`;
 }
 
