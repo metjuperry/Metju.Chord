@@ -17,6 +17,8 @@ interface SettingsSheetProps {
     meter: string;
     nextHint: boolean;
     onNextHint: (on: boolean) => void;
+    chordMood: boolean;
+    onChordMood: (on: boolean) => void;
     onHelp: () => void;
     onCredits: () => void;
 }
@@ -75,6 +77,7 @@ const SettingsSheet: React.FC<SettingsSheetProps> = p => {
                 <Toggle label="Click" desc={`a metronome on every beat · ${p.meter}`} on={p.click} onChange={p.onClick} />
                 <Toggle label="Accent the downbeat" desc="the first beat of the bar clicks higher" on={p.clickAccent} onChange={p.onClickAccent} />
                 <Toggle label="Next chords on the screen" desc="after each chord, the ones that often follow it in this key" on={p.nextHint} onChange={p.onNextHint} />
+                <Toggle label="Chord mood in Play mode" desc="a word for how the chord tends to feel, next to its type (i · 9th · bittersweet)" on={p.chordMood} onChange={p.onChordMood} />
 
                 <div className="ss-rule" />
 

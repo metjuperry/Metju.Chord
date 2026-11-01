@@ -11,8 +11,10 @@ import IntroScreen, { IntroPhase } from './components/IntroScreen';
 import MelodyEditor from './components/MelodyEditor';
 import PartsView, { MASTER, instrumentLabel } from './components/PartsView';
 import SettingsSheet, { CreditsDialog } from './components/SettingsSheet';
+import LearnPanel, { HearEvent, UseHow } from './components/LearnPanel';
+import { LearnTab, Progression as LearnProgression, chordMood, fitProgression, insertProgression, progressionClips } from './learn';
 import {
-    ChordParams, ChordType, KEYS, NoteTag, ResolvedChord, StickDir,
+    ChordParams, ChordType, KEYS, NoteTag, ResolvedChord, StickDir, scaleLabel,
     STICK_DIRS, ScaleId, buildChordMidi, chordTags, keyPitchClass, resolveChord, romanNumeral, scalePitchClasses,
     nextChords, noteNames, spellNoteOctave, stickChordType, strumOffsets, triadQuality, voiceLead,
 } from './theory';
@@ -180,6 +182,10 @@ const App: React.FC = () => {
     const [htOpen, setHtOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [creditsOpen, setCreditsOpen] = useState(false);
+    /** 📖 Learn: the reference page (over everything on phones, in the right column on desktop) and its last tab. */
+    const [learnOpen, setLearnOpen] = useState(false);
+    const [learnTab, setLearnTab] = useState<LearnTab>(initial.learnTab);
+    const [chordMoodOn, setChordMoodOn] = useState(initial.chordMood);
 
     // ---- stick: a latched direction (mouse) and momentary ones (held keys) --------
     const [latchedDir, setLatchedDir] = useState<StickDir>('C');
@@ -948,7 +954,7 @@ const App: React.FC = () => {
     const snapshot = (): SavedState => ({
         version: SAVE_VERSION,
         song: full,
-        settings: { voiceLeading, octave, inversion, loop, theme, nextHint, padPart: padPartId, clickAccent, openSection: openKey, playMode },
+        settings: { voiceLeading, octave, inversion, loop, theme, nextHint, padPart: padPartId, clickAccent, openSection: openKey, playMode, learnTab, chordMood: chordMoodOn },
     });
 
     // Autosave a moment after any change
@@ -962,7 +968,7 @@ const App: React.FC = () => {
         }, 400);
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [full, voiceLeading, octave, inversion, loop, theme, nextHint, padPartId, clickAccent, openKey, playMode]);
+    }, [full, voiceLeading, octave, inversion, loop, theme, nextHint, padPartId, clickAccent, openKey, playMode, learnTab, chordMoodOn]);
 
     /** Replace the song (undoable) and take over its saved settings. */
     const loadState = (state: SavedState, message: string) => {
@@ -977,6 +983,7 @@ const App: React.FC = () => {
         setInversion(st.inversion);
         setLoop(st.loop);
         setNextHint(st.nextHint);
+        setChordMoodOn(st.chordMood);
         setPadPartId(st.padPart);
         setSelectedLane(CHORD_LANE);
         setSelected(0);
@@ -1058,10 +1065,72 @@ const App: React.FC = () => {
         },
     };
 
+    // ---- 📖 Learn: hearing examples, putting a progression into the song -----------------------
+
+    const hearTimers = useRef<number[]>([]);
+    const [hearing, setHearing] = useState<string | null>(null);
+    const hearingRef = useRef<string | null>(null);
+    hearingRef.current = hearing;
+    const stopHearing = () => {
+        hearTimers.current.forEach(t => clearTimeout(t));
+        hearTimers.current = [];
+        if (hearingRef.current && audioReady) getEngine().releaseAll();
+        setHearing(null);
+    };
+    useEffect(() => () => hearTimers.current.forEach(t => clearTimeout(t)), []);
+    /**
+     * Play a Learn example once: chords on the pads' part, melody notes on the melody part the pads
+     * would play (or the pads' part if there is none). Each event is handed to the engine shortly
+     * before it's due, so ■ can stop what hasn't started yet. Song playback stops first.
+     */
+    const hear = async (id: string, events: HearEvent[]) => {
+        stopHearing();
+        if (playing) stopPlayback();
+        await startAudio();
+        const engine = getEngine();
+        const melodyTrack = (padMelody ?? padPart).id;
+        const t0 = Tone.now() + 0.06;
+        let end = 0;
+        for (const e of events) {
+            const at = ticksToSeconds(e.start);
+            const duration = ticksToSeconds(e.len) * 0.92;
+            end = Math.max(end, at + duration);
+            const track = e.layer === 'melody' ? melodyTrack : padPart.id;
+            const fire = () => engine.playChord(e.midi, { duration, time: Math.max(Tone.now(), t0 + at), track });
+            const wait = (at - 0.25) * 1000;
+            if (wait <= 0) fire();
+            else hearTimers.current.push(window.setTimeout(fire, wait));
+        }
+        setHearing(id);
+        hearTimers.current.push(window.setTimeout(() => setHearing(h => (h === id ? null : h)), (end + 0.25) * 1000));
+    };
+
+    /** The song right after a progression went in, so its card can offer Undo while that's still the last edit. */
+    const learnAdded = useRef<{ id: string; song: FullSong } | null>(null);
+    /**
+     * Write a progression into the open section's chord row at tick `at`, as one undo step: as it fits
+     * the song's scale, or (when it needs another one) after switching the song's scale, or as the
+     * closest version in the song's scale. The key never changes, and the scale only on 'switch'.
+     */
+    const addProgression = (prog: LearnProgression, how: UseHow, at: number) => {
+        const fit = fitProgression(prog, selectedKey, scale);
+        const sc = fit.kind === 'needs' && how === 'switch' ? fit.needs : scale;
+        const chosen = fit.kind !== 'needs' || how === 'switch' ? fit.chords : fit.closest;
+        const clips = progressionClips(chosen, selectedKey, sc, ts, octave);
+        const view = sectionView(full, openKey);
+        const done = insertProgression({ ...view, scale: sc }, clips, at);
+        const next = applySectionEdit(full, openKey, done.song);
+        editFull(() => next);
+        learnAdded.current = { id: prog.id, song: next };
+        const bar = Math.floor(at / barTicks) + 1;
+        const what = how === 'switch' ? ` and switched to ${scaleLabel(sc).toLowerCase()}` : how === 'closest' ? ' (closest in your scale)' : '';
+        flash(`${prog.name} added to ${openSec.name} at bar ${bar}${what}.${done.cut ? ` ${done.cut} chord${done.cut === 1 ? '' : 's'} past the end left out.` : ''} Undo to take it out.`);
+    };
+
     // ---- keyboard -----------------------------------------------------------------------
 
     // while a dialog is open the instrument's keys are off (typing or tabbing in it mustn't play pads)
-    const modalOpen = helpOpen || htOpen || settingsOpen || creditsOpen;
+    const modalOpen = helpOpen || htOpen || settingsOpen || creditsOpen || (learnOpen && compact);
     const keyActions = useRef({ pressPad, releasePad, releaseAll, togglePlay, toggleRecord, edit, melody: melodyActions, helpOpen: modalOpen, undo: history.undo, redo: history.redo });
     keyActions.current = { pressPad, releasePad, releaseAll, togglePlay, toggleRecord, edit, melody: melodyActions, helpOpen: modalOpen, undo: history.undo, redo: history.redo };
 
@@ -1182,7 +1251,9 @@ const App: React.FC = () => {
             symbol: shown.chord.name.symbol,
             long: shown.chord.name.long,
             numeral: shown.note ? `${shown.acc ? (shown.acc > 0 ? '♯' : '♭') : ''}${shown.degree + 1}` : romanNumeral(shown.degree, shown.scale),
-            typeLabel: shown.note ? noteTypeLabel(shown.dir, shown.acc ?? 0) : TYPE_LABELS[shown.type ?? 'triad'],
+            typeLabel: shown.note ? noteTypeLabel(shown.dir, shown.acc ?? 0)
+                : chordMoodOn ? `${TYPE_LABELS[shown.type ?? 'triad']} · ${chordMood(shown.type ?? 'triad', triadQuality(shown.degree, shown.scale))}`
+                    : TYPE_LABELS[shown.type ?? 'triad'],
             extra: shown.note ? padMelody?.name : INVERSION_LABELS[Math.min(shown.inversion, shown.chord.midi.length - 1)] || undefined,
             // a chord's notes from its root (root dark, what the stick added yellow); a note shown in its scale
             tags: shown.note
@@ -1526,6 +1597,33 @@ const App: React.FC = () => {
         />
     );
 
+    const learnEl = (docked: boolean) => (
+        <LearnPanel
+            open={learnOpen}
+            docked={docked}
+            onClose={() => {
+                stopHearing();
+                setLearnOpen(false);
+            }}
+            tab={learnTab}
+            onTab={setLearnTab}
+            songKey={selectedKey}
+            scale={scale}
+            ts={ts}
+            octave={octave}
+            melodyOctave={padMelody?.octave ?? 4}
+            melodyColor={(padMelody ?? padPart).color}
+            sectionName={openSec.name}
+            selectedStep={selected}
+            hearing={hearing}
+            onHear={hear}
+            onStopHearing={stopHearing}
+            onUse={addProgression}
+            justAdded={learnAdded.current && learnAdded.current.song === full ? learnAdded.current.id : null}
+            onUndoAdd={history.undo}
+        />
+    );
+
     const entering = intro === 'leaving' ? 'app-entering' : '';
     const songEl = songZoom === 'song' ? songViewEl : progressionEl;
     // Desktop: the instrument stays on the left; Song and Parts are tabs on the right
@@ -1551,6 +1649,8 @@ const App: React.FC = () => {
                 onTogglePlay={togglePlay}
                 onToggleRecord={toggleRecord}
                 onOpenSettings={() => setSettingsOpen(true)}
+                learnOpen={learnOpen}
+                onToggleLearn={() => setLearnOpen(o => !o)}
             />
             {compact ? (
                 <>
@@ -1562,6 +1662,7 @@ const App: React.FC = () => {
                 <div className="desk-split">
                     <div className="desk-left">{deviceEl}</div>
                     <div className="desk-right">
+                        {learnOpen ? learnEl(true) : (<>
                         <div className="desk-tabs segmented" role="tablist" aria-label="Song or Parts">
                             {deskTabs.map(t => (
                                 <button
@@ -1590,6 +1691,7 @@ const App: React.FC = () => {
                         <div id="desk-panel" role="tabpanel" aria-labelledby={`tab-${rightTab}`} className="desk-panel">
                             {rightTab === 'song' ? songEl : partsEl}
                         </div>
+                        </>)}
                     </div>
                 </div>
             )}
@@ -1605,9 +1707,12 @@ const App: React.FC = () => {
                 meter={`${ts.beats}/${ts.unit}`}
                 nextHint={nextHint}
                 onNextHint={setNextHint}
+                chordMood={chordMoodOn}
+                onChordMood={setChordMoodOn}
                 onHelp={() => setHelpOpen(true)}
                 onCredits={() => setCreditsOpen(true)}
             />
+            {compact && learnEl(false)}
             <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
             <CreditsDialog open={creditsOpen} onClose={() => setCreditsOpen(false)} />
             {htDialog}

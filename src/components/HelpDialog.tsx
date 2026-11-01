@@ -78,8 +78,11 @@ const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose }) => {
                         (chord, strum, arpeggio; bass style; melody range), tone knobs and effects. <b>Master</b> holds the shared reverb, delay and output. Mute and solo here are for the whole song.</dd>
                     <dt><b>Desktop</b></dt>
                     <dd>On a wide screen the instrument stays on the left and Song and Parts are tabs on the right.</dd>
+                    <dt><b>Learn</b></dt>
+                    <dd>A reference for a blank song: chord progressions in your key (hear one, or put it into the open section), what each
+                        stick direction and pad tends to sound like, and short melody guidelines with tiny examples. On desktop it opens on the right.</dd>
                     <dt><b>⚙</b></dt>
-                    <dd>Theme, the click, the next-chord hint, this help and the credits.</dd>
+                    <dd>Theme, the click, the next-chord hint, the chord mood in Play mode, this help and the credits.</dd>
                 </dl>
 
                 <h3 className="eyebrow">The stick</h3>

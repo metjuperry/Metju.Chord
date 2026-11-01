@@ -3,6 +3,7 @@ import type { ArpRate } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
 import { Clip, PPQ, STEPS_PER_ROW } from './progression';
 import { DRUM_VOICES, DrumPattern, PATTERN_BARS, PatternBars, TICKS_PER_SIXTEENTH, emptyPattern, fitPattern, isEmptyPattern, sixteenthsPerBar } from './drums';
+import type { LearnTab } from './learn';
 import { BASS_STYLES, BassStyle, FX_KEYS, MAX_PARTS, MELODY_STEPS, Note, PART_COLORS, Part, PartFx, PartKind, PartTone, PlayMode, STRUM_DIRECTIONS, TONE_KEYS, fxAvailable, neutralTone, newPart } from './parts';
 
 // ---- the song: everything undo/redo, saving and sharing cover ---------------------------
@@ -168,6 +169,10 @@ export interface Settings {
     openSection: string;
     /** Play the chain of sections, or loop the open one. */
     playMode: PlaybackMode;
+    /** The Learn page's last tab. */
+    learnTab: LearnTab;
+    /** Play mode's chord info adds a one-word mood ("i · 9th · bittersweet"). */
+    chordMood: boolean;
 }
 
 export type PlaybackMode = 'loop' | 'chain';
@@ -201,7 +206,7 @@ export function newSong(): Song {
 
 export const defaultSettings = (): Settings => ({
     voiceLeading: false, octave: 4, inversion: 0, loop: true, theme: 'dark', nextHint: true, padPart: '', clickAccent: true,
-    openSection: '', playMode: 'loop',
+    openSection: '', playMode: 'loop', learnTab: 'progressions', chordMood: false,
 });
 
 /** A part without its content: what a FullSong keeps song-wide. */
@@ -426,6 +431,8 @@ export function readSettings(v: unknown): Settings {
         clickAccent: bool(v.clickAccent, d.clickAccent),
         openSection: typeof v.openSection === 'string' ? v.openSection.slice(0, 24) : d.openSection,
         playMode: oneOf<PlaybackMode>(v.playMode, ['loop', 'chain'], d.playMode),
+        learnTab: oneOf<LearnTab>(v.learnTab, ['progressions', 'chords', 'melody'], d.learnTab),
+        chordMood: bool(v.chordMood, d.chordMood),
     };
 }
 
