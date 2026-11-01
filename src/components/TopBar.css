@@ -1,21 +1,30 @@
+/* The one header (phones and desktop): brand, key, scale, tempo, play/record, modes, settings */
 .top-bar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 10px 12px;
-    padding: 12px 16px;
+    gap: 6px 8px;
+    padding: 6px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+}
+
+.top-bar:not(.compact) {
+    gap: 8px 14px;
+    padding: 10px 14px;
 }
 
 .brand {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-right: 4px;
+    flex: 0 0 auto;
 }
 
 .brand-mark {
-    width: 28px;
-    height: 28px;
+    width: 30px;
+    height: 30px;
     border-radius: 6px;
     display: grid;
     place-items: center;
@@ -38,111 +47,141 @@
     color: var(--hot);
 }
 
-.top-group {
+.tb-group {
     display: flex;
     align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
+    gap: 3px;
 }
 
-.key-strip {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 2px;
-    padding: 3px;
-    background: var(--bg);
+/* Key ▾ and Scale ▾: native selects (the iOS wheel) dressed as the bar's buttons */
+.tb-select {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.tb-select select {
+    appearance: none;
+    -webkit-appearance: none;
+    height: 32px;
+    padding: 0 24px 0 9px;
     border: 1px solid var(--line);
-    border-radius: 8px;
-}
-
-.key-strip button {
-    min-width: 28px;
-    height: 34px;
-    border: 0;
     border-radius: 6px;
-    background: transparent;
-    font-size: 12px;
-    font-weight: 700;
-}
-
-.key-strip button.sharp {
-    color: var(--muted);
-}
-
-.key-strip button[aria-pressed='true'] {
-    background: var(--accent);
-    color: var(--accent-ink);
-}
-
-.scale-select {
-    height: 40px;
-    padding: 0 4px;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: var(--bg);
+    background: var(--panel-2);
     color: var(--text);
     font: inherit;
     font-size: 12px;
     font-weight: 700;
+    cursor: pointer;
 }
 
-.step-button {
-    width: 34px;
-    height: 34px;
+.tb-chevron {
+    position: absolute;
+    right: 8px;
+    pointer-events: none;
+    color: var(--muted);
+}
+
+.tb-step {
+    width: 30px;
+    height: 32px;
     border: 1px solid var(--line);
     border-radius: 6px;
     background: var(--panel-2);
-    font-size: 15px;
+    font-size: 14px;
 }
 
-.step-button:disabled {
+.tb-step:disabled {
     color: var(--faint);
 }
 
-.step-value {
-    min-width: 36px;
+.tb-tempo {
+    min-width: 54px;
     text-align: center;
-    font-weight: 700;
-}
-
-.step-value.tempo {
-    min-width: 66px;
-    font-weight: 400;
-}
-
-.step-value.tempo b {
-    font-size: 16px;
-}
-
-.unit {
-    color: var(--muted);
-    font-size: 11px;
-}
-
-.metronome-toggle {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    height: 40px;
-    padding: 0 12px;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: var(--bg);
     font-size: 12px;
+    white-space: nowrap;
 }
 
-.metronome-toggle[aria-pressed='true'] {
-    border-color: var(--accent);
+.top-bar:not(.compact) .tb-tempo b {
+    font-size: 15px;
+}
+
+.tb-unit {
+    font-size: 9px;
+    color: var(--muted);
+}
+
+.tb-play {
+    width: 42px;
+    height: 32px;
+    border: 0;
+    border-radius: 6px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    display: grid;
+    place-items: center;
+}
+
+.tb-rec {
+    width: 36px;
+    height: 32px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--panel-2);
+    display: grid;
+    place-items: center;
+}
+
+.tb-rec:disabled {
+    opacity: 0.45;
+}
+
+.rec-dot {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--hot);
+}
+
+.tb-rec.on {
+    background: var(--hot);
+    border-color: var(--hot);
+}
+
+.tb-rec.on .rec-dot {
+    background: var(--accent-ink);
+}
+
+.tb-modes {
+    margin-left: auto;
+    padding: 2px;
+    background: var(--panel-2);
+}
+
+.tb-modes > button {
+    min-height: 30px;
+    padding: 0 12px;
+}
+
+.tb-gear {
+    width: 36px;
+    height: 32px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--panel-2);
+    display: grid;
+    place-items: center;
 }
 
 .beat-dots {
     display: flex;
     gap: 4px;
+    margin-left: 6px;
 }
 
 .beat-dot {
-    width: 8px;
-    height: 8px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
     background: var(--line-2);
 }
@@ -155,48 +194,33 @@
     background: var(--hot);
 }
 
-.top-actions {
-    margin-left: auto;
-    display: flex;
-    gap: 8px;
-}
-
-/*
- * Sections: logo | key and scale | octave | tempo | click | help and theme, split by thin rules.
- * Only when the bar fits on one line; narrower windows keep the plain wrapping layout,
- * where a rule would land at the start of a wrapped line.
- */
-@media (min-width: 1360px) {
-    .top-bar {
-        flex-wrap: nowrap;
-        column-gap: 0;
+/* Narrow landscape phones (iPhone SE): drop the logo and tighten so the bar stays on one line */
+@media (max-width: 720px) {
+    .top-bar.compact .brand {
+        display: none;
     }
 
-    .top-bar > * {
-        flex: 0 0 auto;
-        padding: 0 10px;
+    .top-bar.compact {
+        gap: 5px;
     }
 
-    .top-bar > * + * {
-        border-left: 1px solid var(--line);
+    .top-bar.compact .tb-modes > button {
+        padding: 0 9px;
     }
 
-    .top-bar > .brand {
-        margin-right: 0;
-        padding-left: 0;
+    .top-bar.compact .tb-step {
+        width: 28px;
     }
 
-    .top-bar > .top-actions {
-        margin-left: auto;
-        padding-right: 0;
+    .top-bar.compact .tb-tempo {
+        min-width: 48px;
     }
 
-    .top-group {
-        flex-wrap: nowrap;
+    .top-bar.compact .tb-select select {
+        padding: 0 20px 0 7px;
     }
 
-    /* a little narrower keys buy the room the rules take */
-    .key-strip button {
-        min-width: 26px;
+    .top-bar.compact .tb-chevron {
+        right: 6px;
     }
 }

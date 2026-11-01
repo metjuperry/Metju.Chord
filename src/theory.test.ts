@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildChordMidi, invert, nameChord, resolveChord, toToneNotes, arpOrder, ChordType, maxInversion, stickChordType, triadQuality, romanNumeral, STICK_DIRS, SCALES, KEYS, scalePitchClasses, noteNames, voiceLead, spreadVoicing, strumOffsets, nextChords, NEXT_DEGREES } from './theory';
+import { buildChordMidi, invert, nameChord, resolveChord, toToneNotes, arpOrder, ChordType, maxInversion, stickChordType, triadQuality, romanNumeral, STICK_DIRS, SCALES, KEYS, scalePitchClasses, noteNames, voiceLead, spreadVoicing, strumOffsets, nextChords, NEXT_DEGREES, chordTags } from './theory';
 
 const TYPES: ChordType[] = ['root', 'triad', 'flip', 'minor', 'dim', 'aug', 'six', 'dom7', 'diatonic7', 'diatonic9', 'sus2', 'sus4'];
 const intervals = (m: number[]) => m.map(n => n - m[0]);
@@ -376,5 +376,27 @@ describe('nextChords (what comes next)', () => {
                 targets.forEach(t => expect(t >= 0 && t < 7).toBe(true));
             });
         }
+    });
+});
+
+describe('chordTags (the play screen\'s note tags)', () => {
+    const tags = (t: ReturnType<typeof chordTags>) => t.map(n => `${n.name}:${n.role}`).join(' ');
+
+    it('stacks the notes from the root and marks the 7th as added', () => {
+        expect(tags(chordTags('A', 'minor', 0, 'diatonic7'))).toBe('A:root C:triad E:triad G:added');
+    });
+
+    it('marks a plain triad without added notes', () => {
+        expect(tags(chordTags('C', 'major', 0, 'triad'))).toBe('C:root E:triad G:triad');
+    });
+
+    it('marks a flipped 3rd, a sus note and a 9th as added', () => {
+        expect(tags(chordTags('C', 'major', 1, 'flip'))).toBe('D:root F#:added A:triad');
+        expect(tags(chordTags('C', 'major', 0, 'sus4'))).toBe('C:root F:added G:triad');
+        expect(chordTags('C', 'major', 0, 'diatonic9').filter(n => n.role === 'added').map(n => n.name)).toEqual(['B', 'D']);
+    });
+
+    it('spells with flats in flat keys', () => {
+        expect(chordTags('F', 'major', 3, 'triad').map(n => n.name)).toEqual(['B♭', 'D', 'F']);
     });
 });

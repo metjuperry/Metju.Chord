@@ -1,0 +1,540 @@
+/* Parts mode: the part list (also the mixer) on the left, the selected part on the right */
+.parts-view {
+    display: grid;
+    grid-template-columns: 214px minmax(0, 1fr);
+    gap: 8px;
+    align-items: start;
+}
+
+.pd-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+/* ---- the list ----------------------------------------------------------------------------------- */
+
+.parts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 8px;
+    align-self: stretch;
+}
+
+.pl-rows {
+    margin-bottom: 4px;
+}
+
+.pl-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 26px;
+    padding: 0 2px;
+}
+
+.small-chip {
+    min-height: 28px;
+    padding: 0 9px;
+}
+
+.pl-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.pl-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 50px;
+    padding: 0 7px 0 8px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+}
+
+/* the selected part: a yellow edge */
+.pl-row.selected {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, var(--panel-2));
+}
+
+.pl-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 0;
+}
+
+.pl-pick {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    text-align: left;
+}
+
+.pl-name {
+    font-weight: 700;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pl-sub {
+    font-size: 10px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pl-row.silenced .pl-name {
+    color: var(--muted);
+    text-decoration: line-through;
+}
+
+.pl-row .ms-button {
+    width: 26px;
+    height: 26px;
+    flex: 0 0 auto;
+}
+
+.pl-master .pl-name {
+    flex: 0 0 auto;
+}
+
+.pl-master {
+    margin-top: auto;
+    min-height: 44px;
+    gap: 7px;
+    text-align: left;
+    color: inherit;
+}
+
+.pd-dot {
+    width: 12px;
+    height: 12px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: var(--track);
+}
+
+.pd-dot.master {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    background: var(--text);
+}
+
+/* volume: a thin bar in the part's colour, with a tick at 0 dB; the hit area is taller than the bar */
+.vol-bar {
+    position: relative;
+    display: block;
+    height: 14px;
+    margin: -5px 0;
+    touch-action: none;
+    cursor: ew-resize;
+    border-radius: 3px;
+}
+
+.vol-bar::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 5px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--line);
+}
+
+.vol-fill {
+    position: absolute;
+    left: 0;
+    top: 5px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--track);
+}
+
+.vol-zero {
+    position: absolute;
+    top: 3px;
+    width: 1px;
+    height: 8px;
+    background: var(--muted);
+}
+
+.vol-bar:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+/* ---- the selected part -------------------------------------------------------------------------- */
+
+.part-detail {
+    min-width: 0;
+    padding: 10px 14px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.pd-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 9px;
+    min-height: 32px;
+}
+
+.pd-name {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 700;
+}
+
+.pd-kind {
+    padding: 2px 6px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.pd-space {
+    flex: 1 1 0;
+}
+
+.pd-pads {
+    min-height: 30px;
+    font-weight: 700;
+}
+
+.pd-pads[aria-pressed='true'] {
+    border: 2px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+}
+
+.pd-remove {
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--panel);
+    color: var(--muted);
+    font-size: 15px;
+}
+
+.pd-block {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+}
+
+.pd-style {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    min-width: 0;
+}
+
+.pd-hint {
+    margin-top: 1px;
+}
+
+.small-seg {
+    padding: 2px;
+    background: var(--panel-2);
+}
+
+.small-seg > button {
+    min-height: 28px;
+    padding: 0 10px;
+    white-space: nowrap;
+}
+
+.pd-select {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: var(--muted);
+}
+
+.pd-select select {
+    height: 30px;
+    padding: 0 6px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--panel);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+/* instrument tiles: one scrolling row, the selected one yellow */
+.inst-row,
+.bass-row {
+    display: flex;
+    gap: 5px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    padding-bottom: 2px;
+    min-width: 0;
+}
+
+.inst-tile {
+    flex: 0 0 74px;
+    height: 46px;
+    padding: 0 2px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.inst-tile[aria-pressed='true'] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+}
+
+.kit-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    min-height: 46px;
+}
+
+.kit-tile {
+    display: inline-flex;
+    align-items: center;
+    height: 40px;
+    padding: 0 14px;
+    border: 2px solid var(--accent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+    font-weight: 700;
+}
+
+/* bass styles: compact tiles, each with a little piano roll of the pattern */
+.bass-row {
+    flex: 1 1 260px;
+}
+
+.bass-tile {
+    flex: 0 0 76px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 3px;
+    padding: 5px 6px 4px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.bass-tile[aria-checked='true'] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+}
+
+.style-preview {
+    width: 100%;
+    height: 16px;
+    fill: var(--faint);
+}
+
+.bass-tile[aria-checked='true'] .style-preview {
+    fill: var(--accent-ink);
+}
+
+.style-preview .style-bar {
+    stroke: var(--line-2);
+    stroke-width: 0.6;
+    vector-effect: non-scaling-stroke;
+}
+
+/* ---- tone and effect knobs ---------------------------------------------------------------------- */
+
+.pd-knobs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+}
+
+.knob-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+}
+
+.knob-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: stretch;
+}
+
+.knob-tile {
+    width: 62px;
+    padding: 5px 2px 6px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+}
+
+/* a knob doing something takes the part's colour, like the effect cells did */
+.knob-tile.on {
+    border-color: color-mix(in srgb, var(--track) 60%, var(--line));
+    background: color-mix(in srgb, var(--track) 10%, var(--panel-2));
+}
+
+.knob-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.knob-value {
+    font-size: 10px;
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+.add-effect {
+    position: relative;
+    display: flex;
+}
+
+.add-tile {
+    justify-content: center;
+    color: var(--muted);
+    min-height: 74px;
+}
+
+.add-plus {
+    font-size: 18px;
+    line-height: 1;
+}
+
+.add-effect-popover,
+.parts-view .add-part-popover {
+    left: 0;
+    right: auto;
+    min-width: 260px;
+}
+
+.add-part {
+    position: relative;
+}
+
+.add-part-hint {
+    color: var(--muted);
+    font-size: 11px;
+}
+
+/* ---- master ------------------------------------------------------------------------------------- */
+
+.master-detail .fx-space {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.knob-cell {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    min-width: 54px;
+}
+
+.knob-cell select {
+    height: 36px;
+    padding: 0 6px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--panel);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+}
+
+/* ---- phones ------------------------------------------------------------------------------------- */
+
+/* landscape phone: the view fills the screen under the bar; each side scrolls on its own */
+@media (max-height: 560px) {
+    .app.compact.mode-parts {
+        height: 100vh;
+        height: 100dvh;
+        overflow: hidden;
+    }
+
+    .app.compact.mode-parts .parts-view {
+        flex: 1 1 auto;
+        min-height: 0;
+        align-items: stretch;
+    }
+
+    .app.compact.mode-parts .parts-list,
+    .app.compact.mode-parts .part-detail {
+        overflow-y: auto;
+        min-height: 0;
+    }
+
+    .part-detail {
+        gap: 8px;
+    }
+}
+
+/* portrait phone: the list on top, the part under it */
+@media (max-width: 560px) {
+    .parts-view {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .pl-master {
+        min-height: 40px;
+    }
+}

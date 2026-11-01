@@ -17,32 +17,10 @@
     gap: 12px;
 }
 
-/* Chords / Notes: what the pads play */
-.device-top .pad-mode {
-    margin-left: auto;
-}
-
 .pad-mode > button {
     min-height: 28px;
     padding: 0 12px;
     font-size: 11px;
-}
-
-/* phones: the switch sits at the end of the screen line */
-.screen-row {
-    display: flex;
-    align-items: stretch;
-    gap: 8px;
-}
-
-.screen-row > .oled {
-    flex: 1 1 auto;
-    min-width: 0;
-}
-
-.screen-row > .pad-mode {
-    flex: 0 0 auto;
-    align-self: center;
 }
 
 /* a stick direction that does nothing in this mode */
@@ -79,131 +57,6 @@
 .device-leds .led-play {
     background: #ffcc00;
     box-shadow: 0 0 8px #ffcc00;
-}
-
-/* ---- OLED ---------------------------------------------------------------- */
-
-.oled {
-    background: var(--oled);
-    border: 1px solid #000;
-    border-radius: 12px;
-    padding: 12px 18px 14px;
-    font-family: var(--font-oled);
-    color: var(--oled-text);
-    box-shadow: inset 0 0 0 2px #111614, inset 0 0 24px rgba(255, 204, 0, 0.05);
-    text-shadow: 0 0 6px rgba(255, 204, 0, 0.35);
-    min-height: 170px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-}
-
-.oled-status,
-.oled-foot {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 18px;
-    font-size: 19px;
-    line-height: 1;
-    color: var(--oled-dim);
-    text-transform: uppercase;
-}
-
-.oled-flag {
-    margin-left: auto;
-}
-
-.oled-flag.rec {
-    color: #ff8a57;
-    text-shadow: 0 0 6px rgba(255, 107, 31, 0.6);
-}
-
-.oled-foot .oled-inv {
-    margin-left: auto;
-}
-
-/* "NEXT IV F · V G": a quiet hint on the screen, dimmer than the chord itself */
-.oled-next {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 6px;
-    margin-left: auto;
-    color: var(--oled-text);
-    white-space: nowrap;
-    /* chord names keep their case: Dm is not DM */
-    text-transform: none;
-}
-
-.oled-next + .oled-inv {
-    margin-left: 0;
-}
-
-.oled-next-label {
-    text-transform: uppercase;
-    color: var(--oled-dim);
-    font-size: 0.8em;
-    letter-spacing: 0.08em;
-}
-
-.oled-next-chord {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 4px;
-}
-
-.oled-next-numeral {
-    color: var(--oled-dim);
-}
-
-.oled-next-dot {
-    color: var(--oled-dim);
-    margin-right: 2px;
-}
-
-.oled-main {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 6px 0;
-}
-
-.oled-symbol {
-    font-size: 92px;
-    line-height: 0.85;
-    letter-spacing: 0.01em;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.oled-main.idle .oled-symbol {
-    font-size: 56px;
-    color: var(--oled-dim);
-}
-
-.oled-side {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 6px;
-    padding-bottom: 6px;
-}
-
-.oled-numeral {
-    font-size: 28px;
-    border: 1px solid var(--oled-dim);
-    border-radius: 4px;
-    padding: 0 8px;
-    line-height: 1.1;
-}
-
-.oled-stick {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 20px;
-    color: var(--oled-dim);
 }
 
 /* ---- keyboard strip ------------------------------------------------------ */
@@ -504,31 +357,6 @@
     text-overflow: ellipsis;
 }
 
-/* ---- foot ---------------------------------------------------------------- */
-
-.device-foot {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px 24px;
-    border-top: 1px solid var(--device-edge);
-    padding-top: 14px;
-}
-
-.inversion {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.device-caption {
-    font-size: 11px;
-    color: var(--device-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-}
-
 .segmented.dark {
     background: var(--device-inset);
     border-color: var(--device-edge);
@@ -568,15 +396,6 @@
         border-radius: 20px;
     }
 
-    .oled-symbol {
-        font-size: 64px;
-    }
-
-    .oled-status,
-    .oled-foot {
-        font-size: 16px;
-    }
-
     .pads {
         height: 136px;
         column-gap: 4px;
@@ -597,36 +416,6 @@
     .pad-numeral {
         display: none;
     }
-}
-
-.inversion {
-    flex-wrap: wrap;
-}
-
-.vl-toggle {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 11px;
-    color: var(--device-muted);
-}
-
-.vl-toggle .switch {
-    background: var(--device-inset);
-    border-color: var(--device-line);
-}
-
-.vl-toggle .switch span {
-    background: var(--device-muted);
-}
-
-.vl-toggle .switch[aria-checked='true'] {
-    background: var(--cap);
-    border-color: var(--cap);
-}
-
-.vl-toggle .switch[aria-checked='true'] span {
-    background: var(--cap-ink);
 }
 
 [data-theme='light'] .pad {
@@ -658,43 +447,6 @@
     flex-shrink: 1;
 }
 
-.device.compact .oled-main.idle .oled-symbol {
-    font-size: 36px;
-}
-
-.device.compact .oled {
-    min-height: 0;
-    padding: 6px 12px 8px;
-    gap: 2px;
-}
-
-/* key, scale, octave and tempo are already in the bar; the screen keeps only the recording flag */
-.device.compact .oled-status span:not(.oled-flag) {
-    display: none;
-}
-
-.device.compact .oled-status {
-    font-size: 15px;
-    min-height: 15px;
-}
-
-.device.compact .oled-symbol {
-    font-size: 56px;
-}
-
-.device.compact .oled-main {
-    padding: 0;
-}
-
-.device.compact .oled-numeral {
-    font-size: 22px;
-}
-
-.device.compact .oled-stick,
-.device.compact .oled-foot {
-    font-size: 16px;
-}
-
 .device.compact .device-controls {
     justify-content: center;
 }
@@ -708,67 +460,6 @@
     .device.compact {
         display: flex;
         flex-direction: column;
-    }
-
-    .device.compact .oled {
-        flex-direction: row;
-        align-items: center;
-        gap: 14px;
-        padding: 4px 14px;
-    }
-
-    .device.compact .oled-main {
-        order: 1;
-        align-items: center;
-        gap: 12px;
-    }
-
-    .device.compact .oled-symbol {
-        font-size: 44px;
-    }
-
-    .device.compact .oled-side {
-        flex-direction: row;
-        align-items: center;
-        gap: 10px;
-        padding: 0;
-    }
-
-    .device.compact .oled-numeral {
-        font-size: 20px;
-    }
-
-    .device.compact .oled-foot {
-        order: 2;
-        flex: 1;
-        min-width: 0;
-        flex-wrap: nowrap;
-        white-space: nowrap;
-        overflow: hidden;
-    }
-
-    /* one line of screen: the notes give way to the hint, and the inversion label goes */
-    .device.compact .oled-foot:has(.oled-next) .oled-inv {
-        display: none;
-    }
-
-    .device.compact .oled-notes {
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .device.compact .oled-next {
-        flex: 0 0 auto;
-    }
-
-    .device.compact .oled-status {
-        order: 3;
-        min-height: 0;
-    }
-
-    .device.compact .oled-main.idle .oled-symbol {
-        font-size: 32px;
     }
 
     .device.compact .device-controls {
@@ -785,7 +476,7 @@
     }
 
     .device.compact .stick {
-        --stick-size: min(232px, calc(100dvh - 140px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)));
+        --stick-size: min(232px, calc(100dvh - 176px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)));
     }
 
     .device.compact .dir-name {
@@ -812,4 +503,393 @@
 /* yellow text doesn't read on the light device: the centred knob's name goes dark gold */
 [data-theme='light'] .stick-knob.active .knob-name {
     color: #8a6d00;
+}
+
+/* ---- chord info: drawn on the body, no screen ---------------------------------------------------- */
+
+.info-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 46px;
+}
+
+.info-row > .pad-mode {
+    flex: 0 0 auto;
+}
+
+.pad-mode > button {
+    min-height: 36px;
+    padding: 0 14px;
+    font-size: 12px;
+}
+
+.chord-info {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 4px 0 6px;
+    color: var(--device-text);
+    overflow: hidden;
+}
+
+.ci-symbol {
+    flex: 0 1 auto;
+    min-width: 0;
+    font-family: var(--font-display);
+    font-size: 34px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* the chord played last, once let go: still there, a little calmer */
+.chord-info:not(.live) .ci-symbol {
+    color: color-mix(in srgb, var(--device-text) 78%, var(--device));
+}
+
+.ci-detail {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.ci-type {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--device-muted);
+    white-space: nowrap;
+}
+
+.ci-tags {
+    display: flex;
+    gap: 3px;
+}
+
+.ci-tag {
+    padding: 1px 5px;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.4;
+    border-radius: 4px;
+    border: 1px solid var(--device-line);
+    background: color-mix(in srgb, var(--device) 60%, #fff 40%);
+    color: var(--device-text);
+    white-space: nowrap;
+}
+
+[data-theme='dark'] .ci-tag.triad {
+    background: var(--device-inset);
+}
+
+.ci-tag.root {
+    background: var(--device-text);
+    border-color: var(--device-text);
+    color: var(--cap);
+}
+
+[data-theme='dark'] .ci-tag.root {
+    background: var(--cap-ink);
+    border-color: var(--device-line);
+}
+
+.ci-tag.added {
+    background: var(--cap);
+    border-color: var(--cap);
+    color: var(--cap-ink);
+}
+
+.ci-prompt {
+    font-size: 12px;
+    color: var(--device-muted);
+    letter-spacing: 0.04em;
+}
+
+.ci-space {
+    flex: 1 1 0;
+}
+
+.ci-rec {
+    flex: 0 0 auto;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--hot);
+    color: var(--hot-text);
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+[data-theme='dark'] .ci-rec {
+    color: #ff8a57;
+}
+
+.ci-next {
+    flex: 0 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    overflow: hidden;
+}
+
+.ci-next-label {
+    flex: 0 0 auto;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--device-muted);
+    margin-right: 2px;
+}
+
+.ci-next-card {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    height: 34px;
+    box-sizing: border-box;
+    padding: 8px 9px 0;
+    border: 1px solid var(--device-line);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--device) 60%, #fff 40%);
+    font-family: var(--font-display);
+    font-size: 15px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+[data-theme='dark'] .ci-next-card {
+    background: var(--device-inset);
+}
+
+.ci-next-numeral {
+    font-family: var(--font-ui);
+    font-size: 10px;
+    font-weight: 400;
+    color: var(--device-muted);
+}
+
+/* ---- play strip: octave, inversion, voice leading, the pads' part ---------------------------------- */
+
+.play-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    min-height: 32px;
+    color: var(--device-text);
+}
+
+.strip-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.strip-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--device-muted);
+    white-space: nowrap;
+}
+
+.strip-group > .strip-label {
+    margin-right: 2px;
+}
+
+.strip-step {
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--device-line);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--device) 60%, #fff 40%);
+    color: var(--device-text);
+}
+
+[data-theme='dark'] .strip-step,
+[data-theme='dark'] .strip-button {
+    background: var(--device-inset);
+}
+
+.strip-step:disabled {
+    color: var(--device-faint);
+}
+
+.strip-value {
+    min-width: 24px;
+    text-align: center;
+    font-weight: 700;
+    font-size: 12px;
+}
+
+.strip-rule {
+    width: 1px;
+    height: 20px;
+    background: var(--device-line);
+}
+
+.strip-seg {
+    padding: 2px;
+}
+
+.strip-seg > button {
+    min-height: 24px;
+    padding: 0 8px;
+    font-size: 11px;
+}
+
+.strip-button {
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--device-line);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--device) 60%, #fff 40%);
+    color: var(--device-text);
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.strip-button:disabled {
+    color: var(--device-faint);
+}
+
+.vl-button {
+    padding-left: 6px;
+}
+
+.mini-switch {
+    position: relative;
+    width: 26px;
+    height: 16px;
+    border-radius: 8px;
+    background: var(--device-inset);
+    border: 1px solid var(--device-line);
+    box-sizing: border-box;
+}
+
+.mini-switch span {
+    position: absolute;
+    left: 2px;
+    top: 2px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--device-muted);
+    transition: left 0.12s;
+}
+
+.vl-button[aria-checked='true'] .mini-switch {
+    background: var(--cap);
+    border-color: var(--cap);
+}
+
+.vl-button[aria-checked='true'] .mini-switch span {
+    left: 12px;
+    background: var(--cap-ink);
+}
+
+.strip-space {
+    flex: 1 1 0;
+}
+
+.pads-picker {
+    position: relative;
+}
+
+.pads-target {
+    border-radius: 6px;
+}
+
+.pads-target:disabled {
+    color: var(--device-text);
+    opacity: 1;
+}
+
+.pads-inst {
+    color: var(--device-muted);
+}
+
+.pads-popover {
+    right: 0;
+    left: auto;
+    min-width: 220px;
+    color: var(--text);
+}
+
+.pads-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+}
+
+.pads-popover [aria-checked='true'] {
+    box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* desktop: the strip is the device's foot, under the stick and pads */
+.device:not(.compact) .play-strip {
+    order: 10;
+    border-top: 1px solid var(--device-edge);
+    padding-top: 12px;
+}
+
+.device:not(.compact) .device-hint {
+    order: 11;
+}
+
+.device:not(.compact) .info-row {
+    min-height: 64px;
+}
+
+.device:not(.compact) .ci-symbol {
+    font-size: 44px;
+}
+
+/* phones: narrower landscape (iPhone SE) gives way: the hint label goes, cards stay */
+@media (max-width: 720px) {
+    .device.compact .ci-next-label {
+        display: none;
+    }
+
+    .device.compact .chord-info {
+        gap: 8px;
+    }
+
+    .device.compact .pads-inst {
+        display: none;
+    }
+
+    .device.compact .pad-mode > button {
+        padding: 0 10px;
+    }
+}
+
+/* portrait phones: the chord info wraps the hint under the chord */
+@media (orientation: portrait) and (max-width: 560px) {
+    .device.compact .chord-info {
+        flex-wrap: wrap;
+        row-gap: 6px;
+    }
+
+    .device.compact .ci-space {
+        display: none;
+    }
+
+    .device.compact .ci-next-label {
+        display: inline;
+    }
 }

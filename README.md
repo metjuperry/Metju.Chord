@@ -1,6 +1,8 @@
 # Metju.Chord
 
-A chord instrument and song sketchpad in the browser, modelled on pocket chord machines like the HiChord: seven chord pads, an 8-way stick that changes the chord type, and a screen that shows what you're playing. Underneath is a sequencer where one chord row drives keys, bass, melody and drums, with per-part effects. Built with React 19, TypeScript and Tone.js, no backend.
+A chord instrument and song sketchpad in the browser, modelled on pocket chord machines like the HiChord: seven chord pads, an 8-way stick that changes the chord type, and the chord you're playing written on the instrument. Underneath is a sequencer where one chord row drives keys, bass, melody and drums, with per-part sound and effects. Built with React 19, TypeScript and Tone.js, no backend.
+
+Three modes, one rule: **Play** is the instrument; **Song** is *what* plays (chords, melody notes, drum hits); **Parts** is *how* it sounds (instrument, style, tone, effects). **⚙** holds the app settings.
 
 Live at <https://metjuperry.github.io/Metju.Chord/> (deployed from `master`).
 
@@ -21,33 +23,41 @@ Live at <https://metjuperry.github.io/Metju.Chord/> (deployed from `master`).
 - All 12 keys in eight scales: major, minor, harmonic and melodic minor, Dorian, Phrygian, Lydian, Mixolydian. Note names use flats in flat keys.
 - Inversions (root to 3rd), octave C2–C6, or **voice leading**: each chord takes the inversion that moves least from the last one, and that voicing is what gets recorded.
 - **Register-aware voicing**: low chords are spread so they don't turn to mud. Below C4 a triad opens up (C2 E2 G2 plays C2 G2 E3), a 7th or 9th drops its root an octave, a 9th keeps the 9th on top, and close semitones (B–C in a maj7 inversion) are pulled apart. From C4 up chords stay in close position. The bass note, the chord and its name never change.
-- **What comes next**: after each chord the screen shows the chords that often follow it in this key, e.g. "NEXT IV F · V G · vi Am" after C in C major, spelled for the key (B♭ in F) and with each scale's own moves (minor VI → VII, Dorian IV, Phrygian ♭II, Mixolydian ♭VII…). It's on the screen only (the pads never light up) and follows live playing only. Toggle it in the Sound panel ("Next chords on the screen", on by default).
-- **Notes mode** (switch on the device, **N**, or select a Melody lane): the pads play single scale notes on the Melody part instead of chords; stick up = octave above.
+- **The chord on the instrument** (no LCD screen): above the stick and pads, in the app's own type, the chord just played (large), its numeral and chord type ("i · 7th", plus the inversion when it isn't root position), and its notes stacked from the root as small tags: the root dark, the notes the stick **added** beyond the plain triad (7th, 9th, sus note, flipped 3rd…) yellow, the triad's own notes outlined. Before the first chord it says "Hold a pad · push the stick"; after you let go the last chord stays, a little calmer. While recording, a small REC tag says where the next chord or note goes.
+- **What comes next**: next to it, "OFTEN NEXT" and the chords that often follow in this key as small cards (numeral + name), e.g. IV F · V G · vi Am after C in C major, spelled for the key (B♭ in F) and with each scale's own moves (minor VI → VII, Dorian IV, Phrygian ♭II, Mixolydian ♭VII…). It never lights the pads and follows live playing only. Toggle it in ⚙ ("Next chords on the screen", on by default).
+- **The play strip** under the chord: octave (C2–C6), inversion (Root/1st/2nd/3rd), the voice-leading switch, and **Pads → ● Keys · Piano ▾**, which says which chord part the pads play through and lets you pick another (also in Parts: "Pads play this part"). The choice is saved with the settings. The Chords / Notes switch sits at the right of the chord row.
+- **Notes mode** (switch on the device, **N**, or select a Melody lane in Song): the pads play single scale notes on a Melody part instead of chords; stick up = octave above. The chord info shows the note, its scale degree and the scale with the note marked; the strip's picker becomes **Notes → ● Melody** (which melody part they play and record into) and its octave buttons move that part's range (C3–C5).
 
 ### Song: one chord row, played by parts
 
 - **One chord row** holds the song's chords; the pads record into it (**R**, pick a step, play pads; the cursor moves on). Key and scale belong to the song, so changing them moves every part (undoable).
 - **Parts** (up to six, added with **+ Part**) play that chord row, each in its own way, each with instrument, volume, mute and solo:
-  - **Chords** (Keys, Pad…): block chords, **strummed** (notes rolled 12, 25, 40 or 60 ms from first to last; down = low note first, up, or alternating down/up with every chord hit), or arpeggiated (up, down, up-down, random; 1/4 to 1/32 with triplets). Strums work the same from the pads and in playback. The pads play through the chord part selected last.
-  - **Bass**: follows the chord roots. Ten styles shown as pattern cards: Hold, Beats, 8ths, Octaves, Off-beat, Root–5th, Arpeggio, 3-3-2, Walk (steps into the next chord) and Follow kick (a note on every kick of the drum parts). Octave C1–C3.
+  - **Chords** (Keys, Pad…): block chords, **strummed** (notes rolled 12, 25, 40 or 60 ms from first to last; down = low note first, up, or alternating down/up with every chord hit), or arpeggiated (up, down, up-down, random; 1/4 to 1/32 with triplets). Strums work the same from the pads and in playback. The pads play through the chord part chosen in the play strip (or in Parts); by default the first.
+  - **Bass**: follows the chord roots. Ten styles, each a small tile with a piano roll of its pattern: Hold, Beats, 8ths, Octaves, Off-beat, Root–5th, Arpeggio, 3-3-2, Walk (steps into the next chord) and Follow kick (a note on every kick of the drum parts). Octave C1–C3.
   - **Melody**: a scale-locked grid, two octaves of the key, one column per 1/16, one note at a time, 1/16 to 1/2 long. The chord under each column is shaded (root darker). Or record from the pads in Notes mode: when stopped, each note goes at the cursor; while playing, notes land where you play them, snapped to 1/16.
   - **Drums**: a synthesised 808/909-style kit (kick, snare, clap, closed/open hat, two toms, rim) on a 1/16 grid of 1, 2 or 4 bars that loops under the song, with starter beats per time signature.
-- Each part's lane shows a miniature of what it plays; selecting a lane opens that part's editor below.
-- Sequencer: grows a row at a time (SEQ-8, SEQ-16…), one step per beat; held chords show strike dot and sustain; lengthen with the grip or **[ ]**, split **/**, rest **.** (each rest picks which parts it silences; by default chords and bass stop, melody and drums play on), copy/paste, loop. Time signatures 2/4–12/8; the click accents the downbeat (and every third beat in compound meters).
-- Playback never touches the screen or stick: they only follow what you play live.
+- Each part's lane shows a miniature of what it plays; its label carries the part's dot, name and **M** / **S** (mute, solo). Tapping a lane's name opens that part's editor below (the melody grid, the drum grid; a chord or bass lane points to Parts, since it has nothing to write).
+- Sequencer: grows a row at a time (SEQ-8, SEQ-16…), one step per beat; held chords show strike dot and sustain; lengthen with the grip or **[ ]**, split **/**, rest **.** (each rest picks which parts it silences; by default chords and bass stop, melody and drums play on), copy/paste, loop. The selected chord's tools (name and steps, Length − n +, Split, Copy, Paste, Rest, Delete, and which parts play through a rest) are **docked at the bottom of the screen**, so they stay in reach however far you've scrolled. Time signatures 2/4–12/8; the click accents the downbeat (and every third beat in compound meters) unless "Accent the downbeat" is off in ⚙.
+- The header holds the cursor (⏮ ◀ ▶), loop, undo/redo, the length and time signature, and the **Song menu**. Play/Pause and Record are only in the top bar.
+- Playback never touches the chord info or stick: they only follow what you play live.
 
-### Sound and effects
+### Parts: how it sounds
 
+- **Parts mode**: on the left every part as a mixer row (colour dot, name, instrument, **M**, **S**, and a thin volume bar in its colour: drag it, arrow keys, double-tap for 0 dB), **+ Part** at the top and a **Master** row at the bottom. On the right everything about the selected part: its name and kind, "Pads play this part" (chord parts), remove ×, then **Instrument** (a scrolling row of tiles), **Play as / Style** (chord parts: Chord/Strum/Arp with the strum spread and direction or the arp pattern, rate and note length inline; bass: the ten styles and octave; melody: its octave), **Tone** knobs and **Effects**. Drums show the kit and a button to open their beat in Song.
 - Fourteen level-matched instruments. **Sampled** (recorded instruments, bundled with the app): Piano, E-Piano, Strings, Organ (pipe), Brass, Marimba, Celesta. **Synths**, where the synth is the point: Pad, Warm Pad, Drawbar, Lead, Bass, Chiptune, Pluck.
-- **Tone per part** (Sound panel, for the selected part): Attack, Release, Brightness and Pan knobs. 12 o'clock is the instrument as designed; Attack runs from snappy (1 ms) to a 2 s swell, Release from a dry stop (20 ms) to 5 s, Brightness darkens with a low-pass to the left and lifts the top with a high shelf to the right. They work the same on synths and samples, and are saved, undoable and in share links.
+- **Tone per part**: Attack, Release, Brightness and Pan knobs, plus **Glide** (it's how notes connect, so it sits with the tone). 12 o'clock is the instrument as designed; Attack runs from snappy (1 ms) to a 2 s swell, Release from a dry stop (20 ms) to 5 s, Brightness darkens with a low-pass to the left and lifts the top with a high shelf to the right. They work the same on synths and samples, and are saved, undoable and in share links.
 - Samples load in the background once the app starts (only for instruments a part uses); until they arrive a synth version of the instrument plays, so the first chord never waits.
-- **Effects per part**, in a matrix under the sequencer (FX mode on phones): **Drive**, **Chorus** and **Tremolo** (a volume wobble in 1/8 notes of the tempo) colour one part (drive is level-compensated); **Glide** makes single notes slide into the next one (up to 0.5 s, never longer than 80% of the note), for bass, melody and arpeggios. Block chords never glide: there's no telling which note should slide where, so glide on a chord part only affects its arpeggios; **→ Reverb** and **→ Delay** send the part into one shared reverb and delay, whose size, time, feedback, return and the output level sit underneath. Drums get the sends only (no drive, chorus, tremolo or glide). Knobs: drag, scroll, arrow keys, double-tap for off.
+- **Effects per part**: only the effects that are on show as knobs; **+ Effect** lists the ones that are off, and a double-tap (to 0) takes one away again. **Drive**, **Chorus** and **Tremolo** (a volume wobble in 1/8 notes of the tempo) colour one part (drive is level-compensated); **Glide** makes single notes slide into the next one (up to 0.5 s, never longer than 80% of the note), for bass, melody and arpeggios. Block chords never glide: there's no telling which note should slide where, so glide on a chord part only affects its arpeggios; **→ Reverb** and **→ Delay** send the part into one shared reverb and delay, whose size, time, feedback, return and the output level are under **Master** (with **All dry**, and a **Mix overview**: the old matrix of every part's effects at a glance). Drums get the sends only (no drive, chorus, tremolo or glide). Knobs: drag, scroll, arrow keys, double-tap for off (or, on tone knobs, as designed).
+
+### ⚙ Settings
+
+- A sheet from the right (close with ×, Esc or a tap outside): **Theme** Light / Dark / **Auto** (follows the system), **Click**, **Accent the downbeat**, **Next chords on the screen**, **How to play** (the help) and **Credits** (the sample libraries' licences).
 - The intro: tap the start key and a random chord (any key, pad and stick direction) rings out while the app fades in.
 
 ### Saving
 
 - Song and settings autosave in the browser; undo/redo every song edit (Ctrl/⌘ Z, Shift+Ctrl/⌘ Z, Ctrl Y).
-- Song menu: new song, open/save a JSON file, copy a share link that carries the whole song in the URL.
+- Song menu (Song mode's header): new song, open/save a JSON file, copy a share link that carries the whole song in the URL, Paste from Hooktheory, Clear all (undoable).
 - **Paste from Hooktheory** (Song menu): select notes and chords in Hookpad / TheoryTab, copy, and paste them into the box (or tap *Paste from clipboard* where the browser allows it). A preview shows what it adds before anything changes, and the whole import is one undo step.
   - Notes become Melody parts (the song's empty Melody part is filled first, then "Melody 2"…). One Hooktheory beat is a quarter note (or a half note with *Half time*), snapped to the 1/16 grid. A melody wider than a Melody part's two octaves is split into parts at different octaves, cut at the longest rest. Overlapping notes keep the highest. Notes outside the scale go to the nearest scale note (the lower one when it's halfway) and are listed.
   - Chords go into the chord row as the nearest chord the pads can play (degree, chord type, inversion): borrowed, applied, suspended and 7th/9th chords are worked out from their notes; add11/add13, ♯9 and the like that the pads can't play are dropped and listed. They start on whole beats and replace the chords in the stretch they cover; the rest of the row stays. Rests become rests.
@@ -58,7 +68,7 @@ Live at <https://metjuperry.github.io/Metju.Chord/> (deployed from `master`).
 
 - **Install it**: in Safari, Share → Add to Home Screen. It then opens full screen as its own app (no browser bars, the notch and home indicator kept clear), works **offline** (everything, samples included, is stored on the phone on first visit), and keeps the screen awake while you play. A new version is picked up the next time it's opened with a connection: straight away if you haven't played yet, otherwise when you next switch away and back, so a jam is never cut off.
 
-One mode at a time, from the top bar: **Play** (the instrument, no scrolling; sideways = stick left, pads right), **Seq** (chord row, parts, editors), **Sound** (instrument, chord/arp, voicing, click, theme, help) and **FX** (the effects matrix).
+One mode at a time, from the top bar (key, scale, tempo, the one Play/Pause and Record, Play · Song · Parts, ⚙): **Play** (the instrument, no scrolling; sideways = stick left, pads right), **Song** (chord row, lanes, editors) and **Parts** (mixer and the selected part's sound).
 
 ---
 
@@ -105,12 +115,16 @@ src/
     drumkit.ts           the synthesised drum kit
     sequencer.ts         lookahead scheduler on the Tone Transport (reads the song fresh every 1/16)
   components/
-    TopBar, CompactBar   desktop header / phone bar with modes (Play, Seq, Sound, FX)
-    Device               screen, scale-key strip, stick (segmented ring), pads, Chords/Notes switch, voicing
-    Progression          sequencer: transport, part strips, chord lane + part lanes, chord toolbar, + Part menu
-    PartEditors          chord part style, bass style cards; MelodyEditor; DrumEditor
-    SoundPanel           instrument grid + chord/arp style for the selected part
-    FxMatrix, Knob       effects matrix and the knob control
+    TopBar               the one header (phones and desktop): key, scale, tempo, Play/Pause, Record, modes, ⚙
+    Device               chord info (ChordInfo), play strip (PlayStrip: octave, inversion, voice leading, Pads → picker),
+                         scale-key strip (desktop), stick (segmented ring), pads, Chords/Notes switch
+    Progression          sequencer: header (cursor, loop, undo/redo, length, Song menu), chord lane + part lanes (M/S),
+                         docked chord toolbar
+    MelodyEditor, DrumEditor   the selected lane's content editor under the sequencer
+    PartsView            Parts mode: part list / mixer (VolumeBar), the selected part (instrument, play-as/style, tone,
+                         effects), Master
+    FxMatrix, Knob       SpaceControls (shared reverb/delay/out), the effects matrix (Mix overview), the knob control
+    SettingsSheet        ⚙ sheet and the Credits dialog; useDialog.ts gives dialogs their focus trap and Esc
     SongMenu, HelpDialog, IntroScreen
     HooktheoryDialog     the Paste from Hooktheory dialog: paste box, options, preview
 scripts/levels*.ts       the level-matching check (npm run levels)
@@ -121,7 +135,7 @@ public/icons/, manifest.webmanifest   app icons (scripts/icons.cjs renders them 
 
 ### Data model (`song.ts`, `parts.ts`)
 
-- `Song = { key, scale, chords: Clip[], parts: Part[], steps, bpm, timeSignature, space }`. Everything in `Song` is undoable and saved; `Settings` (voiceLeading, octave, inversion, loop, theme, nextHint) is saved but not undoable.
+- `Song = { key, scale, chords: Clip[], parts: Part[], steps, bpm, timeSignature, space }`. Everything in `Song` is undoable and saved; `Settings` (voiceLeading, octave, inversion, loop, theme `light | dark | auto`, nextHint, padPart = the chord part the pads play through, clickAccent) is saved but not undoable. `readSettings` fills a default for anything missing and ignores fields it doesn't know, so older saves load.
 - Time is in **ticks, 96 per quarter note** (`PPQ`). A sequencer step is one beat of the time signature (`ticksPerStep(ts)`: 96 in x/4, 48 in x/8). Melody and drums work in 1/16s (`TICKS_PER_SIXTEENTH` = 24).
 - A chord part's style: `playMode` ('Chord' | 'Strum' | 'Arp'), arp settings, and `strumSpread` (s) / `strumDirection`. `strumOffsets(midi, spread, direction, hit)` (theory.ts) gives each note's delay; `chordPartNotes` counts hits along the row so alternating strums don't depend on where playback starts, and the pads keep their own counter.
 - A chord clip stores only `{ degree, type, inversion, octave }`; key and scale come from the song, so `resolveClip(harmony, clip)` turns it into notes.
@@ -153,7 +167,9 @@ public/icons/, manifest.webmanifest   app icons (scripts/icons.cjs renders them 
 - **Yellow means "on/active"** (`--accent`/`--cap`): selected options in toggle groups, the pushed stick wedge, a held pad. A locked/selected item gets a yellow *edge*. Parts never use yellow; their colours are `PART_COLORS` and they colour lanes, sliders and effect cells.
 - Flat dark tiles with a thin edge (`--panel-2`, `--line`); only the instrument's own keys (pads, knob, intro key) get the keycap lip. No dashed outlines.
 - Phones: `compact = (max-width: 1023px), (max-height: 560px)`. Play mode must fit without scrolling (check 844×390, 667×375, 932×430, 390×844), also with safe-area insets (installed: notch 47–59 px on the side, home indicator 21 px landscape / 34 px portrait, status bar 47 px portrait). Landscape is the main phone layout: stick left, pads right.
-- Light theme is driven by tokens in `index.css`; check new UI in both (`data-theme="light"` on `<html>`).
+- Light theme is driven by tokens in `index.css`; check new UI in both (`data-theme="light"` on `<html>`). "Auto" resolves to one of the two from `prefers-color-scheme`, so CSS only ever sees `light` or `dark`. The device body has its own tokens (`--device-*`, `--cap`); the chord info and play strip use them.
+- **Song is what plays, Parts is how it sounds**: a control belongs in Song if it changes notes, chords or hits, in Parts if it changes instrument, style, tone, effects or level. Transport (Play/Pause, Record) lives only in the top bar.
+- Dialogs (`role="dialog"`, `aria-modal`) use `useDialog` for focus in, Tab trapped, Esc to close (top one first) and focus back.
 - Everything has a keyboard path and an aria label; global shortcuts live in App's keydown handler, which ignores inputs, selects and `role="slider"`.
 
 ### How changes have been verified
@@ -188,11 +204,10 @@ CC BY requires credit: the piano is by Alexander Holm (Salamander Grand Piano), 
 ### Where things stand / ideas not done yet
 
 - **Haptics were tried and removed**: iOS Safari no longer lets web pages trigger the Taptic Engine (the hidden-switch trick was closed in iOS 26.5), and the owner only has iPhones. A native wrapper (e.g. Capacitor) would be the way back.
-- **Sequencer declutter**, mocked up but on hold: transport down to Play/Loop/Record; one "4 bars · 4/4 ▾" button plus a "+ row" strip; part strips as name + M/S only with instrument/volume/remove moved into the part editor; chord tools as a small bar on the selected chord; "Clear all" into the Song menu. Header sections (dividers) and the single + Part menu are done.
+- **UI overhaul (Play · Song · Parts)**: done as approved: the LCD gave way to chord info on the body, Sound and FX became Parts, transport only in the top bar, part strips gone (instrument and volume in Parts, M/S on the lane labels), chord tools docked, Clear all in the Song menu, ⚙ sheet. Still one mode at a time on desktop too (a desktop layout with the instrument always visible is the next step).
 - **Melody and bass generator** (Generate / Re-roll writing ordinary notes): designed, not built; the owner put it on hold. Bass would need its own note grid ("Custom" style) for that.
 - **Per-chord style overrides** (e.g. Keys arpeggiates only one chord): designed, the owner decided it isn't needed for now.
 - **Samples**: one velocity layer each, no round-robins, so fast repeated notes sound alike. More layers would mean more megabytes. The tonejs-instruments set (CC BY 3.0) has guitar, harp and other instruments if more are wanted.
-- Desktop header shows section dividers only at ≥1360px; narrower windows wrap without them.
 - Live recording timing on real phones is untested.
 - **Paste from Hooktheory** was built from one observed clipboard shape plus the TheoryTab JSON fields (as read by CMU's pyquist); tests use invented and public-domain tunes. Untested: other Hookpad clipboard variants (meters, tempo and swing changes are ignored), the exact meaning of `applied` beyond V/x and vii°/x, and the clipboard button on iOS Safari (the paste box is the reliable path there).
 - **PWA on iOS** is untested on a device: if iOS evicts the cache (it can after weeks without opening the app), samples come back from the network next time, and until then the synth stand-ins play.

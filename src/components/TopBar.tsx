@@ -7,107 +7,123 @@ export const OCTAVE_MAX = 6;
 export const BPM_MIN = 40;
 export const BPM_MAX = 240;
 
+/** The three modes: Play (the instrument), Song (what plays), Parts (how it sounds). */
+export type AppMode = 'play' | 'song' | 'parts';
+
+export const MODES: { id: AppMode; label: string; hint: string }[] = [
+    { id: 'play', label: 'Play', hint: 'the instrument' },
+    { id: 'song', label: 'Song', hint: 'what plays: chords, melody, drums' },
+    { id: 'parts', label: 'Parts', hint: 'how it sounds: instruments, style, tone, effects' },
+];
+
 interface TopBarProps {
+    /** Phones and small windows: a slimmer bar without the name. */
+    compact: boolean;
+    mode: AppMode;
     selectedKey: MusicalKey;
     scale: ScaleId;
-    octave: number;
     bpm: number;
-    metronomeOn: boolean;
-    /** Beat 0-3 currently lit, or null when nothing is running. */
+    playing: boolean;
+    recording: boolean;
+    /** Why Record can't be used right now (it's disabled with this as its hint), if it can't. */
+    recordBlocked?: string;
+    /** Beat lit by the click or the playhead, or null when nothing runs. */
     beat: number | null;
-    /** Beats per bar, for the dots. */
     beats: number;
-    theme: 'dark' | 'light';
+    /** Which modes are offered; on a wide desktop the instrument is always on screen, so Play can go. */
+    modes?: AppMode[];
+    onMode: (mode: AppMode) => void;
     onKeyChange: (key: MusicalKey) => void;
     onScaleChange: (scale: ScaleId) => void;
-    onOctaveChange: (octave: number) => void;
     onBpmChange: (bpm: number) => void;
-    onToggleMetronome: () => void;
-    onToggleTheme: () => void;
-    onOpenHelp: () => void;
+    onTogglePlay: () => void;
+    onToggleRecord: () => void;
+    onOpenSettings: () => void;
 }
 
-const TopBar: React.FC<TopBarProps> = ({
-    selectedKey, scale, octave, bpm, metronomeOn, beat, beats, theme,
-    onKeyChange, onScaleChange, onOctaveChange, onBpmChange, onToggleMetronome, onToggleTheme, onOpenHelp,
-}) => (
-    <header className="top-bar panel">
+const Chevron = () => (
+    <svg className="tb-chevron" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+        <path d="M2 3.5l3 3 3-3" />
+    </svg>
+);
+
+export const GearIcon: React.FC<{ size?: number }> = ({ size = 16 }) => (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+        <circle cx="8" cy="8" r="2.2" />
+        <path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" />
+    </svg>
+);
+
+/**
+ * The one header, on phones and desktop: key, scale, tempo, the only Play/Pause and Record buttons,
+ * the mode switch and the settings button. A select keeps its native picker (the wheel on iOS).
+ */
+const TopBar: React.FC<TopBarProps> = p => (
+    <header className={`top-bar ${p.compact ? 'compact' : ''}`}>
         <div className="brand">
             <span className="brand-mark" aria-hidden="true">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.2">
                     <path d="M3 12V5M8 12V3M13 12V7" />
                 </svg>
             </span>
-            <span className="brand-name">metju<span className="brand-dot">.</span>chord</span>
+            {!p.compact && <span className="brand-name">metju<span className="brand-dot">.</span>chord</span>}
         </div>
 
-        <div className="top-group">
-            <span className="visually-hidden" id="key-label">Key</span>
-            <div className="key-strip" role="group" aria-labelledby="key-label">
-                {KEYS.map(key => (
-                    <button
-                        key={key}
-                        className={key.length > 1 ? 'sharp' : undefined}
-                        aria-pressed={key === selectedKey}
-                        onClick={() => onKeyChange(key)}
-                    >
-                        {key}
-                    </button>
-                ))}
-            </div>
-            <select className="scale-select" aria-label="Scale" value={scale} onChange={e => onScaleChange(e.target.value as ScaleId)}>
-                {SCALES.map(sc => <option key={sc.id} value={sc.id} title={sc.label}>{sc.short}</option>)}
-            </select>
+        <div className="tb-group">
+            <label className="tb-select">
+                <select aria-label="Key" value={p.selectedKey} onChange={e => p.onKeyChange(e.target.value as MusicalKey)}>
+                    {KEYS.map(k => <option key={k} value={k}>{k}</option>)}
+                </select>
+                <Chevron />
+            </label>
+            <label className="tb-select">
+                <select aria-label="Scale" value={p.scale} onChange={e => p.onScaleChange(e.target.value as ScaleId)}>
+                    {SCALES.map(sc => <option key={sc.id} value={sc.id} title={sc.label}>{sc.short}</option>)}
+                </select>
+                <Chevron />
+            </label>
         </div>
 
-        <div className="top-group">
-            <span className="eyebrow">Octave</span>
-            <button className="step-button" aria-label="Octave down" disabled={octave <= OCTAVE_MIN} onClick={() => onOctaveChange(octave - 1)}>−</button>
-            <span className="step-value" aria-live="polite">C{octave}</span>
-            <button className="step-button" aria-label="Octave up" disabled={octave >= OCTAVE_MAX} onClick={() => onOctaveChange(octave + 1)}>+</button>
-        </div>
-
-        <div className="top-group">
-            <span className="eyebrow">Tempo</span>
-            <button className="step-button" aria-label="Slower" disabled={bpm <= BPM_MIN} onClick={() => onBpmChange(bpm - 1)}>−</button>
-            <span className="step-value tempo"><b>{bpm}</b> <span className="unit">BPM</span></span>
-            <button className="step-button" aria-label="Faster" disabled={bpm >= BPM_MAX} onClick={() => onBpmChange(bpm + 1)}>+</button>
-        </div>
-
-        <div className="top-group">
-            <button className="metronome-toggle" aria-pressed={metronomeOn} onClick={onToggleMetronome}>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-                    <path d="M5 2h6l2.5 12h-11zM8 11l4-7" />
-                </svg>
-                <span>Click</span>
+        <div className="tb-group" role="group" aria-label="Tempo">
+            <button className="tb-step" aria-label="Slower" disabled={p.bpm <= BPM_MIN} onClick={() => p.onBpmChange(p.bpm - 1)}>−</button>
+            <span className="tb-tempo" aria-live="polite"><b>{p.bpm}</b> <span className="tb-unit">BPM</span></span>
+            <button className="tb-step" aria-label="Faster" disabled={p.bpm >= BPM_MAX} onClick={() => p.onBpmChange(p.bpm + 1)}>+</button>
+            {!p.compact && (
                 <span className="beat-dots" aria-hidden="true">
-                    {Array.from({ length: beats }, (_, i) => i).map(i => (
-                        <span key={i} className={`beat-dot ${beat === i ? (i === 0 ? 'down' : 'on') : ''}`} />
+                    {Array.from({ length: p.beats }, (_, i) => (
+                        <span key={i} className={`beat-dot ${p.beat === i ? (i === 0 ? 'down' : 'on') : ''}`} />
                     ))}
                 </span>
+            )}
+        </div>
+
+        <div className="tb-group">
+            <button className="tb-play" aria-label={p.playing ? 'Pause (Space)' : 'Play (Space)'} title={p.playing ? 'Pause (Space)' : 'Play (Space)'} onClick={p.onTogglePlay}>
+                {p.playing
+                    ? <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M3 2h2v8H3zM7 2h2v8H7z" /></svg>
+                    : <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M3 1.5v9l7-4.5z" /></svg>}
+            </button>
+            <button
+                className={`tb-rec ${p.recording ? 'on' : ''}`}
+                aria-pressed={p.recording}
+                aria-label={p.recordBlocked ? `Record: ${p.recordBlocked}` : 'Record (R)'}
+                title={p.recordBlocked ?? 'Record (R)'}
+                disabled={!!p.recordBlocked && !p.recording}
+                onClick={p.onToggleRecord}
+            >
+                <span className="rec-dot" />
             </button>
         </div>
 
-        <div className="top-actions">
-            <button className="icon-button" aria-label="Keyboard shortcuts and help" onClick={onOpenHelp}>
-                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-                    <rect x="1.5" y="4" width="15" height="10" rx="2" />
-                    <path d="M4.5 7h1M8.5 7h1M12.5 7h1M5 11h8" />
-                </svg>
-            </button>
-            <button className="icon-button" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} onClick={onToggleTheme}>
-                {theme === 'dark' ? (
-                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-                        <circle cx="9" cy="9" r="3.5" />
-                        <path d="M9 1.5v2M9 14.5v2M1.5 9h2M14.5 9h2M3.7 3.7l1.4 1.4M12.9 12.9l1.4 1.4M3.7 14.3l1.4-1.4M12.9 5.1l1.4-1.4" />
-                    </svg>
-                ) : (
-                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-                        <path d="M15 11.5A6.5 6.5 0 0 1 6.5 3a6.5 6.5 0 1 0 8.5 8.5z" />
-                    </svg>
-                )}
-            </button>
-        </div>
+        <nav className="tb-modes segmented" aria-label="Mode">
+            {MODES.filter(m => !p.modes || p.modes.includes(m.id)).map(m => (
+                <button key={m.id} aria-pressed={p.mode === m.id} title={`${m.label}: ${m.hint}`} onClick={() => p.onMode(m.id)}>{m.label}</button>
+            ))}
+        </nav>
+
+        <button className="tb-gear" aria-label="Settings" title="Settings" aria-haspopup="dialog" onClick={p.onOpenSettings}>
+            <GearIcon />
+        </button>
     </header>
 );
 

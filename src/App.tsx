@@ -1,37 +1,34 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Tone from 'tone';
 import './App.css';
-import TopBar, { BPM_MAX, BPM_MIN, OCTAVE_MAX, OCTAVE_MIN } from './components/TopBar';
-import Device, { PadView, ScreenView, VoicingControls } from './components/Device';
-import CompactBar, { AppMode } from './components/CompactBar';
+import TopBar, { AppMode, BPM_MAX, BPM_MIN, OCTAVE_MAX, OCTAVE_MIN } from './components/TopBar';
+import Device, { ChordInfoView, PadTarget, PadView } from './components/Device';
 import { useMedia } from './useMedia';
-import SoundPanel from './components/SoundPanel';
 import Progression from './components/Progression';
 import HelpDialog from './components/HelpDialog';
 import DrumEditor from './components/DrumEditor';
-import FxMatrix from './components/FxMatrix';
 import IntroScreen, { IntroPhase } from './components/IntroScreen';
 import MelodyEditor from './components/MelodyEditor';
-import { BassEditor, ChordPartEditor } from './components/PartEditors';
+import PartsView, { MASTER, instrumentLabel } from './components/PartsView';
+import SettingsSheet, { CreditsDialog } from './components/SettingsSheet';
 import {
-    ChordParams, KEYS, ResolvedChord, StickDir,
-    STICK_DIRS, ScaleId, buildChordMidi, keyPitchClass, resolveChord, romanNumeral, scaleLabel, scalePitchClasses,
+    ChordParams, ChordType, KEYS, ResolvedChord, StickDir,
+    STICK_DIRS, ScaleId, buildChordMidi, chordTags, keyPitchClass, resolveChord, romanNumeral, scalePitchClasses,
     nextChords, noteNames, stickChordType, strumOffsets, triadQuality, voiceLead,
 } from './theory';
 import { getEngine } from './audio/engine';
-import { INSTRUMENTS, InstrumentId } from './audio/instruments';
 import { useHistory } from './useHistory';
 import { keepScreenOn } from './pwa';
-import SongMenu from './components/SongMenu';
+import SongMenu, { UndoRedo } from './components/SongMenu';
 import HooktheoryDialog from './components/HooktheoryDialog';
 import { HtClip, ImportOptions, ImportSummary, importHooktheory } from './hooktheory';
 import {
-    STORAGE_KEY, SAVE_VERSION, SavedState, Song, TimeSignature, changeTimeSignature, decodeShare, defaultSettings, encodeShare,
+    STORAGE_KEY, SAVE_VERSION, SavedState, Song, ThemeSetting, TimeSignature, changeTimeSignature, decodeShare, defaultSettings, encodeShare,
     isCompound, newSong, readSaved, stepsPerRow, ticksPerBar, ticksPerStep, transportBpm,
 } from './song';
 import { Clip, clipAt, fitTo, isChordClip, place, remove, setLength, split } from './progression';
 import {
-    BassPart, ChordPart, Harmony, InstrumentPart, MAX_PARTS, MelodyPart, Part, PartFx, PartKind, PartTone, noFx,
+    ChordPart, Harmony, MAX_PARTS, MelodyPart, Part, PartFx, PartKind, PartTone, noFx,
     audibleParts, fitNotes, hasInstrument, melodyMidi, musicEnd, musicLoopEnd, newPart, noteAt, outsideRests, partNotes, placeNote, removeNote, resolveClip,
     restSpans,
 } from './parts';
@@ -41,13 +38,20 @@ import {
     sixteenthsPerBar, sixteenthsPerStep, toggleHit,
 } from './drums';
 import { CHORD_LANE, MiniNote, PartPatch } from './components/Progression';
-import type { ChordStyle } from './components/SoundPanel';
 
 const DEGREE_KEYS: { [code: string]: number } = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5, Digit7: 6 };
 const STICK_KEYS: { [code: string]: StickDir } = {
     KeyQ: 'UL', KeyW: 'U', KeyE: 'UR', KeyA: 'L', KeyS: 'C', KeyD: 'R', KeyZ: 'DL', KeyX: 'D', KeyC: 'DR',
 };
-const INVERSION_LABELS = ['ROOT POS', '1ST INV', '2ND INV', '3RD INV'];
+const INVERSION_LABELS = ['', '1st inv', '2nd inv', '3rd inv'];
+/** What the chord info calls the chord type the stick chose ("i · 7th"). */
+const TYPE_LABELS: { [t in ChordType]: string } = {
+    root: 'root', triad: 'triad', flip: 'flip 3rd', minor: 'minor', dim: 'dim', aug: 'aug', six: '6th',
+    dom7: 'dom 7', diatonic7: '7th', diatonic9: '9th', sus2: 'sus2', sus4: 'sus4',
+};
+/** Melody part octaves (Notes mode's octave buttons). */
+const MELODY_OCT_MIN = 3;
+const MELODY_OCT_MAX = 5;
 const MAX_INVERSION = 3;
 
 /** What the sequencer schedules: some notes or a drum hit, and the part that plays them. */
@@ -109,6 +113,8 @@ interface Shown {
     scale: ScaleId;
     dir: StickDir;
     inversion: number;
+    /** The chord type the stick chose (chords only). */
+    type?: ChordType;
     /** A single melody note (Notes mode) rather than a chord. */
     note?: boolean;
 }
@@ -139,7 +145,10 @@ const App: React.FC = () => {
     const [introName, setIntroName] = useState('');
     const [saved] = useState(loadSaved);
     const initial = saved?.settings ?? defaultSettings();
-    const [theme, setTheme] = useState<'dark' | 'light'>(initial.theme);
+    const [theme, setTheme] = useState<ThemeSetting>(initial.theme);
+    const prefersDark = useMedia('(prefers-color-scheme: dark)');
+    const shownTheme: 'dark' | 'light' = theme === 'auto' ? (prefersDark ? 'dark' : 'light') : theme;
+    const [clickAccent, setClickAccent] = useState(initial.clickAccent);
     const [voiceLeading, setVoiceLeading] = useState(initial.voiceLeading);
     const [octave, setOctave] = useState(initial.octave);
     const [inversion, setInversion] = useState(initial.inversion);
@@ -147,6 +156,8 @@ const App: React.FC = () => {
     const [notice, setNotice] = useState<string | null>(null);
     const [helpOpen, setHelpOpen] = useState(false);
     const [htOpen, setHtOpen] = useState(false);
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [creditsOpen, setCreditsOpen] = useState(false);
 
     // ---- stick: a latched direction (mouse) and momentary ones (held keys) --------
     const [latchedDir, setLatchedDir] = useState<StickDir>('C');
@@ -155,7 +166,7 @@ const App: React.FC = () => {
     const [touchDir, setTouchDir] = useState<StickDir | null>(null);
     const stickDir: StickDir = keyDirs.length ? keyDirs[keyDirs.length - 1] : touchDir ?? latchedDir;
 
-    // Phones and small windows get one mode at a time: Play, Sequencer or Sound
+    // One mode at a time: Play (the instrument), Song (what plays), Parts (how it sounds)
     const compact = useMedia('(max-width: 1023px), (max-height: 560px)');
     const [mode, setMode] = useState<AppMode>('play');
 
@@ -185,15 +196,14 @@ const App: React.FC = () => {
 
     /** The lane being edited: the chord row, or a part. */
     const [selectedLane, setSelectedLane] = useState(CHORD_LANE);
-    const [padPartId, setPadPartId] = useState('');
+    const [padPartId, setPadPartId] = useState(initial.padPart);
     const selPart = parts.find(p => p.id === selectedLane);
     const chordParts = parts.filter((p): p is ChordPart => p.kind === 'chords');
-    // The chord part the pads play through: the selected one, else the one picked last, else the first
-    const padPart: ChordPart = (selPart?.kind === 'chords' ? selPart : undefined)
-        ?? chordParts.find(p => p.id === padPartId)
-        ?? chordParts[0];
-    // The Sound panel edits the selected part's instrument, or the pads' part while the chords or drums are selected
-    const soundPart: InstrumentPart = selPart && hasInstrument(selPart) ? selPart : padPart;
+    // The chord part the pads play through: the one picked (Play strip or Parts), else the first
+    const padPart: ChordPart = chordParts.find(p => p.id === padPartId) ?? chordParts[0];
+    /** The part Parts mode shows (a part id or the Master). */
+    const [partsSel, setPartsSel] = useState('');
+    const partsShown = partsSel === MASTER || parts.some(p => p.id === partsSel) ? partsSel : padPart.id;
     // Notes mode: the pads play single scale notes on a melody part and record into it
     const [padModeSetting, setPadMode] = useState<PadMode>('chords');
     const [melodyPartId, setMelodyPartId] = useState('');
@@ -210,7 +220,7 @@ const App: React.FC = () => {
     const pickLane = (lane: string) => {
         setSelectedLane(lane);
         const kind = parts.find(p => p.id === lane)?.kind;
-        if (kind === 'chords') setPadPartId(lane);
+        if (kind) setPartsSel(lane);
         // the pads follow what you're editing: notes for a melody, chords for the chord row or a chord part
         if (kind === 'melody') {
             setMelodyPartId(lane);
@@ -222,11 +232,9 @@ const App: React.FC = () => {
     const updatePart = (id: string, patch: PartPatch | Partial<Part>) =>
         // dragging a volume slider is one undo step, not one per pixel
         setParts(ps => ps.map(p => (p.id === id ? { ...p, ...patch } as Part : p)), 'volume' in patch ? `vol:${id}` : undefined);
-    const setInstrument = (id: InstrumentId) => updatePart(soundPart.id, { instrument: id });
     // turning one tone knob is one undo step
     const setTone = (id: string, key: keyof PartTone, value: number) =>
         setParts(ps => ps.map(p => (p.id === id && hasInstrument(p) ? { ...p, tone: { ...p.tone, [key]: value } } : p)), `tone:${id}:${key}`);
-    const setChordStyle = (id: string, patch: Partial<ChordStyle>) => updatePart(id, patch as Partial<Part>);
     const clips = chords;
     const [selected, setSelected] = useState(0);
     const [playhead, setPlayhead] = useState(0);
@@ -245,16 +253,16 @@ const App: React.FC = () => {
     // Latest state for Transport callbacks and the global key handler
     const liveState = {
         ts, stepTicks: T, barTicks, selectedKey, scale, voiceLeading, octave, inversion, stickDir, padPart, chords, parts, total, selected, loop, recording,
-        padMode, padMelody, melodyLen, melCursor, playing,
+        padMode, padMelody, melodyLen, melCursor, playing, clickAccent,
     };
     const live = useRef(liveState);
     live.current = liveState;
 
     useEffect(() => {
-        document.documentElement.setAttribute('data-theme', theme);
+        document.documentElement.setAttribute('data-theme', shownTheme);
         // the browser bar / status bar takes the app's background colour
-        document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'light' ? '#f4f2ec' : '#0d0d0b');
-    }, [theme]);
+        document.querySelector('meta[name="theme-color"]')?.setAttribute('content', shownTheme === 'light' ? '#f4f2ec' : '#0d0d0b');
+    }, [shownTheme]);
 
     // Keep the screen awake while the app is open and being played (from the first tap on)
     useEffect(() => (audioReady ? keepScreenOn() : undefined), [audioReady]);
@@ -348,7 +356,7 @@ const App: React.FC = () => {
         } else {
             stop = engine.attack(chord.midi);
         }
-        setShown({ chord, degree, scale: s.scale, dir: s.stickDir, inversion: params.inversion });
+        setShown({ chord, degree, scale: s.scale, dir: s.stickDir, inversion: params.inversion, type: params.type });
         return { params, stop };
     };
 
@@ -534,8 +542,8 @@ const App: React.FC = () => {
         const metLoop = new Tone.Loop(time => {
             // Count beats from the Transport so the accent lands on the progression's bar lines
             const beat = Math.round(Tone.getTransport().getTicksAtTime(time) / beatTicks) % ts.beats;
-            // Downbeat high; in 6/8, 9/8 and 12/8 every third beat gets a middle accent
-            const note = beat === 0 ? 'C5' : compound && beat % 3 === 0 ? 'G4' : 'C4';
+            // Downbeat high; in 6/8, 9/8 and 12/8 every third beat gets a middle accent (unless accents are off)
+            const note = !live.current.clickAccent ? 'C4' : beat === 0 ? 'C5' : compound && beat % 3 === 0 ? 'G4' : 'C4';
             click.triggerAttackRelease(note, '32n', time);
             Tone.getDraw().schedule(() => setMetBeat(beat), time);
         }, beatNote);
@@ -565,12 +573,14 @@ const App: React.FC = () => {
     };
     const onChordLane = selectedLane === CHORD_LANE || !selPart;
     const partActions = {
-        add: (kind: PartKind) => {
-            if (parts.length >= MAX_PARTS) return;
+        add: (kind: PartKind): string | undefined => {
+            if (parts.length >= MAX_PARTS) return undefined;
             // a drum part starts with the first starter beat for the time signature, so Play just works
             const part = newPart(kind, parts, kind === 'drums' ? presetsFor(ts)[0].make(ts) : undefined);
             setParts(ps => [...ps, part]);
-            pickLane(part.id);
+            // Song opens its lane next time (without switching the pads to it)
+            setSelectedLane(part.id);
+            return part.id;
         },
         /** The pads need a chord part to play through, so the last one stays. */
         canRemove: (id: string) => {
@@ -723,7 +733,7 @@ const App: React.FC = () => {
     const snapshot = (): SavedState => ({
         version: SAVE_VERSION,
         song,
-        settings: { voiceLeading, octave, inversion, loop, theme, nextHint },
+        settings: { voiceLeading, octave, inversion, loop, theme, nextHint, padPart: padPartId, clickAccent },
     });
 
     // Autosave a moment after any change
@@ -737,7 +747,7 @@ const App: React.FC = () => {
         }, 400);
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [song, voiceLeading, octave, inversion, loop, theme, nextHint]);
+    }, [song, voiceLeading, octave, inversion, loop, theme, nextHint, padPartId, clickAccent]);
 
     /** Replace the song (undoable) and take over its saved settings. */
     const loadState = (state: SavedState, message: string) => {
@@ -749,6 +759,7 @@ const App: React.FC = () => {
         setInversion(st.inversion);
         setLoop(st.loop);
         setNextHint(st.nextHint);
+        setPadPartId(st.padPart);
         setSelectedLane(CHORD_LANE);
         setSelected(0);
         setPlayhead(0);
@@ -828,7 +839,7 @@ const App: React.FC = () => {
     // ---- keyboard -----------------------------------------------------------------------
 
     // while a dialog is open the instrument's keys are off (typing or tabbing in it mustn't play pads)
-    const modalOpen = helpOpen || htOpen;
+    const modalOpen = helpOpen || htOpen || settingsOpen || creditsOpen;
     const keyActions = useRef({ pressPad, releasePad, releaseAll, togglePlay, edit, helpOpen: modalOpen, undo: history.undo, redo: history.redo });
     keyActions.current = { pressPad, releasePad, releaseAll, togglePlay, edit, helpOpen: modalOpen, undo: history.undo, redo: history.redo };
 
@@ -926,32 +937,39 @@ const App: React.FC = () => {
     ])) as { [d in StickDir]: string };
     const stickRules: Partial<Record<StickDir, string>> | undefined = notesOn ? { C: 'Note', U: 'Octave up' } : undefined;
 
-    // While recording, the screen says where the next chord goes, so you can record from Play mode.
-    // (Nothing about playback goes on the screen: it only follows what you play.)
+    // While recording, the chord info says where the next chord goes, so you can record from Play mode.
+    // (Nothing about playback goes there: it only follows what you play.)
     const perBeat = sixteenthsPerStep(ts);
-    const screenFlag = !recording ? undefined
-        : notesOn ? (playing ? `● REC · ${padMelody!.name.toUpperCase()} LIVE` : `● REC · ${padMelody!.name.toUpperCase()} BEAT ${Math.floor(melCursor / perBeat) + 1}`)
-            : `● REC · CHORDS STEP ${selected + 1}`;
-    const playingPart: InstrumentPart = notesOn ? padMelody! : padPart;
-    const instrumentLabel = INSTRUMENTS.find(i => i.id === playingPart.instrument)?.label ?? '';
-    const status = [`${selectedKey} ${scaleLabel(scale).toUpperCase()}`, `OCT ${notesOn ? padMelody!.octave : octave}`, `${bpm} BPM`,
-        `${notesOn ? 'Notes' : padPart.playMode} · ${instrumentLabel}`];
-    const screen: ScreenView = shown
+    const recFlag = !recording ? undefined
+        : notesOn ? (playing ? `● REC ${padMelody!.name} · live` : `● REC ${padMelody!.name} · beat ${Math.floor(melCursor / perBeat) + 1}`)
+            : `● REC · step ${selected + 1}`;
+    const info: ChordInfoView = shown
         ? {
             idle: false,
+            live: held.length > 0,
             symbol: shown.chord.name.symbol,
             long: shown.chord.name.long,
             numeral: shown.note ? `${shown.degree + 1}` : romanNumeral(shown.degree, shown.scale),
-            stickLabel: shown.note ? (shown.dir === 'U' ? 'Octave up' : 'Note') : undefined,
-            notes: shown.chord.notes,
-            stick: shown.dir,
-            inversionLabel: shown.note ? `${padMelody?.name.toUpperCase() ?? ''}` : INVERSION_LABELS[Math.min(shown.inversion, shown.chord.midi.length - 1)],
-            status,
-            flag: screenFlag,
+            typeLabel: shown.note ? (shown.dir === 'U' ? 'octave up' : 'scale note') : TYPE_LABELS[shown.type ?? 'triad'],
+            extra: shown.note ? padMelody?.name : INVERSION_LABELS[Math.min(shown.inversion, shown.chord.midi.length - 1)] || undefined,
+            // a chord's notes from its root (root dark, what the stick added yellow); a note shown in its scale
+            tags: shown.note
+                ? scalePitchClasses(selectedKey, shown.scale).map(pc => ({ name: names[pc], role: pc === shown.chord.rootPc ? 'root' : 'triad' }))
+                : chordTags(selectedKey, shown.scale, shown.degree, shown.type ?? 'triad'),
+            flag: recFlag,
             // what usually follows the chord just played, in the song's key (chords only, live playing only)
             next: nextHint && !shown.note ? nextChords(selectedKey, scale, shown.degree) : undefined,
         }
-        : { idle: true, symbol: '', long: '', numeral: '', notes: [], stick: 'C', inversionLabel: '', status, flag: screenFlag };
+        : { idle: true, live: false, symbol: '', long: '', numeral: '', typeLabel: '', tags: [], flag: recFlag };
+
+    // The Play strip's "Pads →" picker: chord parts in Chords mode, melody parts (to play and record into) in Notes mode
+    const target = (p: Part): PadTarget => ({ id: p.id, name: p.name, color: p.color, instrument: hasInstrument(p) ? instrumentLabel(p.instrument) : '' });
+    const padTargets = notesOn ? melodyParts.map(target) : chordParts.map(target);
+    const padTargetNow = target(notesOn ? padMelody! : padPart);
+    const pickPadTarget = (id: string) => {
+        if (notesOn) setMelodyPartId(id);
+        else setPadPartId(id);
+    };
 
     const sounding = shown && held.length > 0 ? shown.chord.midi : [];
     const maxInv = Math.min(MAX_INVERSION, Math.max(...pads.map(p =>
@@ -993,49 +1011,6 @@ const App: React.FC = () => {
     // Until the first tap there is no audio, so nothing but the intro is mounted
     if (!audioReady) return <>{null}{introEl}</>;
 
-    const deviceEl = (
-        <Device
-                screen={screen}
-                sounding={sounding}
-                scalePcs={scalePitchClasses(selectedKey, scale)}
-                octave={octave}
-                pads={pads}
-                stickDir={stickDir}
-                latchedDir={latchedDir}
-                stickChords={stickChords}
-                stickRules={stickRules}
-                padMode={notesOn ? 'notes' : 'chords'}
-                notesPart={padMelody?.name}
-                onPadMode={setPadMode}
-                stickFor={notesOn ? `${refDegree + 1}` : `${refDegree + 1} · ${romanNumeral(refDegree, scale)}`}
-                voiceLeading={voiceLeading}
-                onVoiceLeading={setVoiceLeading}
-                inversion={inversion}
-                maxInversion={maxInv}
-                recording={recording}
-                onPadDown={d => pressPad(`pad:${d}`, d)}
-                onPadUp={d => releasePad(`pad:${d}`)}
-                onStick={setLatchedDir}
-                onStickHold={setTouchDir}
-                compact={compact}
-                onInversion={setInversion}
-            />
-    );
-    const soundEl = (
-        <SoundPanel
-            partName={soundPart.name}
-            partColor={soundPart.color}
-            instrument={soundPart.instrument}
-            onInstrument={setInstrument}
-            tone={soundPart.tone}
-            onTone={(k, v) => setTone(soundPart.id, k, v)}
-            nextHint={nextHint}
-            onNextHint={setNextHint}
-            chordStyle={soundPart.kind === 'chords' ? soundPart : undefined}
-            onChordStyle={patch => setChordStyle(soundPart.id, patch)}
-        />
-    );
-
     const partEditor = !selPart ? null
         : selPart.kind === 'drums' ? (
             <DrumEditor
@@ -1069,11 +1044,20 @@ const App: React.FC = () => {
                 onOctave={melodyActions.octave}
                 onClear={melodyActions.clear}
             />
-        ) : selPart.kind === 'bass' ? (
-            <BassEditor part={selPart} onChange={patch => updatePart(selPart.id, patch as Partial<BassPart>)} />
         ) : (
-            <ChordPartEditor part={selPart} onChange={patch => setChordStyle(selPart.id, patch)} />
+            // chord and bass parts have nothing to write: they follow the chord row; how they play is in Parts
+            <div className="part-editor follow-note" style={{ '--track': selPart.color } as React.CSSProperties}>
+                <div className="part-head">
+                    <span className="sel-label">
+                        <span className="track-dot" style={{ background: selPart.color }} />
+                        {selPart.name}
+                        <span className="section-note"> · {selPart.kind === 'bass' ? 'follows the roots of the chord row' : 'plays every chord in the chord row'}</span>
+                    </span>
+                    <button className="chip-button" onClick={() => { setPartsSel(selPart.id); setMode('parts'); }}>How it plays: Parts →</button>
+                </div>
+            </div>
         );
+
 
     const htDialog = (
         <HooktheoryDialog
@@ -1085,6 +1069,51 @@ const App: React.FC = () => {
             onImport={importPaste}
         />
     );
+
+    const notesOctave = notesOn ? padMelody!.octave : octave;
+    const deviceEl = (
+        <Device
+            info={info}
+            sounding={sounding}
+            scalePcs={scalePitchClasses(selectedKey, scale)}
+            octave={octave}
+            pads={pads}
+            stickDir={stickDir}
+            latchedDir={latchedDir}
+            stickChords={stickChords}
+            stickRules={stickRules}
+            padMode={notesOn ? 'notes' : 'chords'}
+            notesPart={padMelody?.name}
+            onPadMode={setPadMode}
+            stickFor={notesOn ? `${refDegree + 1}` : `${refDegree + 1} · ${romanNumeral(refDegree, scale)}`}
+            recording={recording}
+            onPadDown={d => pressPad(`pad:${d}`, d)}
+            onPadUp={d => releasePad(`pad:${d}`)}
+            onStick={setLatchedDir}
+            onStickHold={setTouchDir}
+            compact={compact}
+            strip={{
+                padMode: notesOn ? 'notes' : 'chords',
+                // in Notes mode the octave buttons move the melody part (C3–C5), which is part of the song
+                octave: notesOctave,
+                octaveMin: notesOn ? MELODY_OCT_MIN : OCTAVE_MIN,
+                octaveMax: notesOn ? MELODY_OCT_MAX : OCTAVE_MAX,
+                onOctave: o => (notesOn
+                    ? updatePart(padMelody!.id, { octave: Math.max(MELODY_OCT_MIN, Math.min(MELODY_OCT_MAX, o)) } as Partial<Part>)
+                    : setOctave(Math.max(OCTAVE_MIN, Math.min(OCTAVE_MAX, o)))),
+                inversion,
+                maxInversion: maxInv,
+                onInversion: setInversion,
+                voiceLeading,
+                onVoiceLeading: setVoiceLeading,
+                target: padTargetNow,
+                targets: padTargets,
+                onTarget: pickPadTarget,
+            }}
+        />
+    );
+
+    const canClearAll = chords.length > 0 || parts.some(p => (p.kind === 'melody' && p.notes.length > 0) || (p.kind === 'drums' && Object.values(p.drums.hits).some(h => h?.length)));
     const progressionEl = (
         <Progression
             total={total}
@@ -1097,13 +1126,9 @@ const App: React.FC = () => {
             selectedLane={selPart ? selPart.id : CHORD_LANE}
             onSelectLane={pickLane}
             onUpdatePart={updatePart}
-            onAddPart={partActions.add}
-            onRemovePart={partActions.remove}
-            canRemovePart={partActions.canRemove}
             sixteenthsPerStep={sixteenthsPerStep(ts)}
             sixteenthsPerBar={sixteenthsPerBar(ts)}
             loopSteps={loop ? loopLength({ chords, parts, barTicks, stepTicks: T, total, loop }) / T : total}
-            padPart={padPart.name}
             recordInto={notesOn ? padMelody!.name : undefined}
             partEditor={partEditor}
             selected={selected}
@@ -1114,12 +1139,10 @@ const App: React.FC = () => {
             canPaste={!!clipboard}
             describe={describe}
             onSelect={select}
-            onTogglePlay={togglePlay}
             onFirst={edit.first}
             onPrev={edit.prev}
             onNext={edit.next}
             onToggleLoop={() => setLoop(l => !l)}
-            onToggleRecord={() => setRecording(r => !r)}
             onAddRow={edit.addRow}
             onRemoveRow={edit.removeRow}
             onLonger={edit.longer}
@@ -1130,121 +1153,88 @@ const App: React.FC = () => {
             onRest={edit.rest}
             onRestPart={edit.restPart}
             onDelete={edit.del}
-            onClearAll={edit.clearAll}
-            canClearAll={chords.length > 0 || parts.some(p => (p.kind === 'melody' && p.notes.length > 0) || (p.kind === 'drums' && Object.values(p.drums.hits).some(h => h?.length)))}
+            undoRedo={<UndoRedo canUndo={history.canUndo} canRedo={history.canRedo} onUndo={history.undo} onRedo={history.redo} />}
             songMenu={(
                 <SongMenu
-                    canUndo={history.canUndo}
-                    canRedo={history.canRedo}
-                    onUndo={history.undo}
-                    onRedo={history.redo}
                     onNew={songActions.new}
                     onOpenFile={songActions.open}
                     onSaveFile={songActions.save}
                     onShare={songActions.share}
                     onHooktheory={() => setHtOpen(true)}
+                    onClearAll={edit.clearAll}
+                    canClearAll={canClearAll}
                 />
             )}
         />
     );
-    const fxEl = (
-        <FxMatrix
+
+    const partsEl = (
+        <PartsView
             parts={parts}
             space={song.space}
-            selectedPart={selPart?.id}
-            onSelectPart={pickLane}
+            selected={partsShown}
+            onSelect={setPartsSel}
+            padPartId={padPart.id}
+            onPadPart={setPadPartId}
+            onUpdate={updatePart}
+            onTone={setTone}
             onFx={fxActions.set}
             onSpace={fxActions.space}
             onDryAll={fxActions.dryAll}
+            onAdd={kind => {
+                const id = partActions.add(kind);
+                if (id) setPartsSel(id);
+            }}
+            onRemove={partActions.remove}
+            canRemove={partActions.canRemove}
+            onOpenBeat={id => {
+                pickLane(id);
+                setMode('song');
+            }}
         />
     );
-    const voicingEl = (
-        <VoicingControls inversion={inversion} maxInversion={maxInv} voiceLeading={voiceLeading} onInversion={setInversion} onVoiceLeading={setVoiceLeading} />
-    );
 
-    // Phones and small windows: one mode at a time under a compact bar, so playing never needs scrolling
     const entering = intro === 'leaving' ? 'app-entering' : '';
-    if (compact) {
-        return (<>
-            <div className={`app compact mode-${mode} ${entering}`}>
-                <CompactBar
-                    mode={mode}
-                    selectedKey={selectedKey}
-                    scale={scale}
-                    octave={octave}
-                    bpm={bpm}
-                    playing={playing}
-                    recording={recording}
-                    onMode={setMode}
-                    onKeyChange={setSelectedKey}
-                    onScaleChange={setScale}
-                    onOctaveChange={o => setOctave(Math.max(OCTAVE_MIN, Math.min(OCTAVE_MAX, o)))}
-                    onBpmChange={b => setBpm(Math.max(BPM_MIN, Math.min(BPM_MAX, b)))}
-                    onTogglePlay={togglePlay}
-                    onToggleRecord={() => setRecording(r => !r)}
-                />
-                {mode === 'play' && deviceEl}
-                {mode === 'seq' && progressionEl}
-                {mode === 'fx' && fxEl}
-                {mode === 'sound' && (
-                    <div className="sound-mode">
-                        <section className="panel sound-section voicing-card" aria-label="Voicing">
-                            <h2 className="eyebrow">Voicing</h2>
-                            {voicingEl}
-                        </section>
-                        {soundEl}
-                        <section className="panel sound-section app-card" aria-label="App">
-                            <h2 className="eyebrow">App</h2>
-                            <div className="app-card-row">
-                                <button className="chip-button" aria-pressed={metronomeOn} onClick={() => setMetronomeOn(m => !m)}>
-                                    Click {metronomeOn ? 'on' : 'off'} · {ts.beats}/{ts.unit}
-                                </button>
-                                <button className="chip-button" onClick={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}>
-                                    {theme === 'dark' ? 'Light' : 'Dark'} theme
-                                </button>
-                                <button className="chip-button" onClick={() => setHelpOpen(true)}>How to play</button>
-                            </div>
-                        </section>
-                    </div>
-                )}
-                <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
-                {htDialog}
-            {notice && <div className="toast" role="status">{notice}</div>}
-            </div>
-            {introEl}
-        </>);
-    }
-
     return (<>
-        <div className={`app ${entering}`}>
+        <div className={`app ${compact ? 'compact' : 'wide'} mode-${mode} ${entering}`}>
             <TopBar
+                compact={compact}
+                mode={mode}
                 selectedKey={selectedKey}
-                octave={octave}
+                scale={scale}
                 bpm={bpm}
-                metronomeOn={metronomeOn}
+                playing={playing}
+                recording={recording}
                 beat={beatDot}
                 beats={ts.beats}
-                theme={theme}
+                onMode={setMode}
                 onKeyChange={setSelectedKey}
-                scale={scale}
                 onScaleChange={setScale}
-                onOctaveChange={o => setOctave(Math.max(OCTAVE_MIN, Math.min(OCTAVE_MAX, o)))}
                 onBpmChange={b => setBpm(Math.max(BPM_MIN, Math.min(BPM_MAX, b)))}
-                onToggleMetronome={() => setMetronomeOn(m => !m)}
-                onToggleTheme={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}
-                onOpenHelp={() => setHelpOpen(true)}
+                onTogglePlay={togglePlay}
+                onToggleRecord={() => setRecording(r => !r)}
+                onOpenSettings={() => setSettingsOpen(true)}
             />
-
-            <main className="main-row">
-                {deviceEl}
-                {soundEl}
-            </main>
-
-            {progressionEl}
-
-            {fxEl}
-
+            {mode === 'play' && deviceEl}
+            {mode === 'song' && progressionEl}
+            {mode === 'parts' && partsEl}
+            <SettingsSheet
+                open={settingsOpen}
+                onClose={() => setSettingsOpen(false)}
+                theme={theme}
+                onTheme={setTheme}
+                click={metronomeOn}
+                onClick={setMetronomeOn}
+                clickAccent={clickAccent}
+                onClickAccent={setClickAccent}
+                meter={`${ts.beats}/${ts.unit}`}
+                nextHint={nextHint}
+                onNextHint={setNextHint}
+                onHelp={() => setHelpOpen(true)}
+                onCredits={() => setCreditsOpen(true)}
+            />
             <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+            <CreditsDialog open={creditsOpen} onClose={() => setCreditsOpen(false)} />
             {htDialog}
             {notice && <div className="toast" role="status">{notice}</div>}
         </div>

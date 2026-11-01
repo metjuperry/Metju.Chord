@@ -7,31 +7,16 @@
     gap: 16px;
 }
 
-.main-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    align-items: flex-start;
-}
-
-.main-row > .device {
-    flex: 999 1 620px;
-    min-width: 0;
-}
-
-.main-row > .sound-panel {
-    flex: 1 1 320px;
-}
-
-@media (max-width: 560px) {
-    .app {
-        padding: 12px 12px 32px;
-    }
-}
-
-.app:not(.compact) {
+.app.wide {
     padding-left: max(24px, env(safe-area-inset-left));
     padding-right: max(24px, env(safe-area-inset-right));
+}
+
+/* desktop Play: the instrument on its own, centred at a comfortable size */
+.app.wide.mode-play > .device {
+    width: 100%;
+    max-width: 1040px;
+    margin: 0 auto;
 }
 
 /* ---- compact layout (phones, small windows): one mode at a time ---------------------- */
@@ -60,63 +45,19 @@
     min-height: 0;
 }
 
-.sound-mode {
-    /* columns, not a grid: each card sits right under the one above it, with no gap
-       left over from a taller card beside it */
-    columns: 2 300px;
-    column-gap: 8px;
-}
-
-.sound-mode .sound-panel {
-    display: contents;
-}
-
-.sound-mode > .panel,
-.sound-mode .sound-panel > .panel {
-    break-inside: avoid;
-    margin-bottom: 8px;
-}
-
-.voicing-card .inversion {
-    flex-wrap: wrap;
-}
-
-.voicing-card .device-caption,
-.voicing-card .vl-toggle {
-    color: var(--muted);
-}
-
-.voicing-card .segmented.dark {
-    background: var(--bg);
-    border-color: var(--line);
-}
-
-.voicing-card .segmented.dark > button {
-    color: var(--text);
-}
-
-.voicing-card .segmented.dark > button[aria-pressed='true'] {
-    background: var(--accent);
-    color: var(--accent-ink);
-}
-
-.voicing-card .segmented.dark > button:disabled {
-    color: var(--faint);
-}
-
-.app-card-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-
-/* Sequencer on a phone: drop the explanations, keep the grid in view */
-.app.compact .prog-hint,
-.app.compact .legend {
-    display: none;
-}
-
+/* Song on a phone: the grid stays in view; the docked chord tools reach the panel's edges */
 .app.compact .progression {
     padding: 10px 12px;
     gap: 10px;
+}
+
+.app.compact .dock {
+    margin: 0 -12px -10px;
+    padding-left: 12px;
+    padding-right: 12px;
+}
+
+/* a chord or bass lane selected in Song: a pointer to where its style lives */
+.follow-note .part-head {
+    justify-content: space-between;
 }

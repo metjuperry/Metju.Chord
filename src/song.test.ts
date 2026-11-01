@@ -227,3 +227,22 @@ describe('next-chord hint setting', () => {
         expect(readSettings({ nextHint: 'no' }).nextHint).toBe(true);
     });
 });
+
+describe('settings from the UI overhaul', () => {
+    it('reads the auto theme and rejects unknown ones', () => {
+        expect(readSettings({ theme: 'auto' }).theme).toBe('auto');
+        expect(readSettings({ theme: 'light' }).theme).toBe('light');
+        expect(readSettings({ theme: 'sepia' }).theme).toBe(defaultSettings().theme);
+    });
+
+    it('keeps the pads part and the click accent, with defaults for older saves', () => {
+        const old = { voiceLeading: true, octave: 3, inversion: 1, loop: false, theme: 'light', nextHint: false };
+        expect(readSettings(old)).toEqual({ ...old, padPart: '', clickAccent: true });
+        expect(readSettings({ padPart: 'p4', clickAccent: false })).toMatchObject({ padPart: 'p4', clickAccent: false });
+        expect(readSettings({ padPart: 7 }).padPart).toBe('');
+    });
+
+    it('ignores fields that are no longer used', () => {
+        expect(readSettings({ soundPanel: 'open', octave: 5 })).toEqual({ ...defaultSettings(), octave: 5 });
+    });
+});
