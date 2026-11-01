@@ -614,3 +614,141 @@
     font-size: 11px;
     color: var(--muted);
 }
+
+.part-lane .lane {
+    position: relative;
+}
+
+/* a part muted in this section only */
+.lane-muted {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--panel);
+    font-size: 11px;
+    color: var(--hot-text);
+    pointer-events: none;
+}
+
+.repeat-note {
+    margin-left: auto;
+    color: var(--hot-text);
+}
+
+/* ---- inside a section: ‹ Song and the section switcher --------------------------------------- */
+
+.section-switcher {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.ss-back,
+.ss-arrow,
+.ss-current {
+    height: 36px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.ss-back {
+    padding: 0 10px 0 6px;
+    font-weight: 700;
+    margin-right: 4px;
+}
+
+.ss-arrow {
+    width: 34px;
+    justify-content: center;
+}
+
+.ss-arrow:disabled {
+    color: var(--faint);
+}
+
+.ss-current {
+    width: 172px;
+    padding: 0 9px 0 7px;
+    gap: 7px;
+    border: 2px solid var(--accent);
+    background: var(--panel);
+}
+
+.ss-name {
+    min-width: 0;
+    flex: 1 1 auto;
+    font-family: var(--font-display);
+    font-size: 15px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: left;
+}
+
+.ss-pos {
+    font-size: 10px;
+    color: var(--muted);
+}
+
+.sec-badge {
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    background: var(--text);
+    color: var(--bg);
+    font-size: 11px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ss-list {
+    left: 38px;
+    right: auto;
+    min-width: 260px;
+}
+
+.ss-list [role='option'] {
+    justify-content: flex-start;
+    gap: 8px;
+}
+
+.ss-list [role='option'] .kbd {
+    margin-left: auto;
+}
+
+.ss-list [aria-selected='true'] {
+    box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+@media (max-width: 720px) {
+    .ss-current {
+        width: 140px;
+    }
+}
+
+/* phones: a tighter docked toolbar */
+@media (max-width: 1023px), (max-height: 560px) {
+    .dock .chip-button {
+        padding: 0 9px;
+    }
+
+    .length > b {
+        min-width: 52px;
+    }
+}
+
+.ss-list .kbd {
+    white-space: nowrap;
+}

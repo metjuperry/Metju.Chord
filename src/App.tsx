@@ -23,18 +23,24 @@ import SongMenu, { UndoRedo } from './components/SongMenu';
 import HooktheoryDialog from './components/HooktheoryDialog';
 import { HtClip, ImportOptions, ImportSummary, importHooktheory } from './hooktheory';
 import {
-    STORAGE_KEY, SAVE_VERSION, SavedState, Song, ThemeSetting, TimeSignature, changeTimeSignature, decodeShare, defaultSettings, encodeShare,
-    isCompound, newSong, readSaved, stepsPerRow, ticksPerBar, ticksPerStep, transportBpm,
+    FullSong, LEGACY_STORAGE_KEY, PlaybackMode, STORAGE_KEY, SAVE_VERSION, SavedState, Song, ThemeSetting, decodeShare, defaultSettings, encodeShare,
+    isCompound, newFullSong, readSaved, stepsPerRow, ticksPerBar, ticksPerStep, transportBpm,
 } from './song';
+import {
+    ChainSlot, addSection, appendToChain, applySectionEdit, chainCount, chainLayout, changeSongTimeSignature, clearSections, deleteSection,
+    duplicateEntry, duplicateSection, findSection, moveEntry, removeEntry, renameSection, sectionView, sectionsHaveContent, setSectionMute, slotAt,
+} from './sections';
+import { Scheduled, chainEvents, kickTicks, sectionEvents, sectionLoopLength, sectionMusicEnd } from './playback';
+import SongView from './components/SongView';
+import SectionSwitcher from './components/SectionSwitcher';
 import { Clip, clipAt, fitTo, isChordClip, place, remove, setLength, split } from './progression';
 import {
     ChordPart, Harmony, MAX_PARTS, MelodyPart, Part, PartFx, PartKind, PartTone, noFx,
-    audibleParts, fitNotes, hasInstrument, melodyMidi, musicEnd, musicLoopEnd, newPart, noteAt, outsideRests, partNotes, placeNote, removeNote, resolveClip,
-    restSpans,
+    fitNotes, hasInstrument, melodyMidi, newPart, noteAt, partNotes, placeNote, removeNote, resolveClip,
 } from './parts';
 import { SeqEvent, SeqOptions, SequencerPlayer, ticksToSeconds } from './audio/sequencer';
 import {
-    DrumPattern, DrumVoice, PatternBars, TICKS_PER_SIXTEENTH, emptyPattern, expandPattern, hasHit, presetsFor, setBars,
+    DrumPattern, DrumVoice, PatternBars, TICKS_PER_SIXTEENTH, emptyPattern, hasHit, presetsFor, setBars,
     sixteenthsPerBar, sixteenthsPerStep, toggleHit,
 } from './drums';
 import { CHORD_LANE, MiniNote, PartPatch } from './components/Progression';
@@ -54,14 +60,6 @@ const MELODY_OCT_MIN = 3;
 const MELODY_OCT_MAX = 5;
 const MAX_INVERSION = 3;
 
-/** What the sequencer schedules: some notes or a drum hit, and the part that plays them. */
-type Scheduled =
-    | { midi: number[]; gate?: number; strum?: number[]; legato: number; part: string; drum?: undefined }
-    | { drum: DrumVoice; part: string };
-
-/** How much of each note's length it actually sounds, so repeated notes are struck rather than smeared. */
-const LEGATO: { [k in Exclude<PartKind, 'drums'>]: number } = { chords: 0.98, bass: 0.85, melody: 0.95 };
-
 /** Keep the engine's strips in step with the parts: an instrument per instrument part, a kit per drum part. */
 function syncParts(engine: ReturnType<typeof getEngine>, parts: Part[]) {
     parts.forEach(p => (hasInstrument(p)
@@ -69,19 +67,8 @@ function syncParts(engine: ReturnType<typeof getEngine>, parts: Part[]) {
         : engine.setDrumTrack(p.id, { volume: p.volume, fx: p.fx })));
 }
 
-/**
- * Every kick hit of the song's drum parts, in song ticks up to `end`, for a bass that follows the
- * kick. Muted drums still count: muting the drums shouldn't rewrite the bass line.
- */
-function kickTicks(parts: Part[], ts: TimeSignature, end: number): number[] {
-    return parts.flatMap(p => (p.kind === 'drums' ? expandPattern(p.drums, ts, end).filter(h => h.voice === 'kick').map(h => h.tick) : []));
-}
-
-interface PlayState { chords: Clip[]; parts: Part[]; barTicks: number; stepTicks: number; total: number; loop: boolean }
-/** Where looping playback wraps: the end of the music, rounded up to a bar, but never past the sequencer's length. */
-const loopLength = (s: PlayState) => Math.min(musicLoopEnd(s.chords, s.parts, s.barTicks), s.total * s.stepTicks);
-/** How far playback goes before it wraps or stops. */
-const playLength = (s: PlayState) => (s.loop ? loopLength(s) : musicEnd(s.chords, s.parts, s.barTicks));
+/** How far a section plays on its own (Loop mode) before it wraps, or stops when loop is off. */
+const playLength = (view: Song, loop: boolean) => (loop ? sectionLoopLength(view) : sectionMusicEnd(view));
 
 /**
  * A chord for the intro: a random press on the instrument itself. Any key, any of the 7 pads,
@@ -99,7 +86,8 @@ function introChord(scale: ScaleId): { name: string; midi: number[] } {
 /** The song and settings saved in this browser, if any. */
 function loadSaved(): SavedState | null {
     try {
-        const raw = localStorage.getItem(STORAGE_KEY);
+        // version 3; before that the song lived under the v2 key, and is moved into one section
+        const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
         return raw ? readSaved(JSON.parse(raw)) : null;
     } catch {
         return null;
@@ -175,11 +163,29 @@ const App: React.FC = () => {
     const [held, setHeld] = useState<number[]>([]);
     const [shown, setShown] = useState<Shown | null>(null);
 
-    // ---- progression ----------------------------------------------------------------
-    // The song is everything undo/redo and saving cover: tracks, length, tempo, time signature
-    const history = useHistory<Song>(() => saved?.song ?? newSong());
-    const song = history.state;
-    const editSong = history.commit;
+    // ---- the song, its sections, and the open section ---------------------------------
+    // The song is everything undo/redo and saving cover: parts, sections, chain, tempo, time signature
+    const history = useHistory<FullSong>(() => saved?.song ?? newFullSong());
+    const full = history.state;
+    /** The section open in Song (and looped in Loop mode). Which one it is is a setting, not undoable. */
+    const [openId, setOpenId] = useState(initial.openSection);
+    const openKey = findSection(full, openId).id;
+    const openRef = useRef(openKey);
+    openRef.current = openKey;
+    /** The open section as an ordinary single-section song: everything below edits and plays this. */
+    const song = useMemo(() => sectionView(full, openKey), [full, openKey]);
+    /** Edit the open section (and anything song-wide) through its view; the edit is written back into the section. */
+    const editSong = useCallback((update: (s: Song) => Song, mergeKey?: string) => history.commit(f => {
+        const id = findSection(f, openRef.current).id;
+        const view = sectionView(f, id);
+        const next = update(view);
+        return next === view ? f : applySectionEdit(f, id, next);
+    }, mergeKey), [history.commit]);
+    /** Edit the whole song: sections, chain, every section at once. */
+    const editFull = history.commit;
+    const [playMode, setPlayModeState] = useState<PlaybackMode>(initial.playMode);
+    /** Song mode shows the whole song (sections and chain) or zooms into the open section. */
+    const [songZoom, setSongZoom] = useState<'song' | 'section'>('song');
     const { chords, parts, steps: total, bpm, timeSignature: ts, key: selectedKey, scale } = song;
     const harmony: Harmony = useMemo(() => ({ chords, key: selectedKey, scale }), [chords, selectedKey, scale]);
     // One step is one beat of the time signature; rows hold whole bars
@@ -253,7 +259,7 @@ const App: React.FC = () => {
     // Latest state for Transport callbacks and the global key handler
     const liveState = {
         ts, stepTicks: T, barTicks, selectedKey, scale, voiceLeading, octave, inversion, stickDir, padPart, chords, parts, total, selected, loop, recording,
-        padMode, padMelody, melodyLen, melCursor, playing, clickAccent,
+        padMode, padMelody, melodyLen, melCursor, playing, clickAccent, full, view: song,
     };
     const live = useRef(liveState);
     live.current = liveState;
@@ -415,7 +421,7 @@ const App: React.FC = () => {
             const pos = player.current?.position();
             let len16 = s.melodyLen;
             if (pos !== null && pos !== undefined) {
-                const loop16 = loopLength(s) / TICKS_PER_SIXTEENTH;
+                const loop16 = sectionLoopLength(s.view) / TICKS_PER_SIXTEENTH;
                 let end16 = Math.round(pos / TICKS_PER_SIXTEENTH);
                 if (end16 < hold.rec.start16) end16 += loop16; // the loop wrapped while the pad was held
                 len16 = Math.max(1, end16 - hold.rec.start16);
@@ -441,21 +447,40 @@ const App: React.FC = () => {
 
     // ---- progression playback (Transport) --------------------------------------------
 
-    /** The song as timed events, and how it loops (the grid is in steps, the events in ticks). */
-    const schedule = (s = live.current): { events: SeqEvent<Scheduled>[]; opts: SeqOptions } => {
-        const h: Harmony = { chords: s.chords, key: s.selectedKey, scale: s.scale };
-        return {
-            // Mute and solo only affect playback, so a muted part can still be played live from the pads
-            events: audibleParts(s.parts).flatMap((p): SeqEvent<Scheduled>[] => (p.kind === 'drums'
-                // a drum pattern repeats from the top until the loop (or the song) ends
-                ? expandPattern(p.drums, s.ts, playLength(s))
-                    .filter(hit => outsideRests(restSpans(s.chords, p), hit.tick))
-                    .map(hit => ({ tick: hit.tick, duration: TICKS_PER_SIXTEENTH, data: { drum: hit.voice, part: p.id } }))
-                : partNotes(p, h, { beatTicks: s.stepTicks, kicks: kickTicks(s.parts, s.ts, s.total * s.stepTicks) }).map(n => ({
-                    tick: n.start, duration: n.len, data: { midi: n.midi, gate: n.gate, strum: n.strum, legato: LEGATO[p.kind], part: p.id },
-                })))),
-            opts: { loop: s.loop, loopEnd: loopLength(s), end: musicEnd(s.chords, s.parts, s.barTicks) },
-        };
+    /**
+     * What playback is playing right now: the chain, or one section looping. It follows the UI, except that
+     * a section switch in Loop mode waits for the next bar line (and a mode change for the next 1/16).
+     */
+    const transport = useRef<{ mode: PlaybackMode; section: string }>({ mode: initial.playMode, section: openKey });
+    /** Loop mode: the section playing (it can lag the open one until a queued switch lands). */
+    const [playingSection, setPlayingSection] = useState<string | null>(null);
+    /** Loop mode: the section waiting for the next bar line. */
+    const [queued, setQueued] = useState<string | null>(null);
+    /** Chain mode: the chain slot playing and the song tick, for the Song view. */
+    const [chainPos, setChainPos] = useState<{ index: number; tick: number } | null>(null);
+    const scheduleCache = useRef<{ full: FullSong; mode: PlaybackMode; section: string; loop: boolean; result: { events: SeqEvent<Scheduled>[]; opts: SeqOptions } } | null>(null);
+
+    /** The music as timed events, and how it loops: the whole chain, or the section being looped. Cached per song edit. */
+    const schedule = (): { events: SeqEvent<Scheduled>[]; opts: SeqOptions } => {
+        const s = live.current;
+        const t = transport.current;
+        const c = scheduleCache.current;
+        if (c && c.full === s.full && c.mode === t.mode && c.section === t.section && c.loop === s.loop) return c.result;
+        let result;
+        if (t.mode === 'chain') {
+            // each section from its start for its full length; drum patterns restart, notes are cut at its end
+            const { events, length } = chainEvents(s.full);
+            result = { events, opts: { loop: s.loop, loopEnd: length, end: length } };
+        } else {
+            const sec = findSection(s.full, t.section);
+            const view = sectionView(s.full, sec.id);
+            result = {
+                events: sectionEvents(view, sec.mutes, playLength(view, s.loop), 0, false),
+                opts: { loop: s.loop, loopEnd: sectionLoopLength(view), end: sectionMusicEnd(view) },
+            };
+        }
+        scheduleCache.current = { full: s.full, mode: t.mode, section: t.section, loop: s.loop, result };
+        return result;
     };
 
     // Every part plays the chord row its own way; the screen, stick and keyboard strip belong to live
@@ -477,19 +502,110 @@ const App: React.FC = () => {
     const stopPlayback = useCallback(() => {
         player.current?.stop();
         setPlaying(false);
+        setQueued(null);
+        setChainPos(null);
+        setPlayingSection(null);
     }, []);
 
     const startPlayback = async () => {
         await startAudio();
         if (player.current?.playing) return;
+        const t = transport.current;
+        t.mode = playMode;
+        t.section = openKey;
         const { opts } = schedule();
         if (!opts.loop && opts.end === 0) return;
         const limit = opts.loop ? opts.loopEnd : opts.end;
-        const from = playhead * T < limit ? playhead * T : 0;
-        // The player reads the latest clips on every pass, so edits while playing need no extra wiring
-        player.current = new SequencerPlayer<Scheduled>(() => schedule(), (e, t) => playEventRef.current(e, t), stopPlayback);
+        const local = Math.max(0, playhead) * T;
+        let from = local < limit ? local : 0;
+        if (t.mode === 'chain') {
+            // from the cursor in the open section's first place in the chain (or the top, if it isn't in it)
+            const slot = chainLayout(full).find(x => x.section.id === openKey);
+            from = slot ? slot.start + (local < slot.len ? local : 0) : 0;
+            if (from >= limit) from = 0;
+        }
+        // The player reads the latest song on every pass, so edits while playing need no extra wiring
+        player.current = new SequencerPlayer<Scheduled>(() => schedule(), (e, time) => playEventRef.current(e, time), stopPlayback);
         player.current.start(from);
         setPlaying(true);
+        setPlayingSection(t.mode === 'loop' ? t.section : null);
+    };
+
+    /** The next bar line at or after song tick `tick`. */
+    const nextBar = (tick: number) => Math.ceil(tick / barTicks) * barTicks;
+
+    /** Open a section. In Loop mode while playing, playback switches to it at the next bar line (it shows NEXT until then). */
+    const openSection = (id: string) => {
+        if (id !== openKey) {
+            setOpenId(id);
+            setSelected(0);
+            setMelCursor(0);
+            if (!playing) setPlayhead(0);
+        }
+        const p = player.current;
+        if (!p?.playing || transport.current.mode !== 'loop') return;
+        if (id === transport.current.section) {
+            p.cancelJump();
+            setQueued(null);
+            return;
+        }
+        setQueued(id);
+        p.queueJump(nextBar(p.cursorTick), 0, time => {
+            transport.current.section = id;
+            Tone.getDraw().schedule(() => {
+                setQueued(null);
+                setPlayingSection(id);
+            }, time);
+        });
+    };
+
+    /** Chain mode while playing: carry on from the start of chain slot `slot`. */
+    const jumpToSlot = (slot: ChainSlot) => {
+        const p = player.current;
+        if (p?.playing && transport.current.mode === 'chain') p.queueJump(p.cursorTick, slot.start);
+    };
+
+    /** Chain or Loop. While playing the music carries on: into the chain where this section is, or looping the section playing. */
+    const setPlayMode = (m: PlaybackMode) => {
+        if (m === playMode) return;
+        setPlayModeState(m);
+        const p = player.current;
+        const t = transport.current;
+        if (!p?.playing) {
+            t.mode = m;
+            return;
+        }
+        const cur = p.cursorTick;
+        const layout = chainLayout(live.current.full);
+        if (m === 'chain') {
+            const slot = layout.find(x => x.section.id === t.section);
+            p.queueJump(slot ? cur : nextBar(cur), slot ? slot.start + Math.min(cur, slot.len - 1) : 0, () => {
+                t.mode = 'chain';
+            });
+            setQueued(null);
+            setPlayingSection(null);
+        } else {
+            const slot = slotAt(layout, cur);
+            p.queueJump(cur, cur - slot.start, time => {
+                t.mode = 'loop';
+                t.section = slot.section.id;
+                Tone.getDraw().schedule(() => setPlayingSection(slot.section.id), time);
+            });
+            if (slot.section.id !== openKey) openSection(slot.section.id);
+        }
+    };
+
+    /** Record works on one section: in Chain mode it switches to Loop on the section playing (or open) first. */
+    const toggleRecord = () => {
+        if (recording) {
+            setRecording(false);
+            return;
+        }
+        if (playMode === 'chain') {
+            setPlayMode('loop');
+            flash('Recording loops one section, so playback switched to Loop.');
+        }
+        setRecording(true);
     };
 
     const togglePlay = () => (playing ? stopPlayback() : startPlayback());
@@ -500,15 +616,32 @@ const App: React.FC = () => {
         let frame = 0;
         let last = -1;
         let lastSixteenth = -1;
+        let lastGlobal = -1;
         const draw = () => {
             const pos = player.current?.position();
             if (pos !== null && pos !== undefined) {
-                const step = Math.floor(pos / live.current.stepTicks);
+                const t = transport.current;
+                let local = pos;
+                let sec = t.section;
+                if (t.mode === 'chain') {
+                    // the chain's song tick → which slot, and where in its section
+                    const slot = slotAt(chainLayout(live.current.full), pos);
+                    local = pos - slot.start;
+                    sec = slot.section.id;
+                    const g = Math.floor(pos / TICKS_PER_SIXTEENTH);
+                    if (g !== lastGlobal) {
+                        lastGlobal = g;
+                        setChainPos({ index: slot.index, tick: pos });
+                    }
+                }
+                // the sequencer and editors show the playhead only while their section is the one playing
+                const here = sec === openRef.current;
+                const step = here ? Math.floor(local / live.current.stepTicks) : -1;
                 if (step !== last) {
                     last = step;
                     setPlayhead(step);
                 }
-                const sixteenth = Math.floor(pos / TICKS_PER_SIXTEENTH);
+                const sixteenth = here ? Math.floor(local / TICKS_PER_SIXTEENTH) : -1;
                 if (sixteenth !== lastSixteenth) {
                     lastSixteenth = sixteenth;
                     setPlaySixteenth(sixteenth);
@@ -577,7 +710,16 @@ const App: React.FC = () => {
             if (parts.length >= MAX_PARTS) return undefined;
             // a drum part starts with the first starter beat for the time signature, so Play just works
             const part = newPart(kind, parts, kind === 'drums' ? presetsFor(ts)[0].make(ts) : undefined);
-            setParts(ps => [...ps, part]);
+            editFull(f => {
+                const id = findSection(f, openRef.current).id;
+                const view = sectionView(f, id);
+                const out = applySectionEdit(f, id, { ...view, parts: [...view.parts, part] });
+                // a new beat plays in every section, not just the open one
+                return part.kind !== 'drums' ? out : {
+                    ...out,
+                    sections: out.sections.map(sec => (sec.content[part.id] ? sec : { ...sec, content: { ...sec.content, [part.id]: { drums: part.drums } } })),
+                };
+            });
             // Song opens its lane next time (without switching the pads to it)
             setSelectedLane(part.id);
             return part.id;
@@ -681,13 +823,10 @@ const App: React.FC = () => {
             setChords(place(remove(clips, selClip), { ...selClip, plays: { ...selClip.plays, [id]: plays } }));
         }),
         del: chordEdit(() => selClip && setChords(remove(clips, selClip))),
+        /** Empty every section (chords, melodies, beats); the sections, chain and parts stay. */
         clearAll: () => {
             stopPlayback();
-            editSong(sg => ({
-                ...sg,
-                chords: [],
-                parts: sg.parts.map(p => (p.kind === 'melody' ? { ...p, notes: [] } : p.kind === 'drums' ? { ...p, drums: emptyPattern(p.drums.bars) } : p)),
-            }));
+            editFull(clearSections);
             setSelected(0);
             setPlayhead(0);
         },
@@ -704,11 +843,13 @@ const App: React.FC = () => {
             setSelected(Math.min(selected, next - 1));
             setPlayhead(Math.min(playhead, next - 1));
         },
-        timeSignature: (next: TimeSignature) => {
-            const changed = changeTimeSignature(song, next);
-            editSong(() => changed);
-            setSelected(sel => Math.min(sel, changed.steps - 1));
-            setPlayhead(ph => Math.min(ph, changed.steps - 1));
+        /** The time signature is song-wide: every section moves to it. */
+        timeSignature: (next: Song['timeSignature']) => {
+            const changed = changeSongTimeSignature(full, next);
+            editFull(() => changed);
+            const steps = findSection(changed, openKey).steps;
+            setSelected(sel => Math.min(sel, steps - 1));
+            setPlayhead(ph => Math.min(ph, steps - 1));
         },
         first: () => select(0),
         prev: () => {
@@ -732,8 +873,8 @@ const App: React.FC = () => {
 
     const snapshot = (): SavedState => ({
         version: SAVE_VERSION,
-        song,
-        settings: { voiceLeading, octave, inversion, loop, theme, nextHint, padPart: padPartId, clickAccent },
+        song: full,
+        settings: { voiceLeading, octave, inversion, loop, theme, nextHint, padPart: padPartId, clickAccent, openSection: openKey, playMode },
     });
 
     // Autosave a moment after any change
@@ -747,13 +888,16 @@ const App: React.FC = () => {
         }, 400);
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [song, voiceLeading, octave, inversion, loop, theme, nextHint, padPartId, clickAccent]);
+    }, [full, voiceLeading, octave, inversion, loop, theme, nextHint, padPartId, clickAccent, openKey, playMode]);
 
     /** Replace the song (undoable) and take over its saved settings. */
     const loadState = (state: SavedState, message: string) => {
         stopPlayback();
-        editSong(() => state.song);
+        editFull(() => state.song);
         const st = state.settings;
+        setOpenId(st.openSection);
+        setPlayModeState(st.playMode);
+        transport.current.mode = st.playMode;
         setVoiceLeading(st.voiceLeading);
         setOctave(st.octave);
         setInversion(st.inversion);
@@ -788,6 +932,7 @@ const App: React.FC = () => {
             return done.summary.problem ? sg : done.song;
         });
         setHtOpen(false);
+        setSongZoom('section');
         // open the first Melody part it wrote, so you see what arrived
         const first = summary.parts[0];
         if (first) {
@@ -801,7 +946,10 @@ const App: React.FC = () => {
     const songActions = {
         new: () => {
             stopPlayback();
-            editSong(() => newSong());
+            const fresh = newFullSong();
+            editFull(() => fresh);
+            setOpenId(fresh.sections[0].id);
+            setSongZoom('song');
             setSelectedLane(CHORD_LANE);
             setSelected(0);
             setPlayhead(0);
@@ -840,8 +988,8 @@ const App: React.FC = () => {
 
     // while a dialog is open the instrument's keys are off (typing or tabbing in it mustn't play pads)
     const modalOpen = helpOpen || htOpen || settingsOpen || creditsOpen;
-    const keyActions = useRef({ pressPad, releasePad, releaseAll, togglePlay, edit, helpOpen: modalOpen, undo: history.undo, redo: history.redo });
-    keyActions.current = { pressPad, releasePad, releaseAll, togglePlay, edit, helpOpen: modalOpen, undo: history.undo, redo: history.redo };
+    const keyActions = useRef({ pressPad, releasePad, releaseAll, togglePlay, toggleRecord, edit, helpOpen: modalOpen, undo: history.undo, redo: history.redo });
+    keyActions.current = { pressPad, releasePad, releaseAll, togglePlay, toggleRecord, edit, helpOpen: modalOpen, undo: history.undo, redo: history.redo };
 
     useEffect(() => {
         const isTyping = (t: EventTarget | null) =>
@@ -883,7 +1031,7 @@ const App: React.FC = () => {
                 case 'ArrowUp': handled(); setOctave(o => Math.min(OCTAVE_MAX, o + 1)); break;
                 case 'ArrowDown': handled(); setOctave(o => Math.max(OCTAVE_MIN, o - 1)); break;
                 case 'Space': handled(); if (!e.repeat) a.togglePlay(); break;
-                case 'KeyR': if (!e.repeat) setRecording(r => !r); break;
+                case 'KeyR': if (!e.repeat) a.toggleRecord(); break;
                 case 'KeyN': if (!e.repeat) setPadMode(m => (m === 'notes' ? 'chords' : 'notes')); break;
                 case 'BracketLeft': a.edit.shorter(); break;
                 case 'BracketRight': a.edit.longer(); break;
@@ -1113,7 +1261,19 @@ const App: React.FC = () => {
         />
     );
 
-    const canClearAll = chords.length > 0 || parts.some(p => (p.kind === 'melody' && p.notes.length > 0) || (p.kind === 'drums' && Object.values(p.drums.hits).some(h => h?.length)));
+    const openSec = findSection(full, openKey);
+    const repeats = chainCount(full, openKey);
+    const songMenuEl = (
+        <SongMenu
+            onNew={songActions.new}
+            onOpenFile={songActions.open}
+            onSaveFile={songActions.save}
+            onShare={songActions.share}
+            onHooktheory={() => setHtOpen(true)}
+            onClearAll={edit.clearAll}
+            canClearAll={sectionsHaveContent(full)}
+        />
+    );
     const progressionEl = (
         <Progression
             total={total}
@@ -1128,7 +1288,7 @@ const App: React.FC = () => {
             onUpdatePart={updatePart}
             sixteenthsPerStep={sixteenthsPerStep(ts)}
             sixteenthsPerBar={sixteenthsPerBar(ts)}
-            loopSteps={loop ? loopLength({ chords, parts, barTicks, stepTicks: T, total, loop }) / T : total}
+            loopSteps={loop ? sectionLoopLength(song) / T : total}
             recordInto={notesOn ? padMelody!.name : undefined}
             partEditor={partEditor}
             selected={selected}
@@ -1154,17 +1314,67 @@ const App: React.FC = () => {
             onRestPart={edit.restPart}
             onDelete={edit.del}
             undoRedo={<UndoRedo canUndo={history.canUndo} canRedo={history.canRedo} onUndo={history.undo} onRedo={history.redo} />}
-            songMenu={(
-                <SongMenu
-                    onNew={songActions.new}
-                    onOpenFile={songActions.open}
-                    onSaveFile={songActions.save}
-                    onShare={songActions.share}
-                    onHooktheory={() => setHtOpen(true)}
-                    onClearAll={edit.clearAll}
-                    canClearAll={canClearAll}
+            songMenu={songMenuEl}
+            sectionHeader={(
+                <SectionSwitcher
+                    sections={full.sections}
+                    openId={openKey}
+                    timeSignature={ts}
+                    counts={Object.fromEntries(full.sections.map(sec => [sec.id, chainCount(full, sec.id)]))}
+                    queued={queued}
+                    onBack={() => setSongZoom('song')}
+                    onPick={openSection}
                 />
             )}
+            sectionName={openSec.name}
+            sectionMutes={openSec.mutes}
+            onSectionMute={(partId, muted) => editFull(f => setSectionMute(f, openKey, partId, muted))}
+            repeatNote={repeats > 1 ? `×${repeats} in the chain: edits change ${repeats === 2 ? 'both' : 'all of them'}` : undefined}
+        />
+    );
+
+    const songViewEl = (
+        <SongView
+            song={full}
+            openId={openKey}
+            playMode={playMode}
+            onPlayMode={setPlayMode}
+            playing={playing}
+            chainPos={chainPos}
+            playingSection={playingSection}
+            queued={queued}
+            onOpen={id => {
+                openSection(id);
+                setSongZoom('section');
+            }}
+            onPickSlot={slot => {
+                openSection(slot.section.id);
+                jumpToSlot(slot);
+            }}
+            onNew={() => {
+                const r = addSection(full);
+                if (!r.id) return;
+                editFull(() => r.song);
+                openSection(r.id);
+                setSongZoom('section');
+            }}
+            onRename={(id, name) => editFull(f => renameSection(f, id, name))}
+            onDuplicate={id => {
+                const r = duplicateSection(full, id);
+                if (r.id) editFull(() => r.song);
+            }}
+            onDelete={id => {
+                const gone = full.sections.find(sec => sec.id === id);
+                if (!gone || full.sections.length <= 1) return;
+                if (id === openKey) openSection(full.sections.find(sec => sec.id !== id)!.id);
+                editFull(f => deleteSection(f, id));
+                flash(`Deleted ${gone.name}. Undo to bring it back.`);
+            }}
+            onAddToChain={id => editFull(f => appendToChain(f, id))}
+            onMoveEntry={(i, dir) => editFull(f => moveEntry(f, i, dir))}
+            onDuplicateEntry={i => editFull(f => duplicateEntry(f, i))}
+            onRemoveEntry={i => editFull(f => removeEntry(f, i))}
+            songMenu={songMenuEl}
         />
     );
 
@@ -1189,6 +1399,7 @@ const App: React.FC = () => {
             canRemove={partActions.canRemove}
             onOpenBeat={id => {
                 pickLane(id);
+                setSongZoom('section');
                 setMode('song');
             }}
         />
@@ -1212,11 +1423,11 @@ const App: React.FC = () => {
                 onScaleChange={setScale}
                 onBpmChange={b => setBpm(Math.max(BPM_MIN, Math.min(BPM_MAX, b)))}
                 onTogglePlay={togglePlay}
-                onToggleRecord={() => setRecording(r => !r)}
+                onToggleRecord={toggleRecord}
                 onOpenSettings={() => setSettingsOpen(true)}
             />
             {mode === 'play' && deviceEl}
-            {mode === 'song' && progressionEl}
+            {mode === 'song' && (songZoom === 'song' ? songViewEl : progressionEl)}
             {mode === 'parts' && partsEl}
             <SettingsSheet
                 open={settingsOpen}

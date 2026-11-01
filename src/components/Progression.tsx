@@ -72,6 +72,14 @@ interface ProgressionProps {
     onDelete: () => void;
     /** The Song menu, shown at the end of the header. */
     songMenu?: React.ReactNode;
+    /** "‹ Song" and the section switcher, at the start of the header. */
+    sectionHeader?: React.ReactNode;
+    /** The open section's name and its mutes: each lane's M silences its part in this section only. */
+    sectionName?: string;
+    sectionMutes?: { [partId: string]: true };
+    onSectionMute?: (partId: string, muted: boolean) => void;
+    /** Shown in the chord toolbar when the section is in the chain more than once. */
+    repeatNote?: string;
     /** Undo and redo, shown with the cursor buttons. */
     undoRedo?: React.ReactNode;
 }
@@ -97,7 +105,8 @@ const Progression: React.FC<ProgressionProps> = props => {
     const rows = Math.ceil(total / STEPS_PER_ROW);
     const cols = { gridTemplateColumns: `repeat(${STEPS_PER_ROW}, minmax(0, 1fr))` };
     const anySolo = parts.some(p => p.solo);
-    const silenced = (p: Part) => (anySolo ? !p.solo : p.mute);
+    const mutedHere = (p: Part) => !!props.sectionMutes?.[p.id];
+    const silenced = (p: Part) => (anySolo ? !p.solo : p.mute) || mutedHere(p);
 
     /** The chord row within one sequencer row. A chord held past the end of a row continues in the next. */
     const renderChordLane = (rowStart: number, rowEnd: number) => {
@@ -264,11 +273,26 @@ const Progression: React.FC<ProgressionProps> = props => {
                     <span className="track-dot" />
                     <span className="lane-name">{part.name}</span>
                 </button>
-                <button className="ms-button lane-ms" aria-pressed={part.mute} aria-label={`Mute ${part.name}`} title="Mute in playback" onClick={() => props.onUpdatePart(part.id, { mute: !part.mute })}>M</button>
-                <button className="ms-button lane-ms solo" aria-pressed={part.solo} aria-label={`Solo ${part.name}`} title="Solo in playback" onClick={() => props.onUpdatePart(part.id, { solo: !part.solo })}>S</button>
+                {props.onSectionMute ? (
+                    <button
+                        className="ms-button lane-ms"
+                        aria-pressed={mutedHere(part)}
+                        aria-label={`Mute ${part.name} in ${props.sectionName}`}
+                        title={`Mute ${part.name} in ${props.sectionName} only (mute and solo for the whole song are in Parts)`}
+                        onClick={() => props.onSectionMute!(part.id, !mutedHere(part))}
+                    >
+                        M
+                    </button>
+                ) : (
+                    <>
+                        <button className="ms-button lane-ms" aria-pressed={part.mute} aria-label={`Mute ${part.name}`} title="Mute in playback" onClick={() => props.onUpdatePart(part.id, { mute: !part.mute })}>M</button>
+                        <button className="ms-button lane-ms solo" aria-pressed={part.solo} aria-label={`Solo ${part.name}`} title="Solo in playback" onClick={() => props.onUpdatePart(part.id, { solo: !part.solo })}>S</button>
+                    </>
+                )}
             </div>
             <div className="lane" style={cols}>
                 {part.kind === 'drums' ? renderDrumSteps(part, part.drums, rowStart, rowEnd) : renderNoteStrip(part, rowStart, rowEnd)}
+                {mutedHere(part) && rowStart === 0 && <span className="lane-muted">muted in {props.sectionName}</span>}
             </div>
         </div>
     );
@@ -310,6 +334,7 @@ const Progression: React.FC<ProgressionProps> = props => {
     return (
         <section className="panel progression" aria-label="Sequencer">
             <div className="prog-head">
+                {props.sectionHeader}
                 <h2 className="seq-title">SEQ-{total}</h2>
                 <div className="transport" role="group" aria-label="Cursor">
                     <button className="icon-button" aria-label="Back to start" onClick={props.onFirst}>{Icon.first}</button>
@@ -363,6 +388,7 @@ const Progression: React.FC<ProgressionProps> = props => {
                         <button className="chip-button" disabled={!canPaste} onClick={props.onPaste}>Paste</button>
                         <button className="chip-button" title="Make this a rest ( . )" onClick={props.onRest}>Rest</button>
                         <button className="chip-button" disabled={!selClip} title="Delete ( ⌫ )" onClick={props.onDelete}>Delete</button>
+                        {props.repeatNote && <span className="section-note repeat-note">{props.repeatNote}</span>}
                     </div>
                     {selClip?.rest && (
                         <div className="dock-row rest-parts" role="group" aria-label="Parts that keep playing through this rest">

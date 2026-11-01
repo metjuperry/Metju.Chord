@@ -40,6 +40,8 @@ export class SequencerPlayer<T> {
     /** Recent windows as [Transport tick, song tick] pairs, for drawing the playhead. */
     private marks: [number, number][] = [];
     private wrapAt = Infinity;
+    /** A jump waiting for playback to reach `at`: from there it carries on at `to`, after `run` (which may change what `source` returns). */
+    private jump: { at: number; to: number; run: (time: number) => void } | null = null;
 
     constructor(
         private readonly source: SeqSource<T>,
@@ -62,10 +64,33 @@ export class SequencerPlayer<T> {
         this.repeatId = Tone.getTransport().scheduleRepeat(time => this.pass(time), toneTicks(WINDOW), `${startToneTick}i`);
     }
 
+    /** The next song tick to be scheduled (playback is about one window behind it). Jumps can't land before it. */
+    get cursorTick() {
+        return this.cursor;
+    }
+
+    /**
+     * When playback reaches song tick `at`, call `run` and carry on from `to` instead, e.g. switch to
+     * another section at the next bar line, or jump to a place in the chain. `at` at or past the loop
+     * end means "at the loop end". `run` gets the audio time of the jump. A later call replaces a waiting jump.
+     */
+    queueJump(at: number, to: number, run: (time: number) => void = () => undefined) {
+        this.jump = { at: Math.max(at, this.cursor), to, run };
+    }
+
+    cancelJump() {
+        this.jump = null;
+    }
+
+    get jumpPending() {
+        return this.jump !== null;
+    }
+
     stop() {
         if (this.repeatId === null) return;
         Tone.getTransport().clear(this.repeatId);
         this.repeatId = null;
+        this.jump = null;
         this.marks = [];
         getEngine().releaseTransport('sequencer');
     }
@@ -98,11 +123,29 @@ export class SequencerPlayer<T> {
         if (this.marks.length > 64) this.marks.splice(0, this.marks.length - 64);
 
         const to = from + WINDOW;
-        const fire = (lo: number, hi: number, offset: number) => {
-            for (const e of events) {
+        const fire = (lo: number, hi: number, offset: number, list = events) => {
+            for (const e of list) {
                 if (e.tick >= lo && e.tick < hi) this.onEvent(e, time + ticksToSeconds(e.tick - lo + offset));
             }
         };
+
+        // A queued jump inside this window: play up to it, switch, then the rest of the window from the target
+        const jump = this.jump;
+        if (jump) {
+            const at = opts.loop ? Math.min(jump.at, opts.loopEnd) : jump.at;
+            if (at >= from && at < to) {
+                this.jump = null;
+                fire(from, at, 0);
+                jump.run(time + ticksToSeconds(at - from));
+                const fresh = this.source();
+                const rest = to - at;
+                this.wrapAt = fresh.opts.loop ? fresh.opts.loopEnd : Infinity;
+                this.marks.push([toneTick + Math.round((at - from) * ratio()), jump.to]);
+                fire(jump.to, jump.to + rest, at - from, fresh.events);
+                this.cursor = jump.to + rest;
+                return;
+            }
+        }
         if (opts.loop && to > opts.loopEnd) {
             // This window runs over the loop end: finish the pass, then continue from the top
             fire(from, opts.loopEnd, 0);

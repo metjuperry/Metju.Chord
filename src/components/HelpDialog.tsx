@@ -64,12 +64,17 @@ const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose }) => {
                         the notes the stick added yellow) and the chords that often come next. The strip under it sets the octave, inversion,
                         voice leading, and which part the pads play through (<b>Pads →</b>).</dd>
                     <dt><b>Song</b></dt>
-                    <dd><i>What</i> plays: the chord row the pads record into, and a lane per part. Tap a lane's name to edit that part's notes or
-                        beat below; <b>M</b> / <b>S</b> mute and solo it. The chord tools stay docked at the bottom. New, open, save, share and Paste from
-                        Hooktheory are in the Song menu.</dd>
+                    <dd><i>What</i> plays, in <b>sections</b> (verse, chorus…) put in order in the <b>chain</b>. The song view shows the sections as
+                        tiles (tap one to open it; long-press or ⋯ to rename, duplicate, delete or add it to the chain) and the chain as blocks
+                        (tap to open that section, or while the chain plays to jump there; long-press to move, duplicate or remove; + adds the open
+                        section). <b>Chain</b> plays the sections in order; <b>Loop</b> loops the open one, and picking another while it plays
+                        switches at the next bar line. Record works in Loop (in Chain it switches to Loop first).
+                        Inside a section: the chord row the pads record into and a lane per part. Tap a lane's name to edit that part's notes or
+                        beat below; its <b>M</b> mutes it in this section only. The chord tools stay docked at the bottom. ‹ › and the section name
+                        switch sections; ‹ Song goes back. New, open, save, share and Paste from Hooktheory (into the open section) are in the Song menu.</dd>
                     <dt><b>Parts</b></dt>
                     <dd><i>How</i> it sounds: every part with its volume, mute and solo, and for the selected one its instrument, how it plays
-                        (chord, strum, arpeggio; bass style; melody range), tone knobs and effects. <b>Master</b> holds the shared reverb, delay and output.</dd>
+                        (chord, strum, arpeggio; bass style; melody range), tone knobs and effects. <b>Master</b> holds the shared reverb, delay and output. Mute and solo here are for the whole song.</dd>
                     <dt><b>⚙</b></dt>
                     <dd>Theme, the click, the next-chord hint, this help and the credits.</dd>
                 </dl>
