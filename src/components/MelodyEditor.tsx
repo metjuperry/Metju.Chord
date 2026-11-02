@@ -3,6 +3,7 @@ import './PartEditors.css';
 import { TICKS_PER_SIXTEENTH } from '../drums';
 import { Harmony, MELODY_STEPS, MelodyPart, chordAt, melodyMidi, resolveClip } from '../parts';
 import { noteNames, spellNoteOctave } from '../theory';
+import { degreeShade } from '../shades';
 
 /** Note lengths offered for new notes, in 1/16 steps. */
 const LENGTHS: { sixteenths: number; label: string }[] = [
@@ -52,7 +53,13 @@ const MelodyEditor: React.FC<MelodyEditorProps> = p => {
     const rows = useMemo(() => Array.from({ length: MELODY_STEPS }, (_, i) => {
         const step = MELODY_STEPS - 1 - i; // highest at the top
         const midi = melodyMidi(part, harmony, step);
-        return { step, pc: midi % 12, label: `${names[midi % 12]}${Math.floor(midi / 12) - 1}`, tonic: step % 7 === 0 };
+        // every scale degree gets its own shade of the part colour, the same in both octaves,
+        // so a note far from the labels still shows which row (and note name) it is
+        const shade = degreeShade(part.color, step);
+        return {
+            step, pc: midi % 12, label: `${names[midi % 12]}${Math.floor(midi / 12) - 1}`, tonic: step % 7 === 0,
+            style: { '--row': shade.fill, '--row-ink': shade.ink } as React.CSSProperties,
+        };
     }), [part, harmony, names]);
 
     // the chord tones under every 1/16 column
@@ -66,14 +73,15 @@ const MelodyEditor: React.FC<MelodyEditorProps> = p => {
     // which cells are covered by a note, and where notes begin and end
     // (an altered note stays on its scale row, marked ♯ or ♭, and is named as written: F♯4)
     const covered = useMemo(() => {
-        const map = new Map<string, { head: boolean; tail: boolean; acc: number; sel: boolean; label: string }>();
+        const map = new Map<string, { head: boolean; tail: boolean; acc: number; sel: boolean; label: string; name: string }>();
         for (const n of part.notes) {
             const from = Math.round(n.start / TICKS_PER_SIXTEENTH);
             const to = Math.round((n.start + n.len) / TICKS_PER_SIXTEENTH);
             const acc = n.acc ?? 0;
             const label = spellNoteOctave(names, melodyMidi(part, harmony, n.step), acc);
             const sel = n.start === p.selectedStart;
-            for (let c = from; c < to; c++) map.set(`${n.step}:${c}`, { head: c === from, tail: c === to - 1, acc, sel, label });
+            const name = label.replace(/-?\d+$/, ''); // shown on the note itself: C, F♯…
+            for (let c = from; c < to; c++) map.set(`${n.step}:${c}`, { head: c === from, tail: c === to - 1, acc, sel, label, name });
         }
         return map;
     }, [part, harmony, names, p.selectedStart]);
@@ -140,8 +148,8 @@ const MelodyEditor: React.FC<MelodyEditorProps> = p => {
                                     {renderChordRibbon(from, to)}
                                 </div>
                                 {rows.map(row => (
-                                    <div key={row.step} className="mel-row" role="row" style={{ gridTemplateColumns: cols }}>
-                                        <span className={`mel-name ${row.tonic ? 'tonic' : ''}`}>{row.label}</span>
+                                    <div key={row.step} className="mel-row" role="row" style={{ ...row.style, gridTemplateColumns: cols }}>
+                                        <span className={`mel-name ${row.tonic ? 'tonic' : ''}`}><span className="mel-chip">{row.label}</span></span>
                                         {Array.from({ length: to - from }, (_, j) => {
                                             const c = from + j;
                                             const col = columns[c];
@@ -166,7 +174,7 @@ const MelodyEditor: React.FC<MelodyEditorProps> = p => {
                                                     aria-label={`${cover ? cover.label : row.label}, beat ${beat + 1}${c % p.perBeat ? `, 1/16 ${(c % p.perBeat) + 1}` : ''}${cover?.sel ? ', selected' : ''}`}
                                                     onClick={() => p.onTap(row.step, c, len)}
                                                 >
-                                                    {cover?.head && cover.acc !== 0 && <span className="mel-acc" aria-hidden="true">{cover.acc > 0 ? '♯' : '♭'}</span>}
+                                                    {cover?.head && <span className="mel-acc" aria-hidden="true">{cover.name}</span>}
                                                 </button>
                                             );
                                         })}
