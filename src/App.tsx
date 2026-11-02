@@ -296,8 +296,8 @@ const App: React.FC = () => {
     const MAX_SECTION_STEPS = 512;
     /** A copied melody or drum lane (all of it, in one section), to paste into another section or part of the same kind. */
     const [laneClip, setLaneClip] = useState<
-        | { kind: 'melody'; notes: Note[]; octave: number; from: string }
-        | { kind: 'drums'; pattern: DrumPattern; from: string }
+        | { kind: 'melody'; notes: Note[]; octave: number }
+        | { kind: 'drums'; pattern: DrumPattern }
         | null
     >(null);
     const player = useRef<SequencerPlayer<Scheduled> | null>(null);
@@ -832,15 +832,12 @@ const App: React.FC = () => {
         clear: () => setPattern(p => emptyPattern(p.bars)),
         copy: () => {
             if (!drumPart) return;
-            const from = `${findSection(full, openKey).name} · ${drumPart.name}`;
-            setLaneClip({ kind: 'drums', pattern: drumPart.drums, from });
-            flash(`Copied ${from}. Open another section and press Paste.`);
+            setLaneClip({ kind: 'drums', pattern: drumPart.drums });
         },
         paste: () => {
             if (!drumPart || laneClip?.kind !== 'drums') return;
             const pattern = laneClip.pattern;
             setPattern(() => pattern);
-            flash(`Pasted ${laneClip.from}. Undo to take it back.`);
         },
     };
 
@@ -901,9 +898,7 @@ const App: React.FC = () => {
         clear: () => melodyPart && updatePart(melodyPart.id, { notes: [] }),
         copy: () => {
             if (!melodyPart) return;
-            const from = `${findSection(full, openKey).name} · ${melodyPart.name}`;
-            setLaneClip({ kind: 'melody', notes: melodyPart.notes, octave: melodyPart.octave, from });
-            flash(`Copied ${from}. Open another section and press Paste.`);
+            setLaneClip({ kind: 'melody', notes: melodyPart.notes, octave: melodyPart.octave });
         },
         /**
          * Replace this lane with the copied one, one undo step: same pitches (even into a part at another
@@ -920,9 +915,8 @@ const App: React.FC = () => {
                 return { ...sg, steps, parts: sg.parts.map(p => (p.id === id && p.kind === 'melody' ? { ...p, notes } : p)) };
             });
             setSelNoteKey(null);
-            flash(dropped
-                ? `Pasted ${clip.from}; ${dropped} note${dropped === 1 ? '' : 's'} sat outside this part's two octaves and were left out. Undo to take it back.`
-                : `Pasted ${clip.from}. Undo to take it back.`);
+            // the one thing worth saying: some notes didn't fit this part's range
+            if (dropped) flash(`${dropped} note${dropped === 1 ? '' : 's'} sat outside this part's two octaves and ${dropped === 1 ? 'was' : 'were'} left out.`);
         },
     };
 
@@ -1376,7 +1370,7 @@ const App: React.FC = () => {
                 onClear={drumActions.clear}
                 onCopy={drumActions.copy}
                 onPaste={drumActions.paste}
-                pasteFrom={laneClip?.kind === 'drums' ? laneClip.from : undefined}
+                canPaste={laneClip?.kind === 'drums'}
                 onAudition={auditionDrum}
             />
         ) : selPart.kind === 'melody' ? (
@@ -1397,7 +1391,7 @@ const App: React.FC = () => {
                 onClear={melodyActions.clear}
                 onCopy={melodyActions.copy}
                 onPaste={melodyActions.paste}
-                pasteFrom={laneClip?.kind === 'melody' ? laneClip.from : undefined}
+                canPaste={laneClip?.kind === 'melody'}
             />
         ) : (
             // chord and bass parts have nothing to write: they follow the chord row; how they play is in Parts
