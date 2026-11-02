@@ -1,8 +1,8 @@
 {
   "name": "Metju.Chord",
   "version": "1.0.0",
-  "description": "A pure React TypeScript application built with Webpack",
-  "main": "index.js",
+  "private": true,
+  "description": "A chord instrument and song sketchpad in the browser: seven chord pads, an 8-way stick, sections, parts and effects.",
   "scripts": {
     "start": "webpack serve --mode development",
     "build": "webpack --mode production",
@@ -10,11 +10,14 @@
     "levels": "esbuild scripts/levels.ts --bundle --platform=node --packages=external --format=cjs --log-level=warning --outfile=.levels/run.cjs && node .levels/run.cjs"
   },
   "keywords": [
+    "music",
+    "chords",
+    "sequencer",
+    "tone.js",
     "react",
-    "typescript",
-    "webpack"
+    "pwa"
   ],
-  "author": "",
+  "author": "Matěj Samler (metjuperry)",
   "license": "ISC",
   "dependencies": {
     "react": "^19.2.0",
@@ -35,5 +38,13 @@
     "webpack": "^5.102.1",
     "webpack-cli": "^6.0.1",
     "webpack-dev-server": "^5.2.2"
+  },
+  "homepage": "https://metjuperry.github.io/Metju.Chord/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/metjuperry/Metju.Chord.git"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }

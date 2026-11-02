@@ -1,0 +1,180 @@
+# Contributing to Metju.Chord
+
+This guide is for anyone changing the code, people and coding agents alike. Read the first section, then skim the rest; it's written so you can find the part you need. What the app does for its users is in the [README](README.md).
+
+## In five minutes
+
+- **What it is**: a chord instrument (7 pads + an 8-way stick) on top of a small song editor (sections, a chain, parts for chords / bass / melody / drums). React 19 + TypeScript + Tone.js, bundled with plain Webpack 5 (no Vite, no CRA, no router, no state library). No backend: everything lives in the browser and in share links.
+- **Where state lives**: `src/App.tsx` owns all state and wires everything. Music logic is in pure, tested modules (`theory.ts`, `progression.ts`, `parts.ts`, `drums.ts`, `song.ts`, `sections.ts`, `playback.ts`, `learn.ts`, `hooktheory.ts`, `shades.ts`). Audio is in `src/audio/`. Components are in `src/components/`.
+- **The one rule of the UI**: **Song is what plays** (notes, chords, hits), **Parts is how it sounds** (instrument, style, tone, effects, level). Transport (Play/Pause, Record) lives only in the top bar.
+- **Before every commit**: `npm test` and `npm run build`. After touching instruments, drums or the engine: `npm run levels` too.
+- **Branches**: work on `claude/<topic>` (or any topic branch) and open a PR **into `master`**. `master` deploys to GitHub Pages on every push.
+- **When you change behaviour**: update the README's feature list, the in-app help (`HelpDialog.tsx`) when it describes that feature, and this guide when you change architecture, conventions or the save format.
+
+## Setup and commands
+
+Node **22.12+** (Vitest 5 requires it; CI uses Node 22).
+
+| Command | What it does |
+| --- | --- |
+| `npm install` | dependencies |
+| `npm start` | dev server with HMR at <http://localhost:3000> |
+| `npm test` | Vitest, all `src/**/*.test.ts` (pure logic only; no DOM tests) |
+| `npm run build` | production bundle in `dist/`; `ts-loader` type-checks, so a type error fails the build |
+| `npm run levels` | bundles `scripts/levels-page.ts`, renders every instrument offline in headless Chromium, prints peak/RMS per instrument and checks the targets below. Set `CHROMIUM_PATH` if Chromium isn't at `/opt/pw-browsers/chromium` |
+| `node scripts/icons.cjs` | re-renders `public/icons/` from the favicon design (needs Chromium) |
+| `python3 scripts/samples/prepare.py …` | rebuilds `public/samples/` and `src/audio/samples.json` from the original sample libraries (see its docstring) |
+
+CI: `.github/workflows/ci.yml` runs tests and build on every pull request; `.github/workflows/deploy.yml` runs tests, builds and publishes on every push to `master`.
+
+## Workflow
+
+- One topic per branch, one PR per topic, **based on `master`**. Don't stack PRs on each other's branches: when the bottom one merges, GitHub merges the upper ones into the old branch, not into `master` (this happened with #20–#23 and needed a catch-up PR, #24). If work depends on an unmerged PR, say so in the description and rebase once it's in.
+- Keep the README out of feature PRs that are likely to be open at the same time, or keep README edits to the lines of your feature, so parallel PRs don't conflict.
+- Commit messages: a short summary line ("Melody grid: note letters in shades of the part colour"), then what and why.
+- PR descriptions: what changed for the user, how it was checked (tests, which screen sizes, which browser checks), and anything not verifiable in a sandbox (real-phone feel, sound on real speakers).
+- Cloud sandbox notes: `gh api` (REST) works and GraphQL doesn't, so use `gh api repos/metjuperry/Metju.Chord/pulls …` instead of `gh pr …`. A shallow clone may not track new branches: add `+refs/heads/claude/*:refs/remotes/origin/claude/*` to `remote.origin.fetch`.
+
+## Map of the code
+
+```text
+src/
+  index.tsx              entry; registers the service worker
+  pwa.ts                 service-worker registration and update reload, screen wake lock
+  sw.js                  the service worker (plain JS; webpack fills in the build's file list and version)
+  App.tsx                owns all state: song (with undo), live settings, selection, playback, recording, the clipboard
+                         for chords / melody / drums; global keyboard shortcuts; lays out phones (one mode at a time)
+                         and desktop (instrument left, Song | Parts tabs right)
+  theory.ts              pure music theory: keys, scales, chord building (MIDI), inversions, naming and spelling,
+                         stick→chord type, voice leading, register-aware spreading, strum timing, "what comes next"
+  progression.ts         the chord row: clips in ticks and editing ops (place, setLength, split, fitTo)
+  parts.ts               parts (chords, bass, melody, drums), what each plays (partNotes, bassNotes…), tone/fx shaping,
+                         melody editing incl. copy/paste (notesIn, replaceRange, pasteNotes), song length
+  drums.ts               drum patterns, presets per time signature, pattern ops
+  song.ts                FullSong (sections + chain), Song (one section's view), Settings, time signatures, defaults,
+                         reading untrusted saves (readSaved → readFullSong, or readSong + fromSingleSection for v2), share links
+  sections.ts            the section projection (sectionView / applySectionEdit), section and chain edits, chain layout
+  playback.ts            what plays: sectionEvents (one section), chainEvents (the whole chain), loop lengths
+  learn.ts               the Learn page's content as pure data (PROGRESSIONS, STICK_SOUNDS, PAD_ROLES, COMBOS, MELODY_RULES),
+                         fitProgression (exact / relative / "needs" + closest in-scale), progressionClips, insertProgression
+  hooktheory.ts          Paste from Hooktheory: parses clipboard JSON (untrusted, never throws), notes → Melody parts,
+                         chords → pad chords (chordTones → matchChord)
+  shades.ts              a part colour's seven shades for the melody grid's note letters, per theme
+  useHistory.ts          undo/redo with merge keys (one knob turn or slider drag = one step)
+  useMedia.ts            matchMedia hook (the compact layout switch)
+  audio/
+    engine.ts            every audio node: per-part channels, shared reverb/delay, master, limiter, transport helpers, intro chord
+    instruments.ts       the 14 instruments (INSTRUMENTS): synth presets (a voice pool), sample players, matched volumes
+    samples.json         which notes each sample set has, and its loop points (written by prepare.py)
+    drumkit.ts           the synthesised drum kit
+    sequencer.ts         lookahead scheduler on the Tone Transport (reads the song fresh every 1/16)
+  components/
+    TopBar               the one header: key, scale, tempo, Play/Pause, Record, modes, 📖 Learn, ⚙
+    Device               chord info (ChordInfo), play strip (PlayStrip), scale-key strip (desktop), stick, pads, Chords/Notes switch
+    SongView             Song mode's top level: section tiles, the chain, Chain | Loop
+    SectionSwitcher      "‹ Song" and ‹ [section ▾] › in a section's header
+    PopMenu              long-press / right-click menus (useLongPress)
+    Progression          sequencer: header, chord lane + part lanes (per-section M), docked chord toolbar
+    MelodyEditor, DrumEditor   the selected lane's editor under the sequencer (Copy / Paste / Clear; melody row ⋯ menus)
+    PartsView            Parts mode: mixer (VolumeBar), the selected part (instrument, play-as/style, tone, effects), Master
+    FxMatrix, Knob       SpaceControls (shared reverb/delay/out), the Mix overview, the knob control
+    SettingsSheet        ⚙ sheet and Credits; useDialog.ts gives dialogs focus trap and Esc
+    LearnPanel           📖 Learn: tabs, progression cards, chord cards, melody rules with MiniGrid
+    SongMenu, HelpDialog, IntroScreen, HooktheoryDialog
+scripts/levels*.ts       the level-matching check (npm run levels)
+scripts/icons.cjs        renders public/icons/
+scripts/samples/         prepare.py: builds public/samples/ from the original sample libraries
+public/                  index.html, manifest.webmanifest, icons/, samples/<instrument>/<midi>.mp3 (copied into dist/)
+```
+
+Tests sit next to their module (`theory.test.ts`, `parts.test.ts`…). Pure logic gets a test; components don't have tests and are checked in a browser (see [Checking changes](#checking-changes)).
+
+## Data model (`song.ts`, `parts.ts`, `sections.ts`)
+
+- `FullSong = { key, scale, bpm, timeSignature, space, parts: Part[], sections: Section[], chain: { sectionId }[] }` is the song. Everything in it is undoable and saved.
+- `Section = { id, name, letter, steps, chords: Clip[], content: { [partId]: { notes?: Note[] } | { drums?: DrumPattern } }, mutes: { [partId]: true } }`. Melody notes and drum patterns live in sections; chord and bass parts follow the section's chords. In a FullSong the parts carry no content (a Melody part's `notes` is `[]`, a Drums part's `drums` empty). Up to `MAX_SECTIONS` (26) sections and `MAX_CHAIN` (128) chain entries.
+- **The projection**: `sectionView(fullSong, id)` returns a single-section `Song = { key, scale, chords, parts (with that section's notes/drums), steps, bpm, timeSignature, space }`. The sequencer, editors, recording, `partNotes`, rests and Hooktheory paste all work on it. App's `editSong(fn)` runs `fn` on the open section's view and `applySectionEdit` writes it back (chords, length and content into the section; key, tempo and parts' sound song-wide; unchanged objects keep their identity). Whole-song edits (sections, chain, time signature, Clear all) go through `editFull`.
+- **Time** is in ticks, **96 per quarter note** (`PPQ`). A sequencer step is one beat (`ticksPerStep(ts)`: 96 in x/4, 48 in x/8). Melody and drums work in 1/16s (`TICKS_PER_SIXTEENTH` = 24).
+- **Chord clips** store only `{ degree, type, inversion, octave }`; key and scale come from the song, and `resolveClip(harmony, clip)` turns a clip into notes. A chord sounds once and holds for the clip's length. A rest clip may carry `plays: { [partId]: boolean }`; unlisted parts use `REST_PLAYS` (chords and bass stop, melody and drums play on).
+- **Parts**: `Part = ChordPart | BassPart | MelodyPart | DrumPart`, all with `{ id, name, color, volume, mute, solo, fx }`; up to six (`MAX_PARTS`, one per `PART_COLORS`). Instrument parts have `tone = { attack, release, brightness, pan }` (0–1, 0.5 = as designed; `shape*` in parts.ts turn them into real units). A chord part's style is `playMode` (`'Chord' | 'Strum' | 'Arp'`), arp settings, `strumSpread`, `strumDirection`.
+- **Melody notes** are `Note = { start, len, step, acc? }`: a **scale step** (0–14 from the key's root in the part's octave), not a MIDI note, so they follow key and scale changes. `acc: -1 | 1` makes a note a semitone flat or sharp and is left out when natural. Pitch: `noteMidi(part, h, note)`. Display spelling: `spellNote` / `spellNoteOctave` (accidental on the scale note's letter; no double sharps or flats).
+- **Effects**: `fx = { drive, chorus, tremolo, glide, reverb, delay }` (0–1, 0 = off); drums use reverb/delay only. Glide applies to single notes only (`glides`), never block chords. `space = { reverb: { size, ret }, delay: { time, feedback, ret }, out: { level } }`.
+- **Settings** (voiceLeading, octave, inversion, loop, theme `light | dark | auto`, nextHint, padPart, clickAccent, openSection, playMode `loop | chain`, learnTab, chordMood) are saved but not undoable. `readSettings` fills defaults and ignores unknown fields.
+
+### Saves (keep them loading)
+
+- `SavedState { version: 3, song: FullSong, settings }` is stored in localStorage under `metju.chord.v3` (`STORAGE_KEY`), in JSON files, and in `#song=` share links (deflate-raw + base64url).
+- `readSaved` reads version 3 with `readFullSong` and version 2 with `readSong` + `fromSingleSection` (the old song becomes one section "A"). If `metju.chord.v3` is empty, the app reads `metju.chord.v2` and leaves it alone.
+- **All saves are untrusted input.** The readers repair rather than reject: clamp numbers, drop overlaps, drop content for unknown parts and chain entries for unknown sections, keep at least one section and a non-empty chain. **Every new field needs a default in the reader**, so old saves and old share links keep loading. Prefer optional fields that are left out when they have their default (as `acc` is), so existing saves stay byte-for-byte the same and the save version doesn't need to change. Bump `SAVE_VERSION` only for a change the readers can't absorb, and add a reader for the previous version.
+
+## Audio (`src/audio/`)
+
+- Per part: `instrument → tone (low-pass) → shelf → drive → makeup → chorus → tremolo → pan → volume → master`, plus `volume → reverb send / delay send` into one shared `Reverb` and `FeedbackDelay`; returns go to `master → limiter (-1 dB) → destination`. Drum channels skip tone, shelf, drive and chorus.
+- App keeps the engine in step: `syncParts` on every parts change, `setSpace` on space changes, `selectTrack(padPart)` for the pads. Live pads use `engine.attack(midi, time, track)`.
+- **Playback**: `SequencerPlayer` asks `schedule()` for events every 1/16 on the Transport, so edits while playing are heard at once (App caches events per song edit). Loop mode schedules `sectionEvents` of the looped section; Chain mode schedules `chainEvents` (each slot's section from its start, drum patterns restarting, notes cut at the section end). Switching while playing uses `queueJump(at, to, run)` (section switch at the next bar, jump to a tapped chain block, Chain ↔ Loop).
+- **Instruments** implement `Voice`: `attack(midi[], time, velocity, glide?)`, `release`, `releaseAll`, `output`, `ready`, `dispose`. Synths are a `SynthPool` of monophonic voices handed out by audio time (unlike `Tone.PolySynth`, notes scheduled ahead never steal a sounding voice). Sampled instruments are a `SamplePlayer` behind their synth stand-in until `loadBank` has decoded the samples.
+- **Levels** (`npm run levels` must stay green): sustaining RMS spread ≤ 6 dB, triad peaks -10…-3 dBFS, all-effects limiter output ≤ -0.5 dBFS. Sampled instruments are measured with their samples (`SAMPLE_VOLUMES`) and as their stand-in synth (`~synth` rows, `VOLUMES`), so the switch doesn't jump in level. `MASTER_GAIN` (0.8) leaves headroom for full sends; `driveMakeupDb` is fitted to measured loudness.
+- The audio context starts only after the intro tap (`startAudio`); nothing audio is created before.
+- Samples are fetched relative to the page (`samples/<id>/<midi>.mp3`) and Webpack's `publicPath` is `''`, so the app works under the Pages subpath `/Metju.Chord/`.
+
+## PWA (`pwa.ts`, `sw.js`, `webpack.config.js`)
+
+- Webpack copies `public/` into `dist/` (`PublicFilesPlugin`), hashes the bundle, and writes `sw.js` from `src/sw.js` with every built file and a content-hash version (`ServiceWorkerPlugin`). All URLs are relative.
+- The worker precaches the build (page, code, icons and manifest must succeed; samples are best-effort and cached on first fetch), deletes old caches on activate, serves pages network-first and everything else cache-first. It registers only in production builds, so the dev server is never cached.
+- Updates: a new deploy means a new worker that takes over at once. `registerServiceWorker` reloads on `controllerchange` only if no pad or stick has been touched yet, otherwise the next time the page is hidden, so a jam is never cut off.
+- Wake lock: `keepScreenOn()` asks for a screen lock after the intro tap and again on `visibilitychange`; it's a no-op where unsupported.
+
+## UI conventions
+
+Keep these when changing anything visible.
+
+- **Yellow means on/active** (`--accent` / `--cap`): selected options, the pushed stick wedge, a held pad, the open section. A selected item gets a yellow *edge*. Parts never use yellow; their colours are `PART_COLORS`.
+- Flat dark tiles with a thin edge (`--panel-2`, `--line`); only the instrument's own keys (pads, knob, intro key) get the keycap lip. No dashed outlines. The chord info is part of the instrument body, not a screen: no LCD look.
+- **Short labels.** "Copy", "Paste", "Clear", not "Paste A · Melody". Explanations go in the help, Learn or a short notice, not on buttons. Notices only when something unexpected happened (e.g. notes left out).
+- **Themes**: tokens in `index.css`; check new UI in both (`data-theme="light"` on `<html>`). "Auto" resolves to light or dark from `prefers-color-scheme`, so CSS only sees those two. The device body has its own tokens (`--device-*`, `--cap`).
+- **Phones**: `compact = (max-width: 1023px), (max-height: 560px)`. Play mode must fit without scrolling at 844×390, 667×375, 932×430 and 390×844, also with installed safe-area insets (notch 47–59 px on the side, home indicator 21 px landscape / 34 px portrait, status bar 47 px portrait). Landscape is the main phone layout: stick left, pads right.
+- **Desktop**: a two-column grid, the device sticky on the left, Song | Parts tabs (`role="tablist"`) on the right. Check 1024, 1280, 1440 and 1600 px.
+- **No text selection**: `body` has `user-select: none` and no iOS touch callout, because quick repeated pad taps would otherwise select text. Inputs and reading text (help, credits, Learn) opt back in; add new reading areas to that list in `index.css`.
+- **Accessibility**: everything has a keyboard path and an aria label. Dialogs (`role="dialog"`, `aria-modal`) use `useDialog` (focus in, Tab trapped, Esc closes the top one, focus back). Global shortcuts live in App's keydown handler, which ignores inputs, selects and `role="slider"`.
+- **Undo**: every edit to the song is one undo step (use merge keys in `useHistory` for drags and knob turns). Settings are not undoable.
+- **Playback never moves the chord info or stick**: those only follow live playing.
+- **Learn is a reference, not a generator**: it never writes notes on its own. "Use in song" is explicit and undoable.
+
+## Recipes
+
+- **New setting**: add it to `Settings` and the default in `song.ts`, read it in `readSettings` (with a default), add a test in `song.test.ts`, put the control in `SettingsSheet`.
+- **New field on the song or a part**: add the type, a default, and repair logic in `readFullSong` / `readSong`; make sure `applySectionEdit` writes it back to the right place (song-wide vs per section); add round-trip tests (save → read, and an old save without the field).
+- **New instrument**: add it to `INSTRUMENTS` and the synth preset or sample bank in `instruments.ts`, level-match it in `VOLUMES` / `SAMPLE_VOLUMES`, run `npm run levels`, credit samples in the README table and the Credits dialog.
+- **New Learn content**: add data to `learn.ts` (`PROGRESSIONS`, `COMBOS`, `MELODY_RULES`…); `learn.test.ts` checks that every progression resolves to valid chords and fits, in every key and scale. Keep moods phrased as common associations, not rules.
+- **New keyboard shortcut**: add it to App's keydown handler and to `HelpDialog.tsx`.
+
+## Checking changes
+
+- `npm test` and `npm run build` before every commit; `npm run levels` after any change to instruments, drums or the engine.
+- **Browser checks** with Playwright against the built app: `npx http-server dist -p 8124 -s`, then a script using `playwright-core` (Chromium at `/opt/pw-browsers/chromium` in the cloud sandbox, or `CHROMIUM_PATH`). Dismiss the intro first: `click('.intro-key')`, then wait ~2.1 s. To load a song, set `localStorage.setItem('metju.chord.v3', JSON.stringify({ version: 3, song, settings }))` before reload. Multi-touch (stick + pad) works through CDP `Input.dispatchTouchEvent`.
+- **What playback plays** can be checked without touching the app: an init script wraps `AudioParam.prototype.setValueAtTime` and records values that are exact note frequencies (Tone's synth `frequency`), turned back into MIDI numbers. Use a synth instrument for this; sampled instruments set `playbackRate` instead.
+- **Safe areas**: CDP `Emulation.setSafeAreaInsetsOverride` (e.g. `{ top: 0, right: 47, bottom: 21, left: 47 }` for a landscape iPhone).
+- **Audio routing and levels**: offline with `Tone.Offline` in headless Chromium, as `scripts/levels-page.ts` does.
+- **PWA**: register under `/Metju.Chord/`, check the cache holds the whole build, reload offline, and check a changed build is picked up.
+- **Not verifiable in a sandbox**: sound on real speakers, real-phone feel (touch latency, live-recording timing), and iOS specifics (Add to Home Screen, its offline cache and eviction, wake lock). Say so in the PR.
+
+## Where things stand
+
+Done and shipped: pads and stick, register-aware voicing, Notes mode with ♯/♭, the Play · Song · Parts structure, sections and the chain, fourteen instruments (seven sampled), per-part tone and effects, strum and arp, Paste from Hooktheory, the Learn page, the PWA, copy/paste of chords, melody and drums.
+
+Decided against, or on hold (ask the owner before building):
+
+- **Haptics**: tried and removed. iOS Safari no longer lets web pages trigger the Taptic Engine. A native wrapper (e.g. Capacitor) would be the way back; for now the app stays in the browser.
+- **Melody and bass generator**: designed, on hold. Bass would need its own note grid ("Custom" style) first.
+- **Per-chord style overrides** (e.g. one chord arpeggiated): not needed for now.
+- **Drag-to-reorder chain blocks**: left out (hard to make feel right with touch scrolling on iOS); Move ← / → instead.
+- **Count-in and hold/latch**: not wanted.
+
+Open ideas and questions:
+
+- A **chord rhythm** option for chord parts (hold / every 2 beats / every beat / off-beats), so re-striking a chord doesn't need splitting it.
+- Whether the sequencer should follow the playing section while the chain plays (now it stays on the open one), and whether Record in Chain mode should be disabled instead of switching to Loop.
+- Step recording when the stick moves *after* the pad keeps the pressed pitch (live recording takes the final one).
+- Samples have one velocity layer and no round-robins, so fast repeats sound alike. The tonejs-instruments set (CC BY 3.0) has guitar, harp and more if wanted.
+- Hooktheory paste was built from one observed clipboard shape plus TheoryTab's JSON fields; other Hookpad variants (meter, tempo, swing changes) are ignored, and the clipboard button on iOS Safari is untested (the paste box is the reliable path).
+- If iOS evicts the offline cache after weeks unused, samples come back from the network and the synth stand-ins play until then.
