@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     BassPart, ChordPart, Harmony, MelodyPart, Part, audibleParts, bassNotes, chordPartNotes, melodyMidi, melodyNotes, musicLoopEnd,
-    newPart, placeNote, noteAt, fitNotes, pasteNotes, outsideRests, restSpans, shapeAttack, shapeRelease, shapeBrightness, shapePan, glideSeconds, glides, noFx,
+    newPart, placeNote, noteAt, fitNotes, pasteNotes, notesIn, replaceRange, outsideRests, restSpans, shapeAttack, shapeRelease, shapeBrightness, shapePan, glideSeconds, glides, noFx,
     noteMidi, withAcc,
 } from './parts';
 import { Clip, TICKS_PER_STEP as S, PPQ } from './progression';
@@ -301,6 +301,37 @@ describe('pasteNotes (copying a melody lane to another section or part)', () => 
         const out = pasteNotes(notes, 4, 4, 120);
         expect(out.notes).toEqual([notes[0], notes[1], { start: 96, len: 24, step: 4 }]);
         expect(pasteNotes(notes, 4, 4, 48)).toEqual({ notes: [notes[0], notes[1]], dropped: 1 });
+    });
+});
+
+describe('notesIn and replaceRange (copying a row of a melody to another row)', () => {
+    const row = 768; // 8 beats
+    const notes = [
+        { start: 0, len: 48, step: 1 },
+        { start: 744, len: 48, step: 2 }, // runs over the row line into the next row
+        { start: 1536, len: 96, step: 5 },
+        { start: 1632, len: 24, step: 6, acc: -1 as const },
+    ];
+    it('copies a row: only notes starting in it, moved to 0, cut at its end', () => {
+        expect(notesIn(notes, 1536, 1536 + row)).toEqual([{ start: 0, len: 96, step: 5 }, { start: 96, len: 24, step: 6, acc: -1 }]);
+        expect(notesIn(notes, 0, row)).toEqual([{ start: 0, len: 48, step: 1 }, { start: 744, len: 24, step: 2 }]);
+    });
+    it('moves row 3 into row 1: replaces what was there, keeps the rest', () => {
+        const clip = notesIn(notes, 1536, 1536 + row);
+        const out = replaceRange(notes, 0, row, clip);
+        expect(out).toEqual([
+            { start: 0, len: 96, step: 5 },
+            { start: 96, len: 24, step: 6, acc: -1 },
+            ...notes.slice(2),
+        ]);
+        // and clearing row 3 afterwards completes the move
+        expect(replaceRange(out, 1536, row, [])).toEqual(out.slice(0, 2));
+    });
+    it('cuts short a note running into the pasted stretch', () => {
+        expect(replaceRange([{ start: 700, len: 200, step: 3 }], row, row, [])).toEqual([{ start: 700, len: 68, step: 3 }]);
+    });
+    it('with an infinite span replaces everything from the paste point (a whole lane)', () => {
+        expect(replaceRange(notes, 0, Infinity, [{ start: 0, len: 24, step: 0 }])).toEqual([{ start: 0, len: 24, step: 0 }]);
     });
 });
 

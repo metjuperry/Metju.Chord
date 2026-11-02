@@ -487,6 +487,26 @@ export const removeNote = (notes: Note[], note: Note) => notes.filter(n => n !==
 export const fitNotes = (notes: Note[], total: number) =>
     notes.filter(n => n.start < total).map(n => (n.start + n.len > total ? { ...n, len: total - n.start } : n));
 
+/** The notes starting in [from, to), cut off at `to` and moved to start at 0: a copied stretch of a melody. */
+export const notesIn = (notes: Note[], from: number, to: number): Note[] =>
+    notes
+        .filter(n => n.start >= from && n.start < to)
+        .map(n => ({ ...n, start: n.start - from, len: Math.min(n.len, to - n.start) }));
+
+/**
+ * Replace the stretch [at, at + span) with `clip` (positioned from 0, moved to `at`): notes starting
+ * inside it go, a note running into it from before is cut short, notes after it stay.
+ * `span` = Infinity replaces everything from `at` on (a whole lane).
+ */
+export function replaceRange(notes: Note[], at: number, span: number, clip: Note[]): Note[] {
+    const end = at + span;
+    const kept = notes
+        .filter(n => n.start < at || n.start >= end)
+        .map(n => (n.start < at && n.start + n.len > at ? { ...n, len: at - n.start } : n));
+    const placed = clip.map(n => ({ ...n, start: n.start + at, len: Math.min(n.len, end - (n.start + at)) })).filter(n => n.len > 0);
+    return [...kept, ...placed].sort((x, y) => x.start - y.start);
+}
+
 /**
  * Melody notes copied from a part at octave `from`, for a part at octave `to` in a section `total`
  * ticks long: same pitches (steps move 7 per octave), notes outside the grid's two octaves or past

@@ -73,6 +73,30 @@
     height: 20px;
 }
 
+/* each row's ⋯ menu (copy, cut, paste, clear the notes in this row), in the label column */
+.mel-row-tools {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 4px;
+}
+
+.mel-row-menu {
+    width: 32px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: var(--panel-2);
+    color: var(--text);
+    font-size: 12px;
+    line-height: 1;
+}
+
+.mel-row-menu[aria-expanded='true'] {
+    border-color: var(--accent);
+}
+
 .mel-chord {
     font-size: 11px;
     font-weight: 700;

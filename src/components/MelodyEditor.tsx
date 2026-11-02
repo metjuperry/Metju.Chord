@@ -1,4 +1,5 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
+import { MenuAnchor, PopMenu } from './PopMenu';
 import './PartEditors.css';
 import { TICKS_PER_SIXTEENTH } from '../drums';
 import { Harmony, MELODY_STEPS, MelodyPart, chordAt, melodyMidi, resolveClip } from '../parts';
@@ -39,6 +40,8 @@ interface MelodyEditorProps {
     /** Replace this lane with what was copied (only when a lane of this kind was copied). */
     onPaste: () => void;
     canPaste: boolean;
+    /** A row's ⋯ menu: copy, cut, paste over or clear the notes in [from, to) ticks. */
+    onRange: (action: 'copy' | 'cut' | 'paste' | 'clear', from: number, to: number) => void;
 }
 
 /**
@@ -105,6 +108,24 @@ const MelodyEditor: React.FC<MelodyEditorProps> = p => {
     };
 
     const cols = `var(--mel-label) repeat(${blockCols}, minmax(var(--mel-cell), 1fr))`;
+    /** The open row menu: which row (block) and where it opened. */
+    const [rowMenu, setRowMenu] = useState<{ block: number; anchor: MenuAnchor } | null>(null);
+    const blockRange = (b: number) => {
+        const from = b * blockCols;
+        const to = Math.min(from + blockCols, totalCols);
+        return { from, to, label: `${b * p.stepsPerRow + 1}–${Math.min((b + 1) * p.stepsPerRow, p.totalSteps)}` };
+    };
+    const rowItems = (b: number) => {
+        const { from, to } = blockRange(b);
+        const has = part.notes.some(n => n.start >= from * TICKS_PER_SIXTEENTH && n.start < to * TICKS_PER_SIXTEENTH);
+        const run = (action: 'copy' | 'cut' | 'paste' | 'clear') => () => p.onRange(action, from * TICKS_PER_SIXTEENTH, to * TICKS_PER_SIXTEENTH);
+        return [
+            { label: 'Copy', disabled: !has, onSelect: run('copy') },
+            { label: 'Cut', disabled: !has, onSelect: run('cut') },
+            { label: 'Paste', disabled: !p.canPaste, onSelect: run('paste') },
+            { label: 'Clear', disabled: !has, danger: true, onSelect: run('clear') },
+        ];
+    };
 
     return (
         <div className="part-editor melody-editor" style={{ '--track': part.color } as React.CSSProperties}>
@@ -143,7 +164,15 @@ const MelodyEditor: React.FC<MelodyEditorProps> = p => {
                         <div key={b} className="mel-scroll">
                             <div className="mel-block" role="grid" aria-label={`Steps ${b * p.stepsPerRow + 1} to ${b * p.stepsPerRow + p.stepsPerRow}`} style={{ '--mel-cols': blockCols } as React.CSSProperties}>
                                 <div className="mel-chords" style={{ gridTemplateColumns: cols }}>
-                                    <span />
+                                    <span className="mel-row-tools">
+                                        <button
+                                            className="mel-row-menu"
+                                            aria-label={`Steps ${blockRange(b).label}: copy, cut, paste or clear`}
+                                            aria-haspopup="menu"
+                                            aria-expanded={rowMenu?.block === b}
+                                            onClick={e => setRowMenu({ block: b, anchor: { rect: e.currentTarget.getBoundingClientRect() } })}
+                                        >⋯</button>
+                                    </span>
                                     {renderChordRibbon(from, to)}
                                 </div>
                                 {rows.map(row => (
@@ -184,6 +213,9 @@ const MelodyEditor: React.FC<MelodyEditorProps> = p => {
                     );
                 })}
             </div>
+            {rowMenu && (
+                <PopMenu anchor={rowMenu.anchor} label={`Steps ${blockRange(rowMenu.block).label}`} items={rowItems(rowMenu.block)} onClose={() => setRowMenu(null)} />
+            )}
         </div>
     );
 };
