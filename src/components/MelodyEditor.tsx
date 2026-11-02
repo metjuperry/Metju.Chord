@@ -3,7 +3,7 @@ import './PartEditors.css';
 import { TICKS_PER_SIXTEENTH } from '../drums';
 import { Harmony, MELODY_STEPS, MelodyPart, chordAt, melodyMidi, resolveClip } from '../parts';
 import { noteNames, spellNoteOctave } from '../theory';
-import { degreeShade } from '../shades';
+import { labelShade } from '../shades';
 
 /** Note lengths offered for new notes, in 1/16 steps. */
 const LENGTHS: { sixteenths: number; label: string }[] = [
@@ -53,12 +53,11 @@ const MelodyEditor: React.FC<MelodyEditorProps> = p => {
     const rows = useMemo(() => Array.from({ length: MELODY_STEPS }, (_, i) => {
         const step = MELODY_STEPS - 1 - i; // highest at the top
         const midi = melodyMidi(part, harmony, step);
-        // every scale degree gets its own shade of the part colour, the same in both octaves,
-        // so a note far from the labels still shows which row (and note name) it is
-        const shade = degreeShade(part.color, step);
+        // each row's letter gets its own shade of the part colour (one per scale degree, the same
+        // in both octaves), in a lighter or darker range depending on the theme
         return {
             step, pc: midi % 12, label: `${names[midi % 12]}${Math.floor(midi / 12) - 1}`, tonic: step % 7 === 0,
-            style: { '--row': shade.fill, '--row-ink': shade.ink } as React.CSSProperties,
+            style: { '--row-light': labelShade(part.color, step, 'light'), '--row-dark': labelShade(part.color, step, 'dark') } as React.CSSProperties,
         };
     }), [part, harmony, names]);
 
@@ -148,8 +147,8 @@ const MelodyEditor: React.FC<MelodyEditorProps> = p => {
                                     {renderChordRibbon(from, to)}
                                 </div>
                                 {rows.map(row => (
-                                    <div key={row.step} className="mel-row" role="row" style={{ ...row.style, gridTemplateColumns: cols }}>
-                                        <span className={`mel-name ${row.tonic ? 'tonic' : ''}`}><span className="mel-chip">{row.label}</span></span>
+                                    <div key={row.step} className="mel-row" role="row" style={{ gridTemplateColumns: cols }}>
+                                        <span className={`mel-name ${row.tonic ? 'tonic' : ''}`} style={row.style}>{row.label}</span>
                                         {Array.from({ length: to - from }, (_, j) => {
                                             const c = from + j;
                                             const col = columns[c];

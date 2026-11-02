@@ -63,21 +63,18 @@
     white-space: nowrap;
 }
 
-.mel-name.tonic {
-    color: var(--text);
+/* each row's letter in its own shade of the part colour (shades.ts), readable in either theme */
+.mel-name {
+    color: var(--row-dark, var(--muted));
     font-weight: 700;
 }
 
-/* each row's label is a chip in that row's shade of the part colour (see shades.ts) */
-.mel-chip {
-    min-width: 28px;
-    box-sizing: border-box;
-    padding: 1px 4px;
-    border-radius: 4px;
-    background: var(--row, var(--track));
-    color: var(--row-ink, #000);
-    text-align: center;
-    line-height: 14px;
+[data-theme='light'] .mel-name {
+    color: var(--row-light, var(--muted));
+}
+
+.mel-name.tonic {
+    font-size: 11px;
 }
 
 .mel-chords {
@@ -136,23 +133,9 @@
     background: color-mix(in srgb, var(--accent) 30%, var(--bg));
 }
 
-/* a faint band of the row's shade across the whole row, so far-right cells still say which note they are */
-.mel-cell::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: var(--row, transparent);
-    opacity: 0.13;
-    pointer-events: none;
-}
-
-.mel-cell.on::before {
-    display: none;
-}
-
 .mel-cell.on {
-    background: var(--row, var(--track));
-    border-left-color: var(--row, var(--track));
+    background: var(--track);
+    border-left-color: var(--track);
 }
 
 .mel-cell.on.head {
@@ -168,7 +151,7 @@
     border-radius: 4px;
 }
 
-/* the note's name on its first cell (C, F♯…), in ink that reads on the row's shade.
+/* the note's name on its first cell (C, F♯…); part colours are light, so dark ink in both themes.
    It may run on into the rest of the note; z-index keeps it above the following cells. */
 .mel-cell {
     position: relative;
@@ -187,7 +170,7 @@
     letter-spacing: -0.3px;
     line-height: 1;
     white-space: nowrap;
-    color: var(--row-ink, #000);
+    color: #000;
     pointer-events: none;
 }
 
@@ -265,11 +248,6 @@
     .mel-name {
         font-size: 9px;
         padding-right: 3px;
-    }
-
-    .mel-chip {
-        min-width: 24px;
-        padding: 1px 2px;
     }
 
     .mel-acc {
