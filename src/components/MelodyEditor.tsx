@@ -34,6 +34,11 @@ interface MelodyEditorProps {
     cursor: number;
     onOctave: (octave: number) => void;
     onClear: () => void;
+    /** Copy this part's lane in the open section (all its notes or hits, to paste into another section or part). */
+    onCopy: () => void;
+    /** Replace this lane with what was copied; `pasteFrom` names it ("Verse · Melody"), absent when nothing fits. */
+    onPaste: () => void;
+    pasteFrom?: string;
 }
 
 /**
@@ -119,6 +124,8 @@ const MelodyEditor: React.FC<MelodyEditorProps> = p => {
                         <button key={o} aria-pressed={part.octave === o} onClick={() => p.onOctave(o)}>C{o}</button>
                     ))}
                 </div>
+                <button className="chip-button" disabled={part.notes.length === 0} onClick={p.onCopy} aria-label="Copy this lane">Copy</button>
+                <button className="chip-button" disabled={!p.pasteFrom} onClick={p.onPaste} aria-label={p.pasteFrom ? `Paste ${p.pasteFrom} here, replacing this lane` : 'Paste (copy a lane first)'} title={p.pasteFrom ? `Paste ${p.pasteFrom}` : undefined}>Paste</button>
                 <button className="chip-button" disabled={part.notes.length === 0} onClick={p.onClear}>Clear</button>
             </div>
 

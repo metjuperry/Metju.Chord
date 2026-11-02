@@ -18,6 +18,11 @@ interface DrumEditorProps {
     onBars: (bars: PatternBars) => void;
     onPreset: (id: string) => void;
     onClear: () => void;
+    /** Copy this part's lane in the open section (all its notes or hits, to paste into another section or part). */
+    onCopy: () => void;
+    /** Replace this lane with what was copied; `pasteFrom` names it ("Verse · Melody"), absent when nothing fits. */
+    onPaste: () => void;
+    pasteFrom?: string;
     onAudition: (voice: DrumVoice) => void;
 }
 
@@ -45,6 +50,8 @@ const DrumEditor: React.FC<DrumEditorProps> = p => {
                     <option value="">Starter beat…</option>
                     {p.presets.map(pr => <option key={pr.id} value={pr.id}>{pr.label}</option>)}
                 </select>
+                <button className="chip-button" disabled={isEmptyPattern(p.pattern)} onClick={p.onCopy} aria-label="Copy this lane">Copy</button>
+                <button className="chip-button" disabled={!p.pasteFrom} onClick={p.onPaste} aria-label={p.pasteFrom ? `Paste ${p.pasteFrom} here, replacing this lane` : 'Paste (copy a lane first)'} title={p.pasteFrom ? `Paste ${p.pasteFrom}` : undefined}>Paste</button>
                 <button className="chip-button" disabled={isEmptyPattern(p.pattern)} onClick={p.onClear}>Clear</button>
                 <span className="section-note drum-hint">Tap cells to add hits. Pads still play {p.padTrack}.</span>
             </div>

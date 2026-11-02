@@ -487,6 +487,20 @@ export const removeNote = (notes: Note[], note: Note) => notes.filter(n => n !==
 export const fitNotes = (notes: Note[], total: number) =>
     notes.filter(n => n.start < total).map(n => (n.start + n.len > total ? { ...n, len: total - n.start } : n));
 
+/**
+ * Melody notes copied from a part at octave `from`, for a part at octave `to` in a section `total`
+ * ticks long: same pitches (steps move 7 per octave), notes outside the grid's two octaves or past
+ * the end left out (and counted), notes running past the end shortened.
+ */
+export function pasteNotes(notes: Note[], from: number, to: number, total: number): { notes: Note[]; dropped: number } {
+    const shift = 7 * (from - to);
+    const moved = notes
+        .map(n => ({ ...n, step: n.step + shift }))
+        .filter(n => n.step >= 0 && n.step < MELODY_STEPS);
+    const fitted = fitNotes(moved, total);
+    return { notes: fitted, dropped: notes.length - fitted.length };
+}
+
 // ---- song length ---------------------------------------------------------------------------------
 
 /** Where a part's own material ends: a melody's last note, one pass of a drum pattern. */

@@ -72,7 +72,7 @@ const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose }) => {
                         switches at the next bar line. Record works in Loop (in Chain it switches to Loop first).
                         Inside a section: the chord row the pads record into and a lane per part. Tap a lane's name to edit that part's notes or
                         beat below; its <b>M</b> mutes it in this section only. The chord tools stay docked at the bottom. ‹ › and the section name
-                        switch sections; ‹ Song goes back. New, open, save, share and Paste from Hooktheory (into the open section) are in the Song menu.</dd>
+                        switch sections; ‹ Song goes back. New, open, save, share and Paste from Hooktheory (into the open section) are in the Song menu. The melody and drum editors have Copy and Paste: copy a lane, open another section, paste.</dd>
                     <dt><b>Parts</b></dt>
                     <dd><i>How</i> it sounds: every part with its volume, mute and solo, and for the selected one its instrument, how it plays
                         (chord, strum, arpeggio; bass style; melody range), tone knobs and effects. <b>Master</b> holds the shared reverb, delay and output. Mute and solo here are for the whole song.</dd>
