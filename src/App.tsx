@@ -38,7 +38,7 @@ import SectionSwitcher from './components/SectionSwitcher';
 import { Clip, clipAt, fitTo, isChordClip, place, remove, setLength, split } from './progression';
 import {
     Accidental, ChordPart, Harmony, MAX_PARTS, MelodyPart, Note, Part, PartFx, PartKind, PartTone, noFx,
-    fitNotes, hasInstrument, melodyMidi, newPart, noteAt, noteMidi, partNotes, placeNote, removeNote, resolveClip, withAcc,
+    fitNotes, pasteNotes, notesIn, replaceRange, hasInstrument, melodyMidi, newPart, noteAt, noteMidi, partNotes, placeNote, removeNote, resolveClip, withAcc,
 } from './parts';
 import { SeqEvent, SeqOptions, SequencerPlayer, ticksToSeconds } from './audio/sequencer';
 import {
@@ -292,6 +292,15 @@ const App: React.FC = () => {
     const [loop, setLoop] = useState(initial.loop);
     const [recording, setRecording] = useState(false);
     const [clipboard, setClipboard] = useState<Clip | null>(null);
+    /** The longest a section can grow (readSong's limit). */
+    const MAX_SECTION_STEPS = 512;
+    /** A copied melody or drum lane (all of it, in one section), to paste into another section or part of the same kind. */
+    const [laneClip, setLaneClip] = useState<
+        /** Notes from 0; `span` is how much they replace when pasted (a row, or Infinity for a whole lane). */
+        | { kind: 'melody'; notes: Note[]; octave: number; span: number }
+        | { kind: 'drums'; pattern: DrumPattern }
+        | null
+    >(null);
     const player = useRef<SequencerPlayer<Scheduled> | null>(null);
 
     // ---- metronome ------------------------------------------------------------------
@@ -822,6 +831,15 @@ const App: React.FC = () => {
             if (preset) setPattern(() => preset.make(ts));
         },
         clear: () => setPattern(p => emptyPattern(p.bars)),
+        copy: () => {
+            if (!drumPart) return;
+            setLaneClip({ kind: 'drums', pattern: drumPart.drums });
+        },
+        paste: () => {
+            if (!drumPart || laneClip?.kind !== 'drums') return;
+            const pattern = laneClip.pattern;
+            setPattern(() => pattern);
+        },
     };
 
     // ---- melody editing (the selected melody part) --------------------------------------------
@@ -879,6 +897,44 @@ const App: React.FC = () => {
         },
         octave: (octave: number) => melodyPart && updatePart(melodyPart.id, { octave }),
         clear: () => melodyPart && updatePart(melodyPart.id, { notes: [] }),
+        copy: () => {
+            if (!melodyPart) return;
+            setLaneClip({ kind: 'melody', notes: melodyPart.notes, octave: melodyPart.octave, span: Infinity });
+        },
+        /**
+         * Replace this lane with the copied one, one undo step: same pitches (even into a part at another
+         * octave), and a shorter section grows by whole rows so all of it fits (like a longer drum pattern).
+         */
+        paste: () => melodyActions.pasteAt(0),
+        /** Paste the copied notes from tick `at`, replacing what's in their span (a row, or the rest of the lane). */
+        pasteAt: (at: number) => {
+            if (!melodyPart || laneClip?.kind !== 'melody') return;
+            const clip = laneClip, id = melodyPart.id;
+            const moved = pasteNotes(clip.notes, clip.octave, melodyPart.octave, MAX_SECTION_STEPS * T);
+            const dropped = moved.dropped;
+            const notes = replaceRange(melodyPart.notes, at, clip.span, moved.notes);
+            editSong(sg => {
+                const end = notes.reduce((m, n) => Math.max(m, n.start + n.len), 0);
+                const row = stepsPerRow(sg.timeSignature);
+                const steps = Math.min(MAX_SECTION_STEPS, Math.max(sg.steps, Math.ceil(end / T / row) * row));
+                return { ...sg, steps, parts: sg.parts.map(p => (p.id === id && p.kind === 'melody' ? { ...p, notes } : p)) };
+            });
+            setSelNoteKey(null);
+            // the one thing worth saying: some notes didn't fit this part's range
+            if (dropped) flash(`${dropped} note${dropped === 1 ? '' : 's'} sat outside this part's two octaves and ${dropped === 1 ? 'was' : 'were'} left out.`);
+        },
+        /** A row's ⋯ menu in the grid: copy, cut (copy and clear), paste over, or clear the notes in [from, to). */
+        range: (action: 'copy' | 'cut' | 'paste' | 'clear', from: number, to: number) => {
+            if (!melodyPart) return;
+            if (action === 'paste') return melodyActions.pasteAt(from);
+            if (action === 'copy' || action === 'cut') {
+                setLaneClip({ kind: 'melody', notes: notesIn(melodyPart.notes, from, to), octave: melodyPart.octave, span: to - from });
+            }
+            if (action === 'cut' || action === 'clear') {
+                updatePart(melodyPart.id, { notes: replaceRange(melodyPart.notes, from, to - from, []) });
+                setSelNoteKey(null);
+            }
+        },
     };
 
     const starts = clips.map(c => c.start / T);
@@ -1329,6 +1385,9 @@ const App: React.FC = () => {
                 onBars={drumActions.bars}
                 onPreset={drumActions.preset}
                 onClear={drumActions.clear}
+                onCopy={drumActions.copy}
+                onPaste={drumActions.paste}
+                canPaste={laneClip?.kind === 'drums'}
                 onAudition={auditionDrum}
             />
         ) : selPart.kind === 'melody' ? (
@@ -1347,6 +1406,10 @@ const App: React.FC = () => {
                 cursor={recording && !playing && notesOn && padMelody?.id === selPart.id ? melCursor : -1}
                 onOctave={melodyActions.octave}
                 onClear={melodyActions.clear}
+                onCopy={melodyActions.copy}
+                onPaste={melodyActions.paste}
+                canPaste={laneClip?.kind === 'melody'}
+                onRange={melodyActions.range}
             />
         ) : (
             // chord and bass parts have nothing to write: they follow the chord row; how they play is in Parts

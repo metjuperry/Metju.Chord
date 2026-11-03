@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     BassPart, ChordPart, Harmony, MelodyPart, Part, audibleParts, bassNotes, chordPartNotes, melodyMidi, melodyNotes, musicLoopEnd,
-    newPart, placeNote, noteAt, fitNotes, outsideRests, restSpans, shapeAttack, shapeRelease, shapeBrightness, shapePan, glideSeconds, glides, noFx,
+    newPart, placeNote, noteAt, fitNotes, pasteNotes, notesIn, replaceRange, outsideRests, restSpans, shapeAttack, shapeRelease, shapeBrightness, shapePan, glideSeconds, glides, noFx,
     noteMidi, withAcc,
 } from './parts';
 import { Clip, TICKS_PER_STEP as S, PPQ } from './progression';
@@ -277,3 +277,61 @@ describe('melody accidentals', () => {
         expect(fitNotes(notes, 24)).toEqual([{ start: 0, len: 24, step: 2, acc: 1 }]);
     });
 });
+
+describe('pasteNotes (copying a melody lane to another section or part)', () => {
+    const notes = [
+        { start: 0, len: 24, step: 2 },
+        { start: 24, len: 24, step: 9, acc: 1 as const },
+        { start: 96, len: 96, step: 4 },
+    ];
+    it('keeps everything when it fits the same octave and length', () => {
+        expect(pasteNotes(notes, 4, 4, 384)).toEqual({ notes, dropped: 0 });
+    });
+    it('keeps the pitches when the target part sits an octave lower (steps move up 7)', () => {
+        const out = pasteNotes(notes, 4, 3, 384);
+        expect(out.notes.map(n => n.step)).toEqual([9, 11]);
+        expect(out.dropped).toBe(1); // step 9 would become 16, above the grid's two octaves
+    });
+    it('keeps the pitches when the target part sits an octave higher (steps move down 7)', () => {
+        const out = pasteNotes(notes, 4, 5, 384);
+        expect(out.notes).toEqual([{ start: 24, len: 24, step: 2, acc: 1 }]);
+        expect(out.dropped).toBe(2);
+    });
+    it('shortens or leaves out notes past the end of a shorter section', () => {
+        const out = pasteNotes(notes, 4, 4, 120);
+        expect(out.notes).toEqual([notes[0], notes[1], { start: 96, len: 24, step: 4 }]);
+        expect(pasteNotes(notes, 4, 4, 48)).toEqual({ notes: [notes[0], notes[1]], dropped: 1 });
+    });
+});
+
+describe('notesIn and replaceRange (copying a row of a melody to another row)', () => {
+    const row = 768; // 8 beats
+    const notes = [
+        { start: 0, len: 48, step: 1 },
+        { start: 744, len: 48, step: 2 }, // runs over the row line into the next row
+        { start: 1536, len: 96, step: 5 },
+        { start: 1632, len: 24, step: 6, acc: -1 as const },
+    ];
+    it('copies a row: only notes starting in it, moved to 0, cut at its end', () => {
+        expect(notesIn(notes, 1536, 1536 + row)).toEqual([{ start: 0, len: 96, step: 5 }, { start: 96, len: 24, step: 6, acc: -1 }]);
+        expect(notesIn(notes, 0, row)).toEqual([{ start: 0, len: 48, step: 1 }, { start: 744, len: 24, step: 2 }]);
+    });
+    it('moves row 3 into row 1: replaces what was there, keeps the rest', () => {
+        const clip = notesIn(notes, 1536, 1536 + row);
+        const out = replaceRange(notes, 0, row, clip);
+        expect(out).toEqual([
+            { start: 0, len: 96, step: 5 },
+            { start: 96, len: 24, step: 6, acc: -1 },
+            ...notes.slice(2),
+        ]);
+        // and clearing row 3 afterwards completes the move
+        expect(replaceRange(out, 1536, row, [])).toEqual(out.slice(0, 2));
+    });
+    it('cuts short a note running into the pasted stretch', () => {
+        expect(replaceRange([{ start: 700, len: 200, step: 3 }], row, row, [])).toEqual([{ start: 700, len: 68, step: 3 }]);
+    });
+    it('with an infinite span replaces everything from the paste point (a whole lane)', () => {
+        expect(replaceRange(notes, 0, Infinity, [{ start: 0, len: 24, step: 0 }])).toEqual([{ start: 0, len: 24, step: 0 }]);
+    });
+});
+
