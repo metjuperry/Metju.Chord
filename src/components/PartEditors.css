@@ -63,9 +63,18 @@
     white-space: nowrap;
 }
 
-.mel-name.tonic {
-    color: var(--text);
+/* each row's letter in its own shade of the part colour (shades.ts), readable in either theme */
+.mel-name {
+    color: var(--row-dark, var(--muted));
     font-weight: 700;
+}
+
+[data-theme='light'] .mel-name {
+    color: var(--row-light, var(--muted));
+}
+
+.mel-name.tonic {
+    font-size: 11px;
 }
 
 .mel-chords {
@@ -142,7 +151,8 @@
     border-radius: 4px;
 }
 
-/* an altered note: a small ♯ / ♭ on its first cell (part colours are light, so dark ink in both themes) */
+/* the note's name on its first cell (C, F♯…); part colours are light, so dark ink in both themes.
+   It may run on into the rest of the note; z-index keeps it above the following cells. */
 .mel-cell {
     position: relative;
 }
@@ -150,12 +160,16 @@
 .mel-acc {
     position: absolute;
     inset: 0;
+    z-index: 1;
     display: flex;
     align-items: center;
-    justify-content: center;
-    font-size: 12px;
+    justify-content: flex-start;
+    padding-left: 3px;
+    font-size: 10px;
     font-weight: 700;
+    letter-spacing: -0.3px;
     line-height: 1;
+    white-space: nowrap;
     color: #000;
     pointer-events: none;
 }
@@ -234,6 +248,11 @@
     .mel-name {
         font-size: 9px;
         padding-right: 3px;
+    }
+
+    .mel-acc {
+        font-size: 9px;
+        padding-left: 2px;
     }
 }
 
