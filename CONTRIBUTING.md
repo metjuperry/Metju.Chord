@@ -6,7 +6,7 @@ This guide is for anyone changing the code, people and coding agents alike. Read
 
 - **What it is**: a chord instrument (7 pads + an 8-way stick) on top of a small song editor (sections, a chain, parts for chords / bass / melody / drums). React 19 + TypeScript + Tone.js, bundled with plain Webpack 5 (no Vite, no CRA, no router, no state library). No backend: everything lives in the browser and in share links.
 - **Where state lives**: `src/App.tsx` owns all state and wires everything. Music logic is in pure, tested modules (`theory.ts`, `progression.ts`, `parts.ts`, `drums.ts`, `song.ts`, `sections.ts`, `playback.ts`, `learn.ts`, `hooktheory.ts`, `shades.ts`). Audio is in `src/audio/`. Components are in `src/components/`.
-- **The one rule of the UI**: **Song is what plays** (notes, chords, hits), **Parts is how it sounds** (instrument, style, tone, effects, level). Transport (Play/Pause, Record) lives only in the top bar.
+- **The one rule of the UI**: **Song is what plays** (notes, chords, hits), **Parts is how it sounds** (instrument, style, tone, effects, level). Transport (Play/Pause, Stop, Record) lives only in the top bar.
 - **Before every commit**: `npm test` and `npm run build`. After touching instruments, drums or the engine: `npm run levels` too.
 - **Branches**: work on `claude/<topic>` (or any topic branch) and open a PR **into `master`**. `master` deploys to GitHub Pages on every push.
 - **When you change behaviour**: update the README's feature list, the in-app help (`HelpDialog.tsx`) when it describes that feature, and this guide when you change architecture, conventions or the save format.
@@ -69,7 +69,7 @@ src/
     drumkit.ts           the synthesised drum kit
     sequencer.ts         lookahead scheduler on the Tone Transport (reads the song fresh every 1/16)
   components/
-    TopBar               the one header: key, scale, tempo, Play/Pause, Record, modes, 📖 Learn, ⚙
+    TopBar               the one header: key, scale, tempo, Play/Pause, Stop, Record, modes, 📖 Learn, ⚙
     Device               chord info (ChordInfo), play strip (PlayStrip), scale-key strip (desktop), stick, pads, Chords/Notes switch
     SongView             Song mode's top level: section tiles, the chain, Chain | Loop
     SectionSwitcher      "‹ Song" and ‹ [section ▾] › in a section's header

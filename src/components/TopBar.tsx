@@ -37,6 +37,8 @@ interface TopBarProps {
     onScaleChange: (scale: ScaleId) => void;
     onBpmChange: (bpm: number) => void;
     onTogglePlay: () => void;
+    /** Stop and go back to the start (of the open section, or of the chain in Chain mode). */
+    onStop: () => void;
     onToggleRecord: () => void;
     onOpenSettings: () => void;
     /** 📖 Learn: open (yellow edge while it's showing) or closed. */
@@ -65,7 +67,7 @@ export const BookIcon: React.FC<{ size?: number }> = ({ size = 16 }) => (
 );
 
 /**
- * The one header, on phones and desktop: key, scale, tempo, the only Play/Pause and Record buttons,
+ * The one header, on phones and desktop: key, scale, tempo, the only Play/Pause, Stop and Record buttons,
  * the mode switch and the settings button. A select keeps its native picker (the wheel on iOS).
  */
 const TopBar: React.FC<TopBarProps> = p => (
@@ -112,6 +114,9 @@ const TopBar: React.FC<TopBarProps> = p => (
                 {p.playing
                     ? <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M3 2h2v8H3zM7 2h2v8H7z" /></svg>
                     : <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M3 1.5v9l7-4.5z" /></svg>}
+            </button>
+            <button className="tb-stop" aria-label="Stop, back to start (Home)" title="Stop, back to start (Home)" onClick={p.onStop}>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><rect x="2.5" y="2.5" width="7" height="7" rx="1" /></svg>
             </button>
             <button
                 className={`tb-rec ${p.recording ? 'on' : ''}`}

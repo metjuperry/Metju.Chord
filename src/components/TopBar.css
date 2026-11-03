@@ -122,6 +122,17 @@
     place-items: center;
 }
 
+.tb-stop {
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--panel-2);
+    color: var(--text);
+    display: grid;
+    place-items: center;
+}
+
 .tb-rec {
     width: 36px;
     height: 32px;
@@ -255,4 +266,49 @@
 /* no mode switch (desktop has its own tabs): Learn and settings go to the right end */
 .tb-group + .tb-learn {
     margin-left: auto;
+}
+
+/* Portrait phones: the bar takes two rows; keep it at two with Stop in the transport */
+@media (max-width: 440px) {
+    .top-bar.compact {
+        gap: 5px;
+    }
+
+    .top-bar.compact .tb-group {
+        gap: 4px;
+    }
+
+    .top-bar.compact .tb-play {
+        width: 38px;
+    }
+
+    .top-bar.compact .tb-stop,
+    .top-bar.compact .tb-rec {
+        width: 30px;
+    }
+
+    .top-bar.compact .tb-modes > button {
+        padding: 0 8px;
+    }
+
+    .top-bar.compact .tb-gear {
+        width: 32px;
+    }
+}
+
+@media (max-width: 370px) {
+    .top-bar.compact .tb-modes > button {
+        padding: 0 5px;
+    }
+
+    .top-bar.compact .tb-play {
+        width: 34px;
+    }
+
+    .top-bar.compact .tb-stop,
+    .top-bar.compact .tb-rec,
+    .top-bar.compact .tb-gear,
+    .top-bar.compact .tb-learn {
+        width: 28px;
+    }
 }

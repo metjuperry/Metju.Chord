@@ -552,6 +552,9 @@ const App: React.FC = () => {
     const playEventRef = useRef(playEvent);
     playEventRef.current = playEvent;
 
+    /** Set by Stop: the next Play in Chain mode starts at the top of the chain, not at the open section. */
+    const rewound = useRef(false);
+
     const stopPlayback = useCallback(() => {
         player.current?.stop();
         setPlaying(false);
@@ -575,8 +578,9 @@ const App: React.FC = () => {
             // from the cursor in the open section's first place in the chain (or the top, if it isn't in it)
             const slot = chainLayout(full).find(x => x.section.id === openKey);
             from = slot ? slot.start + (local < slot.len ? local : 0) : 0;
-            if (from >= limit) from = 0;
+            if (from >= limit || rewound.current) from = 0;
         }
+        rewound.current = false;
         // The player reads the latest song on every pass, so edits while playing need no extra wiring
         player.current = new SequencerPlayer<Scheduled>(() => schedule(), (e, time) => playEventRef.current(e, time), stopPlayback);
         player.current.start(from);
@@ -662,6 +666,15 @@ const App: React.FC = () => {
     };
 
     const togglePlay = () => (playing ? stopPlayback() : startPlayback());
+
+    /** Stop, and put the cursor back at the start: the open section's first beat, and in Chain mode the top of the chain. */
+    const stopAndRewind = () => {
+        stopPlayback();
+        setSelected(0);
+        setMelCursor(0);
+        setPlayhead(0);
+        rewound.current = true;
+    };
 
     // The playhead follows the Transport position, read once per frame
     useEffect(() => {
@@ -752,6 +765,7 @@ const App: React.FC = () => {
     const selTick = selected * T;
     const selClip = clipAt(clips, selTick);
     const select = (step: number, lane?: string) => {
+        rewound.current = false;
         setSelected(step);
         setMelCursor(step * sixteenthsPerStep(ts));
         if (lane) pickLane(lane);
@@ -1187,8 +1201,8 @@ const App: React.FC = () => {
 
     // while a dialog is open the instrument's keys are off (typing or tabbing in it mustn't play pads)
     const modalOpen = helpOpen || htOpen || settingsOpen || creditsOpen || (learnOpen && compact);
-    const keyActions = useRef({ pressPad, releasePad, releaseAll, togglePlay, toggleRecord, edit, melody: melodyActions, helpOpen: modalOpen, undo: history.undo, redo: history.redo });
-    keyActions.current = { pressPad, releasePad, releaseAll, togglePlay, toggleRecord, edit, melody: melodyActions, helpOpen: modalOpen, undo: history.undo, redo: history.redo };
+    const keyActions = useRef({ pressPad, releasePad, releaseAll, togglePlay, stopAndRewind, toggleRecord, edit, melody: melodyActions, helpOpen: modalOpen, undo: history.undo, redo: history.redo });
+    keyActions.current = { pressPad, releasePad, releaseAll, togglePlay, stopAndRewind, toggleRecord, edit, melody: melodyActions, helpOpen: modalOpen, undo: history.undo, redo: history.redo };
 
     useEffect(() => {
         const isTyping = (t: EventTarget | null) =>
@@ -1237,6 +1251,7 @@ const App: React.FC = () => {
                 case 'ArrowUp': handled(); setOctave(o => Math.min(OCTAVE_MAX, o + 1)); break;
                 case 'ArrowDown': handled(); setOctave(o => Math.max(OCTAVE_MIN, o - 1)); break;
                 case 'Space': handled(); if (!e.repeat) a.togglePlay(); break;
+                case 'Home': handled(); a.stopAndRewind(); break;
                 case 'KeyR': if (!e.repeat) a.toggleRecord(); break;
                 case 'KeyN': if (!e.repeat) setPadMode(m => (m === 'notes' ? 'chords' : 'notes')); break;
                 case 'BracketLeft': a.edit.shorter(); break;
@@ -1710,6 +1725,7 @@ const App: React.FC = () => {
                 onScaleChange={setScale}
                 onBpmChange={b => setBpm(Math.max(BPM_MIN, Math.min(BPM_MAX, b)))}
                 onTogglePlay={togglePlay}
+                onStop={stopAndRewind}
                 onToggleRecord={toggleRecord}
                 onOpenSettings={() => setSettingsOpen(true)}
                 learnOpen={learnOpen}
