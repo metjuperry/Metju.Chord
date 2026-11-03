@@ -8,7 +8,7 @@ This guide is for anyone changing the code, people and coding agents alike. Read
 - **Where state lives**: `src/App.tsx` owns all state and wires everything. Music logic is in pure, tested modules (`theory.ts`, `progression.ts`, `parts.ts`, `drums.ts`, `song.ts`, `sections.ts`, `playback.ts`, `learn.ts`, `hooktheory.ts`, `shades.ts`). Audio is in `src/audio/`. Components are in `src/components/`.
 - **The one rule of the UI**: **Song is what plays** (notes, chords, hits), **Parts is how it sounds** (instrument, style, tone, effects, level). Transport (Play/Pause, Stop, Record) lives only in the top bar.
 - **Before every commit**: `npm test` and `npm run build`. After touching instruments, drums or the engine: `npm run levels` too.
-- **Branches**: work on `claude/<topic>` (or any topic branch) and open a PR **into `master`**. `master` deploys to GitHub Pages on every push.
+- **Branches**: work on `claude/<topic>` (or any topic branch) and open a PR **into `master`**. `master` deploys to GitHub Pages (<https://chords.metju.cz>) on every push.
 - **When you change behaviour**: update the README's feature list, the in-app help (`HelpDialog.tsx`) when it describes that feature, and this guide when you change architecture, conventions or the save format.
 
 ## Setup and commands
@@ -115,7 +115,7 @@ Tests sit next to their module (`theory.test.ts`, `parts.test.ts`…). Pure logi
 - **Instruments** implement `Voice`: `attack(midi[], time, velocity, glide?)`, `release`, `releaseAll`, `output`, `ready`, `dispose`. Synths are a `SynthPool` of monophonic voices handed out by audio time (unlike `Tone.PolySynth`, notes scheduled ahead never steal a sounding voice). Sampled instruments are a `SamplePlayer` behind their synth stand-in until `loadBank` has decoded the samples.
 - **Levels** (`npm run levels` must stay green): sustaining RMS spread ≤ 6 dB, triad peaks -10…-3 dBFS, all-effects limiter output ≤ -0.5 dBFS. Sampled instruments are measured with their samples (`SAMPLE_VOLUMES`) and as their stand-in synth (`~synth` rows, `VOLUMES`), so the switch doesn't jump in level. `MASTER_GAIN` (0.8) leaves headroom for full sends; `driveMakeupDb` is fitted to measured loudness.
 - The audio context starts only after the intro tap (`startAudio`); nothing audio is created before.
-- Samples are fetched relative to the page (`samples/<id>/<midi>.mp3`) and Webpack's `publicPath` is `''`, so the app works under the Pages subpath `/Metju.Chord/`.
+- Samples are fetched relative to the page (`samples/<id>/<midi>.mp3`) and Webpack's `publicPath` is `''`, so the app works at the domain root (chords.metju.cz) and under a subpath (metjuperry.github.io/Metju.Chord/) alike. Keep every URL relative.
 
 ## PWA (`pwa.ts`, `sw.js`, `webpack.config.js`)
 
@@ -155,7 +155,7 @@ Keep these when changing anything visible.
 - **What playback plays** can be checked without touching the app: an init script wraps `AudioParam.prototype.setValueAtTime` and records values that are exact note frequencies (Tone's synth `frequency`), turned back into MIDI numbers. Use a synth instrument for this; sampled instruments set `playbackRate` instead.
 - **Safe areas**: CDP `Emulation.setSafeAreaInsetsOverride` (e.g. `{ top: 0, right: 47, bottom: 21, left: 47 }` for a landscape iPhone).
 - **Audio routing and levels**: offline with `Tone.Offline` in headless Chromium, as `scripts/levels-page.ts` does.
-- **PWA**: register under `/Metju.Chord/`, check the cache holds the whole build, reload offline, and check a changed build is picked up.
+- **PWA**: register under a subpath (e.g. serve `dist/` as `/Metju.Chord/`) as well as at the root, check the cache holds the whole build, reload offline, and check a changed build is picked up.
 - **Not verifiable in a sandbox**: sound on real speakers, real-phone feel (touch latency, live-recording timing), and iOS specifics (Add to Home Screen, its offline cache and eviction, wake lock). Say so in the PR.
 
 ## Where things stand
