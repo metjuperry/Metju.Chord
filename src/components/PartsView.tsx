@@ -352,7 +352,9 @@ interface PartDetailProps {
 const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onPadPart, onRemove, onUpdate, onTone, onFx, onOpenBeat }) => {
     // Effects stay on screen while you turn them (even down to 0) and after "+ Effect"; double-tap (0) takes one away
     const [pinned, setPinned] = useState<(keyof PartFx)[]>([]);
-    useEffect(() => setPinned([]), [part.id]);
+    useEffect(() => {
+        setPinned([]);
+    }, [part.id]);
     const instRow = useScrollToPressed(`${part.id}:${hasInstrument(part) ? part.instrument : ''}`);
     const styleRow = useScrollToPressed(`${part.id}:${part.kind === 'bass' ? part.style : ''}`);
 
