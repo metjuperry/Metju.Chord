@@ -60,7 +60,18 @@ A reference to read while writing, never a generator. On a phone it opens full s
 
 ### ⚙ Settings
 
-Theme (Light / Dark / Auto), Click, Accent the downbeat, Next chords on the screen, Chord mood in Play mode, How to play, and Credits. The intro: tap the start key and a random chord rings out while the app fades in.
+Theme (Light / Dark / Auto), Click, Accent the downbeat, Next chords on the screen, Chord mood in Play mode, **Pocket Operator sync**, How to play, and Credits. The intro: tap the start key and a random chord rings out while the app fades in.
+
+### 🔌 Pocket Operator sync
+
+Metju.Chord can be the clock for a Teenage Engineering Pocket Operator (or anything that follows a PO-style audio click).
+
+- Turn on ⚙ → **Pocket Operator sync**. The left channel of the headphone out becomes a clock (2 short pulses per beat) and the app's sound, mixed to mono, plays on the right. A dot on ⚙ reminds you it's on.
+- Cable: headphone out (an adapter on iPhones) → the PO's line in. Listen from the PO's output: it plays the app's sound together with its own.
+- On the PO, set **SY4** (hold the button below knob B, press BPM until it shows SY4), set its tempo to the one the settings show, and press play on the PO. Then ▶ here starts both, and ■ stops both. Use ■ rather than ⏸ to start again from the top, so the PO's pattern and the song's bars stay lined up.
+- **Pulse timing** (±50 ms) moves the clock earlier or later if the PO feels ahead of or behind the chords; **Flip the pulses** is for gear that wants the other polarity.
+- Keep the song in 4/4: a PO pattern is 16 steps, one bar. Use a cable: Bluetooth adds too much delay for sync.
+- Sync is a setting of this device, not of the song: songs you open or share never turn it on.
 
 ### Saving and sharing
 

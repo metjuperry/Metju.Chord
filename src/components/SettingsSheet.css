@@ -108,6 +108,49 @@
     margin-top: auto;
 }
 
+.ss-sync {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+}
+
+.ss-steps {
+    margin: 0;
+    padding-left: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.ss-steps b {
+    color: var(--text);
+}
+
+.ss-warn {
+    margin: 0;
+    color: var(--hot-text);
+}
+
+.ss-stepper {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.ss-offset {
+    min-width: 52px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
 /* Credits opens over the sheet */
 .credits-backdrop {
     z-index: 14;

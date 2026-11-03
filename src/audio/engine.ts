@@ -5,6 +5,7 @@ import { DrumKit } from './drumkit';
 import type { DrumVoice } from '../drums';
 import { PartFx, PartTone, glideSeconds, glides, neutralTone, noFx, shapeBrightness, shapePan } from '../parts';
 import type { Space } from '../song';
+import { PULSE_SECONDS, SyncOut, defaultSync, pulseTime } from '../sync';
 
 export type ArpRate = '4n' | '8n' | '8t' | '16n' | '16t' | '32n';
 
@@ -92,11 +93,76 @@ export class Engine {
     private current = 'main';
     private transportUsers = new Set<string>();
 
+    /** Sync out (see sync.ts): when on, master -> mono sum -> right channel, pulses -> left channel. */
+    private sync: SyncOut = defaultSync();
+    private syncNodes: { sum: Tone.Gain; pulses: Tone.Gain; merge: Tone.Merge; buffer: AudioBuffer } | null = null;
+
     constructor() {
         this.master.chain(this.limiter, Tone.getDestination());
         this.limiter.connect(this.meter);
         this.reverbBus.chain(this.reverb, this.reverbReturn, this.master);
         this.delayBus.chain(this.delay, this.delayReturn, this.master);
+    }
+
+    // ---- sync out -----------------------------------------------------------
+
+    /**
+     * Turn sync out on or off, or change its offset and polarity. On: the whole mix, summed to
+     * mono, goes out on the right channel only, and the left channel carries `syncPulse`s.
+     */
+    setSync(next: SyncOut) {
+        const was = this.sync.on;
+        this.sync = next;
+        if (next.on === was) {
+            this.syncNodes?.pulses.gain.setValueAtTime(next.invert ? -1 : 1, Tone.now());
+            return;
+        }
+        const out = Tone.getDestination();
+        if (next.on) {
+            const nodes = this.syncNodes ?? this.buildSync();
+            nodes.pulses.gain.setValueAtTime(next.invert ? -1 : 1, Tone.now());
+            this.limiter.disconnect(out);
+            this.limiter.connect(nodes.sum);
+        } else if (this.syncNodes) {
+            this.limiter.disconnect(this.syncNodes.sum);
+            this.limiter.connect(out);
+        }
+    }
+
+    get syncOn() {
+        return this.sync.on;
+    }
+
+    private buildSync() {
+        const ctx = Tone.getContext();
+        // a mono sum: one channel, stereo input mixed down ((L + R) / 2)
+        const sum = new Tone.Gain(1);
+        const raw = sum.input as GainNode;
+        raw.channelCount = 1;
+        raw.channelCountMode = 'explicit';
+        raw.channelInterpretation = 'speakers';
+        const pulses = new Tone.Gain(1);
+        const merge = new Tone.Merge();
+        pulses.connect(merge, 0, 0);
+        sum.connect(merge, 0, 1);
+        merge.connect(Tone.getDestination());
+        const length = Math.max(1, Math.round(PULSE_SECONDS * ctx.sampleRate));
+        const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+        buffer.getChannelData(0).fill(1);
+        this.syncNodes = { sum, pulses, merge, buffer };
+        return this.syncNodes;
+    }
+
+    /** One sync pulse on the left channel at audio time `time` (shifted by the offset). Does nothing while sync is off. */
+    syncPulse(time: number) {
+        const nodes = this.syncNodes;
+        if (!this.sync.on || !nodes) return;
+        const ctx = Tone.getContext();
+        const src = ctx.createBufferSource();
+        src.buffer = nodes.buffer;
+        src.connect(nodes.pulses.input as GainNode);
+        src.onended = () => src.disconnect();
+        src.start(pulseTime(time, this.sync.offset, ctx.currentTime));
     }
 
     /** Resolves once the reverb impulse response is rendered. */

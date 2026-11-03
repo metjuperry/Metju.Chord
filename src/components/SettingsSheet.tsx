@@ -3,6 +3,7 @@ import './SettingsSheet.css';
 import { GearIcon } from './TopBar';
 import { useDialog } from './useDialog';
 import type { ThemeSetting } from '../song';
+import { SYNC_OFFSET_MAX, SYNC_OFFSET_STEP, SyncOut } from '../sync';
 
 interface SettingsSheetProps {
     open: boolean;
@@ -19,6 +20,12 @@ interface SettingsSheetProps {
     onNextHint: (on: boolean) => void;
     chordMood: boolean;
     onChordMood: (on: boolean) => void;
+    sync: SyncOut;
+    onSync: (patch: Partial<SyncOut>) => void;
+    /** The tempo the PO should be set to (quarter notes per minute, as the PO counts). */
+    syncBpm: number;
+    /** 4/4: a PO pattern (16 steps) is exactly one bar. */
+    syncMeterFits: boolean;
     onHelp: () => void;
     onCredits: () => void;
 }
@@ -78,6 +85,37 @@ const SettingsSheet: React.FC<SettingsSheetProps> = p => {
                 <Toggle label="Accent the downbeat" desc="the first beat of the bar clicks higher" on={p.clickAccent} onChange={p.onClickAccent} />
                 <Toggle label="Next chords on the screen" desc="after each chord, the ones that often follow it in this key" on={p.nextHint} onChange={p.onNextHint} />
                 <Toggle label="Chord mood in Play mode" desc="a word for how the chord tends to feel, next to its type (i · 9th · bittersweet)" on={p.chordMood} onChange={p.onChordMood} />
+
+                <div className="ss-rule" />
+
+                <Toggle
+                    label="Pocket Operator sync"
+                    desc="the left channel becomes a clock for the PO, the sound plays on the right. For a cable into the PO's line in"
+                    on={p.sync.on}
+                    onChange={on => p.onSync({ on })}
+                />
+                {p.sync.on && (
+                    <div className="ss-sync">
+                        <ol className="ss-steps">
+                            <li>Headphone out → PO line in. Listen from the PO's output, not from here: the left channel is clicks.</li>
+                            <li>On the PO, set <b>SY4</b> (hold the button below knob B, press BPM until it shows SY4).</li>
+                            <li>Set the PO's tempo to <b>{p.syncBpm} BPM</b>, press play on the PO, then ▶ here. ■ stops both.</li>
+                        </ol>
+                        {!p.syncMeterFits && <p className="section-note ss-warn">The song isn't in 4/4, so the PO's 16-step patterns won't line up with its bars.</p>}
+                        <div className="ss-row">
+                            <span className="ss-text">
+                                <span className="ss-title" id="ss-sync-offset">Pulse timing</span>
+                                <span className="section-note">if the PO sounds early or late against the chords</span>
+                            </span>
+                            <div className="ss-stepper" role="group" aria-labelledby="ss-sync-offset">
+                                <button className="tb-step" aria-label="Pulses earlier" disabled={p.sync.offset <= -SYNC_OFFSET_MAX} onClick={() => p.onSync({ offset: p.sync.offset - SYNC_OFFSET_STEP })}>−</button>
+                                <span className="ss-offset" aria-live="polite">{p.sync.offset > 0 ? '+' : ''}{p.sync.offset} ms</span>
+                                <button className="tb-step" aria-label="Pulses later" disabled={p.sync.offset >= SYNC_OFFSET_MAX} onClick={() => p.onSync({ offset: p.sync.offset + SYNC_OFFSET_STEP })}>+</button>
+                            </div>
+                        </div>
+                        <Toggle label="Flip the pulses" desc="try this if the PO doesn't follow at all" on={p.sync.invert} onChange={invert => p.onSync({ invert })} />
+                    </div>
+                )}
 
                 <div className="ss-rule" />
 

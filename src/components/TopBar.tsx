@@ -41,6 +41,8 @@ interface TopBarProps {
     onStop: () => void;
     onToggleRecord: () => void;
     onOpenSettings: () => void;
+    /** Sync out is on: the gear gets a dot, since the left channel is clicks. */
+    syncOn?: boolean;
     /** 📖 Learn: open (yellow edge while it's showing) or closed. */
     learnOpen: boolean;
     onToggleLearn: () => void;
@@ -52,10 +54,11 @@ const Chevron = () => (
     </svg>
 );
 
+/** ⚙ a cog (the old sun-like circle with rays read as a theme switch). */
 export const GearIcon: React.FC<{ size?: number }> = ({ size = 16 }) => (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-        <circle cx="8" cy="8" r="2.2" />
-        <path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" />
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" aria-hidden="true">
+        <path d="M13.16 6.40 L15.10 6.78 L15.10 9.22 L13.16 9.60 L12.78 10.52 L13.88 12.16 L12.16 13.88 L10.52 12.78 L9.60 13.16 L9.22 15.10 L6.78 15.10 L6.40 13.16 L5.48 12.78 L3.84 13.88 L2.12 12.16 L3.22 10.52 L2.84 9.60 L0.90 9.22 L0.90 6.78 L2.84 6.40 L3.22 5.48 L2.12 3.84 L3.84 2.12 L5.48 3.22 L6.40 2.84 L6.78 0.90 L9.22 0.90 L9.60 2.84 L10.52 3.22 L12.16 2.12 L13.88 3.84 L12.78 5.48Z" />
+        <circle cx="8" cy="8" r="2.3" />
     </svg>
 );
 
@@ -149,7 +152,13 @@ const TopBar: React.FC<TopBarProps> = p => (
             <span className="tb-learn-label">Learn</span>
         </button>
 
-        <button className="tb-gear" aria-label="Settings" title="Settings" aria-haspopup="dialog" onClick={p.onOpenSettings}>
+        <button
+            className={`tb-gear tb-settings ${p.syncOn ? 'sync-on' : ''}`}
+            aria-label={p.syncOn ? 'Settings (PO sync is on)' : 'Settings'}
+            title={p.syncOn ? 'Settings · PO sync is on: the left channel is clicks' : 'Settings'}
+            aria-haspopup="dialog"
+            onClick={p.onOpenSettings}
+        >
             <GearIcon />
         </button>
     </header>

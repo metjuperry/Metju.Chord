@@ -47,7 +47,12 @@ export class SequencerPlayer<T> {
         private readonly source: SeqSource<T>,
         private readonly onEvent: (event: SeqEvent<T>, time: number) => void,
         private readonly onEnd: () => void,
+        /** Called at the start of every 1/16 window with its audio time and its index since start (for sync pulses). */
+        private readonly onWindow?: (time: number, index: number) => void,
     ) {}
+
+    /** How many 1/16 windows have played since start: real time, unaffected by loops and jumps. */
+    private windows = 0;
 
     get playing() {
         return this.repeatId !== null;
@@ -60,6 +65,7 @@ export class SequencerPlayer<T> {
         engine.acquireTransport('sequencer');
         const startToneTick = typeof startAt === 'string' ? parseInt(startAt, 10) : Tone.getTransport().ticks;
         this.cursor = fromTick;
+        this.windows = 0;
         this.marks = [[startToneTick, fromTick]];
         this.repeatId = Tone.getTransport().scheduleRepeat(time => this.pass(time), toneTicks(WINDOW), `${startToneTick}i`);
     }
@@ -108,6 +114,9 @@ export class SequencerPlayer<T> {
     private pass(time: number) {
         const { events, opts } = this.source();
         let from = this.cursor;
+        // every window counts, even one with nothing to play, so the index stays in step with real time
+        const index = this.windows++;
+        if (opts.loop || from < opts.end) this.onWindow?.(time, index);
         this.wrapAt = opts.loop ? opts.loopEnd : Infinity;
 
         if (opts.loop) {

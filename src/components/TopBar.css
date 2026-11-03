@@ -312,3 +312,19 @@
         width: 28px;
     }
 }
+
+/* PO sync on: a small dot on the gear, so a pair of headphones doesn't get clicks in one ear by surprise */
+.tb-settings {
+    position: relative;
+}
+
+.tb-settings.sync-on::after {
+    content: '';
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+}
