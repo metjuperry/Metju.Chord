@@ -2,7 +2,7 @@
 
 A chord instrument and song sketchpad in the browser, modelled on pocket chord machines like the HiChord: seven chord pads, an 8-way stick that changes the chord type, and the chord you're playing written on the instrument. Underneath is a song editor where one chord row drives keys, bass, melody and drums, in sections chained into a song, with per-part sound and effects. React 19, TypeScript and Tone.js; no backend, installable as an offline app.
 
-**Live at <https://metjuperry.github.io/Metju.Chord/>** (deployed from `master`).
+**Live at <https://chords.metju.cz>** (deployed from `master`).
 
 Three modes, one rule: **Play** is the instrument; **Song** is *what* plays (chords, melody notes, drum hits, in sections chained into a song); **Parts** is *how* it sounds (instrument, style, tone, effects). **⚙** holds the app settings and **📖 Learn** is a reference for when you're facing a blank song.
 
@@ -88,7 +88,7 @@ npm run build      # production bundle in dist/ (also type-checks)
 npm run levels     # renders every instrument offline in headless Chromium and checks loudness
 ```
 
-Every push to `master` runs the tests, builds and publishes to GitHub Pages (`.github/workflows/deploy.yml`). Pull requests run the tests and the build (`.github/workflows/ci.yml`).
+Every push to `master` runs the tests, builds and publishes to GitHub Pages at chords.metju.cz (`.github/workflows/deploy.yml`). Pull requests run the tests and the build (`.github/workflows/ci.yml`).
 
 ## Contributing
 
