@@ -1,8 +1,8 @@
-import { emptyPattern, isEmptyPattern } from './drums';
-import { Part, audibleParts } from './parts';
+import { isEmptyPattern } from './drums';
+import { ChordPart, Part, audibleParts, newPart } from './parts';
 import { isChordClip } from './progression';
 import {
-    ChainEntry, FullSong, MAX_CHAIN, MAX_SECTIONS, PartContent, Section, Song, TimeSignature, changeTimeSignature, contentOf, letterFor,
+    ChainEntry, FullSong, MAX_CHAIN, MAX_SECTIONS, PartContent, Section, Song, TimeSignature, changeTimeSignature, contentOf, defaultSpace, letterFor,
     stepsPerRow, stripContent, ticksPerStep,
 } from './song';
 
@@ -248,21 +248,32 @@ export function changeSongTimeSignature(song: FullSong, next: TimeSignature): Fu
     return { ...out, timeSignature: next };
 }
 
-/** Empty every section: no chords, melodies or beats (sections, chain and parts stay). */
-export function clearSections(song: FullSong): FullSong {
+/**
+ * Clear all: a clean slate. One empty section "A" (one row), the chain just that, one chord part
+ * with no effects and the tone as designed, and the shared reverb, delay and output back to their
+ * defaults. Key, scale, tempo and time signature stay. The first chord part keeps its id (the pads
+ * keep playing through it) and its instrument; the first section keeps its id. A clean slate
+ * cleans to itself, so `isCleanSlate` can tell when there's nothing left to clear.
+ */
+export function cleanSlate(song: FullSong): FullSong {
+    const old = song.parts.find((p): p is ChordPart => p.kind === 'chords');
+    const fresh = newPart('chords', []) as ChordPart;
+    const keys: ChordPart = old ? { ...fresh, id: old.id, instrument: old.instrument } : fresh;
+    const id = song.sections[0]?.id ?? 's1';
     return {
-        ...song,
-        sections: song.sections.map(s => ({
-            ...s,
-            chords: [],
-            content: Object.fromEntries(Object.entries(s.content).filter(([, c]) => c.drums).map(([id, c]) => [id, { drums: emptyPattern(c.drums!.bars) }])),
-        })),
+        key: song.key,
+        scale: song.scale,
+        bpm: song.bpm,
+        timeSignature: song.timeSignature,
+        space: defaultSpace(),
+        parts: [keys],
+        sections: [{ id, name: 'A', letter: 'A', steps: stepsPerRow(song.timeSignature), chords: [], content: {}, mutes: {} }],
+        chain: [{ sectionId: id }],
     };
 }
 
-/** Whether `sec` has anything to clear. */
-export const sectionsHaveContent = (song: FullSong) =>
-    song.sections.some(s => s.chords.length > 0 || Object.values(s.content).some(c => c.notes?.length || (c.drums && !isEmptyPattern(c.drums))));
+/** Whether Clear all would change nothing. */
+export const isCleanSlate = (song: FullSong) => JSON.stringify(cleanSlate(song)) === JSON.stringify(song);
 
 /** What a part does in a section, for the section tile's little bars. */
 export type PartState = 'plays' | 'muted' | 'silent';

@@ -7,7 +7,7 @@ interface SongMenuProps {
     onSaveFile: () => void;
     onShare: () => void;
     onHooktheory: () => void;
-    /** Empty the chord row, melodies and beats (undoable). */
+    /** Clear all: a clean slate (asks first, undoable). */
     onClearAll: () => void;
     canClearAll: boolean;
 }
