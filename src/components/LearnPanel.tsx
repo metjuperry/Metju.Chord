@@ -91,7 +91,10 @@ const LearnPanel: React.FC<LearnPanelProps> = p => {
     }, [p.open, p.docked]);
     // the body scrolls back to the top when the tab changes
     const body = useRef<HTMLDivElement>(null);
-    useEffect(() => body.current?.scrollTo?.({ top: 0 }), [p.tab]);
+    // braces: newer browsers return a Promise from scrollTo, and an effect must return nothing or a cleanup function
+    useEffect(() => {
+        body.current?.scrollTo?.({ top: 0 });
+    }, [p.tab]);
     if (!p.open) return null;
 
     const tabs = (

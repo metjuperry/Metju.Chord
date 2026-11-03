@@ -136,6 +136,7 @@ Keep these when changing anything visible.
 - **Desktop**: a two-column grid, the device sticky on the left, Song | Parts tabs (`role="tablist"`) on the right. Check 1024, 1280, 1440 and 1600 px.
 - **No text selection**: `body` has `user-select: none` and no iOS touch callout, because quick repeated pad taps would otherwise select text. Inputs and reading text (help, credits, Learn) opt back in; add new reading areas to that list in `index.css`.
 - **Accessibility**: everything has a keyboard path and an aria label. Dialogs (`role="dialog"`, `aria-modal`) use `useDialog` (focus in, Tab trapped, Esc closes the top one, focus back). Global shortcuts live in App's keydown handler, which ignores inputs, selects and `role="slider"`.
+- **Effects return nothing or a cleanup**: write `useEffect(() => { … })` with a block body. An expression body returns its value as the cleanup, and React calling a non-function on unmount blanks the whole app (newer browsers return a Promise from `scrollTo`, which did exactly that to Learn). `effects.test.ts` enforces it.
 - **Undo**: every edit to the song is one undo step (use merge keys in `useHistory` for drags and knob turns). Settings are not undoable.
 - **Playback never moves the chord info or stick**: those only follow live playing.
 - **Learn is a reference, not a generator**: it never writes notes on its own. "Use in song" is explicit and undoable.
