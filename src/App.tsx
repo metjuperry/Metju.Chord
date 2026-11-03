@@ -48,7 +48,16 @@ import {
 } from './drums';
 import { CHORD_LANE, MiniNote, PartPatch } from './components/Progression';
 
-const DEGREE_KEYS: { [code: string]: number } = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5, Digit7: 6 };
+/**
+ * Keys that play the pads (by physical position, so any layout works): the number row, the numpad,
+ * and H U J I K O L for the right hand while the left holds the stick (Q W E / A D / Z X C). That
+ * block sits like the pads: H J K L are the long keys 1 3 5 7, U I O the short keys 2 4 6 above them.
+ */
+const DEGREE_KEYS: { [code: string]: number } = {
+    Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5, Digit7: 6,
+    Numpad1: 0, Numpad2: 1, Numpad3: 2, Numpad4: 3, Numpad5: 4, Numpad6: 5, Numpad7: 6,
+    KeyH: 0, KeyU: 1, KeyJ: 2, KeyI: 3, KeyK: 4, KeyO: 5, KeyL: 6,
+};
 const STICK_KEYS: { [code: string]: StickDir } = {
     KeyQ: 'UL', KeyW: 'U', KeyE: 'UR', KeyA: 'L', KeyS: 'C', KeyD: 'R', KeyZ: 'DL', KeyX: 'D', KeyC: 'DR',
 };
