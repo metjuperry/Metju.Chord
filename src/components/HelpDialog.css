@@ -74,3 +74,42 @@
 .help-keys dd {
     margin: 0;
 }
+
+/* ConfirmDialog: a short question with Cancel and the big button */
+.confirm-dialog {
+    width: min(420px, 100%);
+}
+
+.confirm-title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 20px;
+}
+
+.confirm-body {
+    line-height: 1.55;
+    font-size: 13px;
+}
+
+.confirm-body p {
+    margin: 0 0 6px;
+}
+
+.confirm-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.confirm-buttons .chip-button {
+    min-height: 38px;
+    padding: 0 16px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.confirm-danger {
+    background: var(--hot);
+    border-color: var(--hot);
+    color: var(--accent-ink);
+}

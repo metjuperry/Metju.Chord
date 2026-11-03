@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
-    FullSong, SAVE_VERSION, SavedState, Song, defaultSettings, encodeShare, decodeShare, fromSingleSection, newFullSong, newSong, readFullSong, readSaved,
+    FullSong, SAVE_VERSION, SavedState, Song, defaultSettings, encodeShare, decodeShare, fromSingleSection, newFullSong, newSong, readFullSong, readSaved, stepsPerRow,
 } from './song';
 import {
-    addSection, appendToChain, applySectionEdit, chainLayout, changeSongTimeSignature, clearSections, deleteSection, duplicateEntry,
-    duplicateSection, moveEntry, partStateIn, removeEntry, renameSection, sectionView, setSectionMute, slotAt,
+    addSection, appendToChain, applySectionEdit, chainLayout, changeSongTimeSignature, cleanSlate, deleteSection, duplicateEntry,
+    duplicateSection, isCleanSlate, moveEntry, partStateIn, removeEntry, renameSection, sectionView, setSectionMute, slotAt,
 } from './sections';
 import { chainEvents, sectionEvents } from './playback';
 import { newPart, placeNote } from './parts';
@@ -221,13 +221,6 @@ describe('sections and the chain', () => {
         expect(slotAt(layout, 20 * S).section.id).toBe(b.id);
     });
 
-    it('clears every section but keeps the sections and the chain', () => {
-        const song = clearSections(appendToChain(base(), 's1'));
-        expect(song.sections[0].chords).toEqual([]);
-        expect(song.sections[0].content[drumsId(song)]?.drums?.hits).toEqual({});
-        expect(song.chain).toHaveLength(2);
-    });
-
     it('says which parts play in a section', () => {
         let song = base();
         const mel = song.parts.find(p => p.kind === 'melody')!;
@@ -338,5 +331,64 @@ describe('melody accidentals in saves and links', () => {
         expect(midi).toEqual([72, 78, 70]);
         // and in the whole chain
         expect(chainEvents(song).events.filter(e => e.data.part === mel).map(e => (e.data.drum ? -1 : e.data.midi[0]))).toEqual([72, 78, 70]);
+    });
+});
+
+describe('clear all: a clean slate', () => {
+    /** A busy song: three sections, a longer chain, four parts with effects, a wet master. */
+    const busy = (): FullSong => {
+        let f = fromSingleSection(v2Song());
+        f = duplicateSection(f, f.sections[0].id).song;
+        f = addSection(f).song;
+        f = appendToChain(appendToChain(f, f.sections[1].id), f.sections[2].id);
+        f = {
+            ...f,
+            bpm: 132,
+            timeSignature: { beats: 3, unit: 4 },
+            space: { reverb: { size: 6, ret: 1 }, delay: { time: '4n', feedback: 0.7, ret: 1 }, out: { level: 0.6 } },
+            parts: f.parts.map(p => (p.kind === 'chords'
+                ? { ...p, instrument: 'piano' as const, volume: -6, mute: true, playMode: 'Arp' as const, fx: { ...p.fx, reverb: 0.8, chorus: 0.4 }, tone: { ...p.tone, brightness: 0.9 } }
+                : { ...p, fx: { ...p.fx, delay: 0.5 } })),
+        };
+        return setSectionMute(f, f.sections[0].id, f.parts[0].id, true);
+    };
+
+    it('leaves one empty section, chained once', () => {
+        const f = busy();
+        const c = cleanSlate(f);
+        expect(c.sections).toEqual([{ id: f.sections[0].id, name: 'A', letter: 'A', steps: stepsPerRow({ beats: 3, unit: 4 }), chords: [], content: {}, mutes: {} }]);
+        expect(c.chain).toEqual([{ sectionId: f.sections[0].id }]);
+    });
+
+    it('keeps only the chord part, its id and instrument, with no effects and the tone as designed', () => {
+        const f = busy();
+        const keys = f.parts.find(p => p.kind === 'chords')!;
+        const c = cleanSlate(f);
+        expect(c.parts).toHaveLength(1);
+        const p = c.parts[0];
+        expect(p).toMatchObject({ id: keys.id, kind: 'chords', instrument: 'piano', volume: 0, mute: false, solo: false, playMode: 'Chord', name: 'Keys' });
+        expect(Object.values(p.fx).every(v => v === 0)).toBe(true);
+        if (p.kind === 'chords') expect(p.tone).toEqual({ attack: 0.5, release: 0.5, brightness: 0.5, pan: 0.5 });
+    });
+
+    it('resets the shared reverb, delay and output, and keeps key, scale, tempo and time signature', () => {
+        const f = busy();
+        const c = cleanSlate(f);
+        expect(c.space).toEqual(newFullSong().space);
+        expect([c.key, c.scale, c.bpm, c.timeSignature]).toEqual([f.key, f.scale, 132, { beats: 3, unit: 4 }]);
+    });
+
+    it('adds a chord part when the song has none', () => {
+        const f = busy();
+        const c = cleanSlate({ ...f, parts: f.parts.filter(p => p.kind !== 'chords') });
+        expect(c.parts.map(p => p.kind)).toEqual(['chords']);
+    });
+
+    it('knows when there is nothing left to clear', () => {
+        const f = busy();
+        expect(isCleanSlate(f)).toBe(false);
+        expect(isCleanSlate(cleanSlate(f))).toBe(true);
+        expect(cleanSlate(cleanSlate(f))).toEqual(cleanSlate(f));
+        expect(readFullSong(JSON.parse(JSON.stringify(cleanSlate(f))))).toEqual(cleanSlate(f));
     });
 });

@@ -22,6 +22,7 @@ import { getEngine } from './audio/engine';
 import { useHistory } from './useHistory';
 import { keepScreenOn } from './pwa';
 import SongMenu, { UndoRedo } from './components/SongMenu';
+import ConfirmDialog from './components/ConfirmDialog';
 import HooktheoryDialog from './components/HooktheoryDialog';
 import { HtClip, ImportOptions, ImportSummary, importHooktheory } from './hooktheory';
 import {
@@ -29,8 +30,8 @@ import {
     isCompound, newFullSong, readSaved, stepsPerRow, ticksPerBar, ticksPerStep, transportBpm,
 } from './song';
 import {
-    ChainSlot, addSection, appendToChain, applySectionEdit, chainCount, chainLayout, changeSongTimeSignature, clearSections, deleteSection,
-    duplicateEntry, duplicateSection, findSection, moveEntry, removeEntry, renameSection, sectionView, sectionsHaveContent, setSectionMute, slotAt,
+    ChainSlot, addSection, appendToChain, applySectionEdit, chainCount, chainLayout, changeSongTimeSignature, cleanSlate, deleteSection,
+    duplicateEntry, duplicateSection, findSection, isCleanSlate, moveEntry, removeEntry, renameSection, sectionView, setSectionMute, slotAt,
 } from './sections';
 import { Scheduled, chainEvents, kickTicks, sectionEvents, sectionLoopLength, sectionMusicEnd } from './playback';
 import SongView from './components/SongView';
@@ -185,6 +186,7 @@ const App: React.FC = () => {
     const [creditsOpen, setCreditsOpen] = useState(false);
     /** 📖 Learn: the reference page (over everything on phones, in the right column on desktop) and its last tab. */
     const [learnOpen, setLearnOpen] = useState(false);
+    const [confirmClear, setConfirmClear] = useState(false);
     const [learnTab, setLearnTab] = useState<LearnTab>(initial.learnTab);
     const [chordMoodOn, setChordMoodOn] = useState(initial.chordMood);
     /** Sync out for a Pocket Operator: this device's setting, not the song's (sync.ts). */
@@ -987,13 +989,8 @@ const App: React.FC = () => {
             setChords(place(remove(clips, selClip), { ...selClip, plays: { ...selClip.plays, [id]: plays } }));
         }),
         del: chordEdit(() => selClip && setChords(remove(clips, selClip))),
-        /** Empty every section (chords, melodies, beats); the sections, chain and parts stay. */
-        clearAll: () => {
-            stopPlayback();
-            editFull(clearSections);
-            setSelected(0);
-            setPlayhead(0);
-        },
+        /** A clean slate (sections.ts cleanSlate): one empty section, only the chord part, no effects. Asks first. */
+        clearAll: () => setConfirmClear(true),
         addRow: () => editSong(sg => ({ ...sg, steps: sg.steps + rowSteps })),
         removeRow: () => {
             if (total <= rowSteps) return;
@@ -1214,7 +1211,7 @@ const App: React.FC = () => {
     // ---- keyboard -----------------------------------------------------------------------
 
     // while a dialog is open the instrument's keys are off (typing or tabbing in it mustn't play pads)
-    const modalOpen = helpOpen || htOpen || settingsOpen || creditsOpen || (learnOpen && compact);
+    const modalOpen = helpOpen || htOpen || settingsOpen || creditsOpen || confirmClear || (learnOpen && compact);
     const keyActions = useRef({ pressPad, releasePad, releaseAll, togglePlay, stopAndRewind, toggleRecord, edit, melody: melodyActions, helpOpen: modalOpen, undo: history.undo, redo: history.redo });
     keyActions.current = { pressPad, releasePad, releaseAll, togglePlay, stopAndRewind, toggleRecord, edit, melody: melodyActions, helpOpen: modalOpen, undo: history.undo, redo: history.redo };
 
@@ -1554,7 +1551,7 @@ const App: React.FC = () => {
             onShare={songActions.share}
             onHooktheory={() => setHtOpen(true)}
             onClearAll={edit.clearAll}
-            canClearAll={sectionsHaveContent(full)}
+            canClearAll={!isCleanSlate(full)}
         />
     );
     const progressionEl = (
@@ -1812,6 +1809,27 @@ const App: React.FC = () => {
             />
             {compact && learnEl(false)}
             <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+            <ConfirmDialog
+                open={confirmClear}
+                title="Clear everything?"
+                confirm="Clear all"
+                onCancel={() => setConfirmClear(false)}
+                onConfirm={() => {
+                    setConfirmClear(false);
+                    stopPlayback();
+                    const clean = cleanSlate(full);
+                    editFull(() => clean);
+                    setOpenId(clean.sections[0].id);
+                    setSelectedLane(CHORD_LANE);
+                    setSelected(0);
+                    setMelCursor(0);
+                    setPlayhead(0);
+                    flash('Cleared. Undo to get it all back.');
+                }}
+            >
+                <p>A clean slate: one empty section, the chain reset, only the {full.parts.find(p => p.kind === 'chords')?.name ?? 'Keys'} part, and no effects.</p>
+                <p>Key, scale and tempo stay. You can undo it.</p>
+            </ConfirmDialog>
             <CreditsDialog open={creditsOpen} onClose={() => setCreditsOpen(false)} />
             {htDialog}
             {notice && <div className="toast" role="status">{notice}</div>}
