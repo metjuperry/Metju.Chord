@@ -74,12 +74,33 @@ html {
 
 body {
     margin: 0;
+    /* It's an instrument: quick repeated taps on the pads must never select text or
+       open iOS's copy/look-up callout (a double tap selects the nearest selectable word,
+       even outside the pad). Text you might want to copy opts back in below. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
     font-family: var(--font-ui);
     font-size: 13px;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     background: var(--bg);
     color: var(--text);
+}
+
+/* Places where selecting or copying text is useful: fields, and reading text in the
+   help, credits and Learn panels (never the instrument). */
+input,
+textarea,
+[contenteditable='true'],
+.help-dialog p,
+.help-dialog dd,
+.help-dialog td,
+.lp-text {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
 }
 
 button {
