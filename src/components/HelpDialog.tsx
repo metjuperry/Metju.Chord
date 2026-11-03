@@ -83,7 +83,7 @@ const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose }) => {
                     <dd>A reference for a blank song: chord progressions in your key (hear one, or put it into the open section), what each
                         stick direction and pad tends to sound like, and short melody guidelines with tiny examples. On desktop it opens on the right.</dd>
                     <dt><b>⚙</b></dt>
-                    <dd>Theme, the click, the next-chord hint, the chord mood in Play mode, this help and the credits.</dd>
+                    <dd>Theme, the click, the next-chord hint, the chord mood in Play mode, Pocket Operator sync (a clock on the left channel of the headphone out, for a cable into a PO set to SY4), this help and the credits. A dot on ⚙ means sync is on.</dd>
                 </dl>
 
                 <h3 className="eyebrow">The stick</h3>

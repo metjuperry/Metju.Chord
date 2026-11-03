@@ -41,6 +41,7 @@ import {
     fitNotes, pasteNotes, notesIn, replaceRange, hasInstrument, melodyMidi, newPart, noteAt, noteMidi, partNotes, placeNote, removeNote, resolveClip, withAcc,
 } from './parts';
 import { SeqEvent, SeqOptions, SequencerPlayer, ticksToSeconds } from './audio/sequencer';
+import { SyncOut, loadSync, saveSync, windowPulses } from './sync';
 import {
     DrumPattern, DrumVoice, PatternBars, TICKS_PER_SIXTEENTH, emptyPattern, hasHit, presetsFor, setBars,
     sixteenthsPerBar, sixteenthsPerStep, toggleHit,
@@ -186,6 +187,13 @@ const App: React.FC = () => {
     const [learnOpen, setLearnOpen] = useState(false);
     const [learnTab, setLearnTab] = useState<LearnTab>(initial.learnTab);
     const [chordMoodOn, setChordMoodOn] = useState(initial.chordMood);
+    /** Sync out for a Pocket Operator: this device's setting, not the song's (sync.ts). */
+    const [syncOut, setSyncOutState] = useState<SyncOut>(loadSync);
+    const setSyncOut = (patch: Partial<SyncOut>) => setSyncOutState(s => {
+        const next = { ...s, ...patch };
+        saveSync(next);
+        return next;
+    });
 
     // ---- stick: a latched direction (mouse) and momentary ones (held keys) --------
     const [latchedDir, setLatchedDir] = useState<StickDir>('C');
@@ -340,6 +348,10 @@ const App: React.FC = () => {
         if (audioReady) getEngine().setBpm(transportBpm(bpm, ts));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [bpm, ts.unit, audioReady]);
+
+    useEffect(() => {
+        if (audioReady) getEngine().setSync(syncOut);
+    }, [syncOut, audioReady]);
 
     // The shared reverb, delay and output level belong to the song
     useEffect(() => {
@@ -582,7 +594,9 @@ const App: React.FC = () => {
         }
         rewound.current = false;
         // The player reads the latest song on every pass, so edits while playing need no extra wiring
-        player.current = new SequencerPlayer<Scheduled>(() => schedule(), (e, time) => playEventRef.current(e, time), stopPlayback);
+        player.current = new SequencerPlayer<Scheduled>(() => schedule(), (e, time) => playEventRef.current(e, time), stopPlayback, (time, index) => {
+            if (windowPulses(index)) getEngine().syncPulse(time);
+        });
         player.current.start(from);
         setPlaying(true);
         setPlayingSection(t.mode === 'loop' ? t.section : null);
@@ -1728,6 +1742,7 @@ const App: React.FC = () => {
                 onStop={stopAndRewind}
                 onToggleRecord={toggleRecord}
                 onOpenSettings={() => setSettingsOpen(true)}
+                syncOn={syncOut.on}
                 learnOpen={learnOpen}
                 onToggleLearn={() => setLearnOpen(o => !o)}
             />
@@ -1788,6 +1803,10 @@ const App: React.FC = () => {
                 onNextHint={setNextHint}
                 chordMood={chordMoodOn}
                 onChordMood={setChordMoodOn}
+                sync={syncOut}
+                onSync={setSyncOut}
+                syncBpm={transportBpm(bpm, ts)}
+                syncMeterFits={ts.beats === 4 && ts.unit === 4}
                 onHelp={() => setHelpOpen(true)}
                 onCredits={() => setCreditsOpen(true)}
             />
