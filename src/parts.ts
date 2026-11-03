@@ -1,4 +1,5 @@
-import { ArpPattern, MusicalKey, ResolvedChord, SCALES, ScaleId, StrumDirection, arpOrder, keyPitchClass, resolveChord, strumOffsets } from './theory';
+import { ArpPattern, MusicalKey, ResolvedChord, SCALES, ScaleId, StrumDirection, arpOrder, keyPitchClass, resolveChord } from './theory';
+import { StrumPattern, strokeNotes, strumStrokes, strumVoicing } from './strum';
 import type { ArpRate } from './audio/engine';
 import type { InstrumentId } from './audio/instruments';
 import { ChordClip, Clip, PPQ, RestClip, clipEnd, isChordClip, lastEnd, TICKS_PER_BAR } from './progression';
@@ -9,8 +10,7 @@ import type { DrumPattern } from './drums';
 export type PartKind = 'chords' | 'bass' | 'melody' | 'drums';
 export type PlayMode = 'Chord' | 'Strum' | 'Arp';
 
-/** Strum spreads offered (first to last note), in seconds. */
-export const STRUM_SPREADS = [0.012, 0.025, 0.04, 0.06] as const;
+export { STRUM_SPREADS } from './strum';
 export const STRUM_DIRECTIONS: StrumDirection[] = ['down', 'up', 'alternate'];
 export type BassStyle =
     | 'hold' | 'pulse' | 'eighths' | 'octaves' | 'offbeat' | 'rootFifth' | 'arp' | 'tresillo' | 'walk' | 'kick';
@@ -142,9 +142,12 @@ export interface ChordPart extends PartBase {
     arpRate: ArpRate;
     /** Gate of each arp note, in seconds. */
     noteLength: number;
-    /** Strum: seconds from the first note of a chord to the last, and which way it rolls. */
+    /** Strum: seconds from the first note of a down stroke to the last. */
     strumSpread: number;
+    /** Strum: which way a single stroke goes (the pads, and the 'once' pattern). */
     strumDirection: StrumDirection;
+    /** Strum: the stroke pattern through each chord (strum.ts). */
+    strumPattern: StrumPattern;
 }
 
 /** Follows the chord roots in a chosen rhythm. */
@@ -202,7 +205,7 @@ export function newPart(kind: PartKind, existing: Part[], drums?: DrumPattern): 
     };
     switch (kind) {
         case 'chords':
-            return { ...base, kind, instrument: same ? 'warmpad' : 'epiano', tone: neutralTone(), playMode: 'Chord', arpPattern: 'up', arpRate: '8n', noteLength: 0.3, strumSpread: 0.025, strumDirection: 'down' };
+            return { ...base, kind, instrument: same ? 'warmpad' : 'epiano', tone: neutralTone(), playMode: 'Chord', arpPattern: 'up', arpRate: '8n', noteLength: 0.3, strumSpread: 0.035, strumDirection: 'down', strumPattern: 'pop' };
         case 'bass':
             return { ...base, kind, instrument: 'bass', tone: neutralTone(), style: 'pulse', octave: 2 };
         case 'melody':
@@ -274,6 +277,8 @@ export interface NoteEvent {
     gate?: number;
     /** Strummed: each note's start delay in seconds, in the order of `midi`. */
     strum?: number[];
+    /** How hard, 0–1 (1 when left out): strum strokes are lighter on up strokes. */
+    velocity?: number;
 }
 
 export const resolveClip = (h: Harmony, clip: ChordClip): ResolvedChord =>
@@ -310,7 +315,7 @@ function arpCycle(midi: number[], pattern: ArpPattern, rand: () => number): numb
     return out;
 }
 
-export function chordPartNotes(part: ChordPart, h: Harmony): NoteEvent[] {
+export function chordPartNotes(part: ChordPart, h: Harmony, barTicks = TICKS_PER_BAR): NoteEvent[] {
     const out: NoteEvent[] = [];
     let hit = 0;
     for (const clip of chordsFor(part, h.chords)) {
@@ -320,8 +325,23 @@ export function chordPartNotes(part: ChordPart, h: Harmony): NoteEvent[] {
             continue;
         }
         if (part.playMode === 'Strum') {
-            // alternating strums count hits along the row, so the pattern doesn't depend on where playback starts
-            out.push({ start: clip.start, len: clip.len, midi, strum: strumOffsets(midi, part.strumSpread, part.strumDirection, hit++) });
+            const voicing = strumVoicing(midi);
+            const end = clipEnd(clip);
+            if (part.strumPattern === 'once') {
+                // one stroke, in the part's direction; alternating counts chords along the row, so it
+                // doesn't depend on where playback starts
+                const down = part.strumDirection === 'down' || (part.strumDirection === 'alternate' && hit++ % 2 === 0);
+                const s = strokeNotes(voicing, part.strumSpread, down, down);
+                out.push({ start: clip.start, len: clip.len, midi: s.midi, strum: s.offsets, velocity: s.velocity });
+                continue;
+            }
+            // each stroke lasts until the next one (it damps the strings), the last until the chord ends
+            const strokes = strumStrokes(part.strumPattern, clip.start, end, barTicks);
+            strokes.forEach((k, i) => {
+                const until = i + 1 < strokes.length ? strokes[i + 1].at : end;
+                const s = strokeNotes(voicing, part.strumSpread, k.down, k.accent);
+                out.push({ start: k.at, len: until - k.at, midi: s.midi, strum: s.offsets, velocity: s.velocity });
+            });
             continue;
         }
         const step = ARP_RATE_TICKS[part.arpRate];
@@ -362,6 +382,8 @@ function approach(target: number, from: number, pcs: number[]): number {
 /** What a bass line can lock to besides the chords: the beat length and the drums' kick hits (song ticks). */
 export interface Groove {
     beatTicks: number;
+    /** A bar, for patterns that line up to it (strums); 4 beats when left out. */
+    barTicks?: number;
     kicks?: number[];
 }
 
@@ -455,7 +477,7 @@ export const melodyNotes = (part: MelodyPart, h: Harmony): NoteEvent[] =>
 /** Everything an instrument part plays, in song ticks. */
 export function partNotes(part: InstrumentPart, h: Harmony, groove: Groove): NoteEvent[] {
     switch (part.kind) {
-        case 'chords': return chordPartNotes(part, h);
+        case 'chords': return chordPartNotes(part, h, groove.barTicks ?? 4 * groove.beatTicks);
         case 'bass': return bassNotes(part, h, groove);
         case 'melody': return melodyNotes(part, h);
     }

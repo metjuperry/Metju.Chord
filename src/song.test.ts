@@ -210,12 +210,16 @@ describe('tremolo and glide', () => {
 describe('strum settings', () => {
     it('are saved with the part, clamped, with defaults for older songs', () => {
         const song = readSong({ chords: [], parts: [
-            { kind: 'chords', playMode: 'Strum', strumSpread: 5, strumDirection: 'sideways' },
+            { kind: 'chords', playMode: 'Strum', strumSpread: 5, strumDirection: 'sideways', strumPattern: 'flamenco' },
             { kind: 'chords', playMode: 'Arp' },
+            { kind: 'chords', playMode: 'Strum', strumSpread: 0.025, strumPattern: 'ballad' },
         ] })!;
-        const [a, b] = song.parts;
-        expect(a.kind === 'chords' && [a.playMode, a.strumSpread, a.strumDirection]).toEqual(['Strum', 0.1, 'down']);
-        expect(b.kind === 'chords' && [b.playMode, b.strumSpread, b.strumDirection]).toEqual(['Arp', 0.025, 'down']);
+        const [a, b, c] = song.parts;
+        // too long clamps to 0.1 s, then snaps to the slowest speed offered; unknown patterns are Pop
+        expect(a.kind === 'chords' && [a.playMode, a.strumSpread, a.strumDirection, a.strumPattern]).toEqual(['Strum', 0.08, 'down', 'pop']);
+        expect(b.kind === 'chords' && [b.playMode, b.strumSpread, b.strumDirection, b.strumPattern]).toEqual(['Arp', 0.035, 'down', 'pop']);
+        // an older song's 25 ms strum snaps to the nearest speed now offered (20 ms)
+        expect(c.kind === 'chords' && [c.strumSpread, c.strumPattern]).toEqual([0.02, 'ballad']);
     });
 });
 

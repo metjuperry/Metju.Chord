@@ -16,7 +16,7 @@ import { LearnTab, Progression as LearnProgression, chordMood, fitProgression, i
 import {
     ChordParams, ChordType, KEYS, NoteTag, ResolvedChord, StickDir, scaleLabel,
     STICK_DIRS, ScaleId, buildChordMidi, chordTags, keyPitchClass, resolveChord, romanNumeral, scalePitchClasses,
-    nextChords, noteNames, spellNoteOctave, stickChordType, strumOffsets, triadQuality, voiceLead,
+    nextChords, noteNames, spellNoteOctave, stickChordType, triadQuality, voiceLead,
 } from './theory';
 import { getEngine } from './audio/engine';
 import { useHistory } from './useHistory';
@@ -43,6 +43,7 @@ import {
 } from './parts';
 import { SeqEvent, SeqOptions, SequencerPlayer, ticksToSeconds } from './audio/sequencer';
 import { SyncOut, loadSync, saveSync, windowPulses } from './sync';
+import { liveStroke } from './strum';
 import {
     DrumPattern, DrumVoice, PatternBars, TICKS_PER_SIXTEENTH, emptyPattern, hasHit, presetsFor, setBars,
     sixteenthsPerBar, sixteenthsPerStep, toggleHit,
@@ -431,7 +432,9 @@ const App: React.FC = () => {
         if (style.playMode === 'Arp') {
             stop = engine.startArp(chord.midi, { pattern: style.arpPattern, rate: style.arpRate, noteLength: style.noteLength });
         } else if (style.playMode === 'Strum') {
-            stop = engine.attack(chord.midi, undefined, undefined, strumOffsets(chord.midi, style.strumSpread, style.strumDirection, strumHits.current++));
+            // one stroke per press, on the wider strum voicing (a pattern only plays in the song)
+            const k = liveStroke(chord.midi, style.strumSpread, style.strumDirection, strumHits.current++);
+            stop = engine.attack(k.midi, undefined, undefined, k.offsets, k.velocity);
         } else {
             stop = engine.attack(chord.midi);
         }
@@ -570,7 +573,7 @@ const App: React.FC = () => {
         }
         const seconds = ticksToSeconds(event.duration);
         const duration = data.gate !== undefined ? Math.min(data.gate, seconds) : seconds * data.legato;
-        engine.playChord(data.midi, { duration, time, track: data.part, strum: data.strum });
+        engine.playChord(data.midi, { duration, time, track: data.part, strum: data.strum, velocity: data.velocity });
     };
     const playEventRef = useRef(playEvent);
     playEventRef.current = playEvent;
@@ -1377,7 +1380,7 @@ const App: React.FC = () => {
     // Each part lane's miniature: what it plays, in steps, with pitch squeezed into 0..1 per part
     const minis = useMemo(() => {
         const out: { [id: string]: MiniNote[] } = {};
-        const groove = { beatTicks: T, kicks: kickTicks(parts, ts, total * T) };
+        const groove = { beatTicks: T, barTicks: ticksPerBar(ts), kicks: kickTicks(parts, ts, total * T) };
         for (const p of parts) {
             if (!hasInstrument(p)) continue;
             const notes = partNotes(p, harmony, groove);

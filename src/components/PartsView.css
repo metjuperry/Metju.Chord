@@ -390,6 +390,39 @@
     vector-effect: non-scaling-stroke;
 }
 
+/* strum patterns: the same tiles as the bass styles, with the strokes as arrows */
+.strum-tile {
+    flex-basis: 84px;
+}
+
+.strum-preview {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    height: 16px;
+    align-items: center;
+    font-size: 11px;
+    line-height: 1;
+    text-align: center;
+    color: var(--text);
+}
+
+.sp-cell.rest {
+    color: var(--faint);
+}
+
+.sp-cell.beat {
+    border-left: 1px solid var(--line-2);
+}
+
+.strum-tile[aria-checked='true'] .strum-preview,
+.strum-tile[aria-checked='true'] .sp-cell.rest {
+    color: var(--accent-ink);
+}
+
+.strum-tile[aria-checked='true'] .sp-cell.beat {
+    border-left-color: rgba(0, 0, 0, 0.25);
+}
+
 /* ---- tone and effect knobs ---------------------------------------------------------------------- */
 
 .pd-knobs {
