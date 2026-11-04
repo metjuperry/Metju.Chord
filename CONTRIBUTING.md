@@ -59,11 +59,11 @@ src/
                          fitProgression (exact / relative / "needs" + closest in-scale), progressionClips, insertProgression
   hooktheory.ts          Paste from Hooktheory: parses clipboard JSON (untrusted, never throws), notes → Melody parts,
                          chords → pad chords (chordTones → matchChord)
-  preview.ts             sound preview: what a part plays on each beat while its sound is being changed in Parts
   sync.ts                Pocket Operator sync out: its device-only settings (own localStorage key), pulse rate and timing
   shades.ts              a part colour's seven shades for the melody grid's note letters, per theme
   useHistory.ts          undo/redo with merge keys (one knob turn or slider drag = one step)
   useMedia.ts            matchMedia hook (the compact layout switch)
+  preview.ts             sound preview: what a part plays on each beat while its sound is being changed in Parts
   audio/
     engine.ts            every audio node: per-part channels, shared reverb/delay, master, limiter, transport helpers, intro chord
     instruments.ts       the 14 instruments (INSTRUMENTS): synth presets (a voice pool), sample players, matched volumes
