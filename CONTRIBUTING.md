@@ -64,6 +64,7 @@ src/
   shades.ts              a part colour's seven shades for the melody grid's note letters, per theme
   useHistory.ts          undo/redo with merge keys (one knob turn or slider drag = one step)
   useMedia.ts            matchMedia hook (the compact layout switch)
+  preview.ts             sound preview: what a part plays on each beat while its sound is being changed in Parts
   audio/
     engine.ts            every audio node: per-part channels, shared reverb/delay, master, limiter, transport helpers, intro chord
     instruments.ts       the 14 instruments (INSTRUMENTS): synth presets (a voice pool), sample players, matched volumes
@@ -101,7 +102,7 @@ Tests sit next to their module (`theory.test.ts`, `parts.test.ts`…). Pure logi
 - **Parts**: `Part = ChordPart | BassPart | MelodyPart | DrumPart`, all with `{ id, name, color, volume, mute, solo, fx }`; up to six (`MAX_PARTS`, one per `PART_COLORS`). Instrument parts have `tone = { attack, release, brightness, pan }` (0–1, 0.5 = as designed; `shape*` in parts.ts turn them into real units). A chord part's style is `playMode` (`'Chord' | 'Strum' | 'Arp'`), arp settings, `strumSpread`, `strumDirection`, `strumPattern`. Strumming lives in `strum.ts` (pure): `STRUM_PATTERNS` (8th-note strings of D / U / - over a 4/4 bar), `strumStrokes` (the strokes through a chord, lined up to the bar, a down at every chord start), `strumVoicing` (the chord plus its lowest note, and for a triad its second, an octave up), `strokeNotes` (down: all notes low→high; up: top 3 high→low at 0.55× the spread, lighter) and `liveStroke` for the pads. `chordPartNotes` turns each stroke into a `NoteEvent` lasting until the next stroke, with a `velocity` the engine multiplies in. Saved spreads snap to the offered ones (`nearestSpread`).
 - **Melody notes** are `Note = { start, len, step, acc? }`: a **scale step** (0–14 from the key's root in the part's octave), not a MIDI note, so they follow key and scale changes. `acc: -1 | 1` makes a note a semitone flat or sharp and is left out when natural. Pitch: `noteMidi(part, h, note)`. Display spelling: `spellNote` / `spellNoteOctave` (accidental on the scale note's letter; no double sharps or flats).
 - **Effects**: `fx = { drive, chorus, tremolo, glide, reverb, delay }` (0–1, 0 = off); drums use reverb/delay only. Glide applies to single notes only (`glides`), never block chords. `space = { reverb: { size, ret }, delay: { time, feedback, ret }, out: { level } }`.
-- **Settings** (voiceLeading, octave, inversion, loop, theme `light | dark | auto`, nextHint, padPart, clickAccent, openSection, playMode `loop | chain`, learnTab, chordMood) are saved but not undoable. `readSettings` fills defaults and ignores unknown fields.
+- **Settings** (voiceLeading, octave, inversion, loop, theme `light | dark | auto`, nextHint, padPart, clickAccent, openSection, playMode `loop | chain`, learnTab, chordMood, soundPreview) are saved but not undoable. `readSettings` fills defaults and ignores unknown fields.
 
 ### Saves (keep them loading)
 

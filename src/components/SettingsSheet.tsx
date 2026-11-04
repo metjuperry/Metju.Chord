@@ -20,6 +20,8 @@ interface SettingsSheetProps {
     onNextHint: (on: boolean) => void;
     chordMood: boolean;
     onChordMood: (on: boolean) => void;
+    soundPreview: boolean;
+    onSoundPreview: (on: boolean) => void;
     sync: SyncOut;
     onSync: (patch: Partial<SyncOut>) => void;
     /** The tempo the PO should be set to (quarter notes per minute, as the PO counts). */
@@ -85,6 +87,7 @@ const SettingsSheet: React.FC<SettingsSheetProps> = p => {
                 <Toggle label="Accent the downbeat" desc="the first beat of the bar clicks higher" on={p.clickAccent} onChange={p.onClickAccent} />
                 <Toggle label="Next chords on the screen" desc="after each chord, the ones that often follow it in this key" on={p.nextHint} onChange={p.onNextHint} />
                 <Toggle label="Chord mood in Play mode" desc="a word for how the chord tends to feel, next to its type (i · 9th · bittersweet)" on={p.chordMood} onChange={p.onChordMood} />
+                <Toggle label="Hear sound changes" desc="while the song is stopped, changing a part in Parts plays the key's root on it, on the beat" on={p.soundPreview} onChange={p.onSoundPreview} />
 
                 <div className="ss-rule" />
 
