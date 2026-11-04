@@ -33,6 +33,7 @@ import {
     ChainSlot, addSection, appendToChain, applySectionEdit, chainCount, chainLayout, changeSongTimeSignature, cleanSlate, deleteSection,
     duplicateEntry, duplicateSection, findSection, isCleanSlate, moveEntry, removeEntry, renameSection, sectionView, setSectionMute, slotAt,
 } from './sections';
+import { PREVIEW_TAIL_BEATS, previewSound } from './preview';
 import { Scheduled, chainEvents, kickTicks, sectionEvents, sectionLoopLength, sectionMusicEnd } from './playback';
 import SongView from './components/SongView';
 import SectionSwitcher from './components/SectionSwitcher';
@@ -198,6 +199,7 @@ const App: React.FC = () => {
     const [confirmClear, setConfirmClear] = useState(false);
     const [learnTab, setLearnTab] = useState<LearnTab>(initial.learnTab);
     const [chordMoodOn, setChordMoodOn] = useState(initial.chordMood);
+    const [soundPreview, setSoundPreview] = useState(initial.soundPreview);
     /** Sync out for a Pocket Operator: this device's setting, not the song's (sync.ts). */
     const [syncOut, setSyncOutState] = useState<SyncOut>(loadSync);
     const setSyncOut = (patch: Partial<SyncOut>) => setSyncOutState(s => {
@@ -587,6 +589,7 @@ const App: React.FC = () => {
     }, []);
 
     const startPlayback = async () => {
+        stopPreview();
         await startAudio();
         if (player.current?.playing) return;
         const t = transport.current;
@@ -783,6 +786,61 @@ const App: React.FC = () => {
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [metronomeOn, audioReady, ts.beats, ts.unit]);
+
+    // ---- sound preview: hear Parts changes while the song is stopped ----------------------
+
+    /** The part being previewed, and the latest song bits the loop reads each beat. */
+    const previewRef = useRef({ part: '', until: 0 });
+    const previewLoop = useRef<Tone.Loop | null>(null);
+    const previewData = useRef({ parts, key: selectedKey, scale, octave });
+    previewData.current = { parts, key: selectedKey, scale, octave };
+    const stopPreview = useCallback(() => {
+        const loop = previewLoop.current;
+        if (!loop) return;
+        previewLoop.current = null;
+        loop.stop();
+        loop.dispose();
+        getEngine().releaseTransport('preview');
+    }, []);
+    /**
+     * A part's sound just changed in Parts: unless the song is playing (then it's heard live) or the
+     * preview is off, play the key's root on that part on every beat, until two beats after the last change.
+     */
+    const hearPart = (id: string) => {
+        if (!soundPreview || playing || !audioReady || player.current?.playing) return;
+        const beat = Tone.Time(`${ts.unit}n`).toSeconds();
+        previewRef.current = { part: id, until: Tone.now() + Math.max(1, PREVIEW_TAIL_BEATS * beat) };
+        if (previewLoop.current) return;
+        const engine = getEngine();
+        let n = 0;
+        const loop = new Tone.Loop(time => {
+            if (Tone.now() > previewRef.current.until) {
+                Tone.getDraw().schedule(stopPreview, time);
+                return;
+            }
+            const d = previewData.current;
+            const part = d.parts.find(p => p.id === previewRef.current.part);
+            if (!part) return;
+            const sound = previewSound(part, d.key, d.scale, d.octave, n++);
+            const len = Tone.Time(`${ts.unit}n`).toSeconds();
+            if (sound.kind === 'drums') {
+                sound.voices.forEach(v => engine.playDrum(part.id, v, time));
+            } else if (sound.arp && part.kind === 'chords') {
+                engine.scheduleArp(sound.midi, { pattern: part.arpPattern, rate: part.arpRate, noteLength: part.noteLength }, time, len, part.id);
+            } else {
+                engine.playChord(sound.midi, { duration: 0.9 * len, time, track: part.id, strum: sound.strum });
+            }
+        }, `${ts.unit}n`);
+        const startAt = engine.quantizedStart(`${ts.unit}n`);
+        engine.acquireTransport('preview');
+        loop.start(startAt);
+        previewLoop.current = loop;
+    };
+    // the song starting, the preview being turned off, or leaving: stop at once
+    useEffect(() => {
+        if (playing || !soundPreview) stopPreview();
+    }, [playing, soundPreview, stopPreview]);
+    useEffect(() => () => stopPreview(), [stopPreview]);
 
     // ---- progression editing -----------------------------------------------------------
 
@@ -1044,7 +1102,7 @@ const App: React.FC = () => {
     const snapshot = (): SavedState => ({
         version: SAVE_VERSION,
         song: full,
-        settings: { voiceLeading, octave, inversion, loop, theme, nextHint, padPart: padPartId, clickAccent, openSection: openKey, playMode, learnTab, chordMood: chordMoodOn },
+        settings: { voiceLeading, octave, inversion, loop, theme, nextHint, padPart: padPartId, clickAccent, openSection: openKey, playMode, learnTab, chordMood: chordMoodOn, soundPreview },
     });
 
     // Autosave a moment after any change
@@ -1058,7 +1116,7 @@ const App: React.FC = () => {
         }, 400);
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [full, voiceLeading, octave, inversion, loop, theme, nextHint, padPartId, clickAccent, openKey, playMode, learnTab, chordMoodOn]);
+    }, [full, voiceLeading, octave, inversion, loop, theme, nextHint, padPartId, clickAccent, openKey, playMode, learnTab, chordMoodOn, soundPreview]);
 
     /** Replace the song (undoable) and take over its saved settings. */
     const loadState = (state: SavedState, message: string) => {
@@ -1074,6 +1132,7 @@ const App: React.FC = () => {
         setLoop(st.loop);
         setNextHint(st.nextHint);
         setChordMoodOn(st.chordMood);
+        setSoundPreview(st.soundPreview);
         setPadPartId(st.padPart);
         setSelectedLane(CHORD_LANE);
         setSelected(0);
@@ -1676,11 +1735,27 @@ const App: React.FC = () => {
             onSelect={setPartsSel}
             padPartId={padPart.id}
             onPadPart={setPadPartId}
-            onUpdate={updatePart}
-            onTone={setTone}
-            onFx={fxActions.set}
-            onSpace={fxActions.space}
-            onDryAll={fxActions.dryAll}
+            onUpdate={(id, patch) => {
+                updatePart(id, patch);
+                // mute, solo or a rename isn't a change to hear
+                if (Object.keys(patch).some(k => !['mute', 'solo', 'name'].includes(k))) hearPart(id);
+            }}
+            onTone={(id, key, value) => {
+                setTone(id, key, value);
+                hearPart(id);
+            }}
+            onFx={(id, key, value) => {
+                fxActions.set(id, key, value);
+                hearPart(id);
+            }}
+            onSpace={space => {
+                fxActions.space(space);
+                hearPart(partsShown === MASTER ? padPart.id : partsShown);
+            }}
+            onDryAll={() => {
+                fxActions.dryAll();
+                hearPart(partsShown === MASTER ? padPart.id : partsShown);
+            }}
             onAdd={kind => {
                 const id = partActions.add(kind);
                 if (id) setPartsSel(id);
@@ -1809,6 +1884,8 @@ const App: React.FC = () => {
                 onNextHint={setNextHint}
                 chordMood={chordMoodOn}
                 onChordMood={setChordMoodOn}
+                soundPreview={soundPreview}
+                onSoundPreview={setSoundPreview}
                 sync={syncOut}
                 onSync={setSyncOut}
                 syncBpm={transportBpm(bpm, ts)}

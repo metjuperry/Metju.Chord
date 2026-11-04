@@ -59,6 +59,7 @@ src/
                          fitProgression (exact / relative / "needs" + closest in-scale), progressionClips, insertProgression
   hooktheory.ts          Paste from Hooktheory: parses clipboard JSON (untrusted, never throws), notes → Melody parts,
                          chords → pad chords (chordTones → matchChord)
+  preview.ts             sound preview: what a part plays on each beat while its sound is being changed in Parts
   sync.ts                Pocket Operator sync out: its device-only settings (own localStorage key), pulse rate and timing
   shades.ts              a part colour's seven shades for the melody grid's note letters, per theme
   useHistory.ts          undo/redo with merge keys (one knob turn or slider drag = one step)
@@ -100,7 +101,7 @@ Tests sit next to their module (`theory.test.ts`, `parts.test.ts`…). Pure logi
 - **Parts**: `Part = ChordPart | BassPart | MelodyPart | DrumPart`, all with `{ id, name, color, volume, mute, solo, fx }`; up to six (`MAX_PARTS`, one per `PART_COLORS`). Instrument parts have `tone = { attack, release, brightness, pan }` (0–1, 0.5 = as designed; `shape*` in parts.ts turn them into real units). A chord part's style is `playMode` (`'Chord' | 'Strum' | 'Arp'`), arp settings, `strumSpread`, `strumDirection`.
 - **Melody notes** are `Note = { start, len, step, acc? }`: a **scale step** (0–14 from the key's root in the part's octave), not a MIDI note, so they follow key and scale changes. `acc: -1 | 1` makes a note a semitone flat or sharp and is left out when natural. Pitch: `noteMidi(part, h, note)`. Display spelling: `spellNote` / `spellNoteOctave` (accidental on the scale note's letter; no double sharps or flats).
 - **Effects**: `fx = { drive, chorus, tremolo, glide, reverb, delay }` (0–1, 0 = off); drums use reverb/delay only. Glide applies to single notes only (`glides`), never block chords. `space = { reverb: { size, ret }, delay: { time, feedback, ret }, out: { level } }`.
-- **Settings** (voiceLeading, octave, inversion, loop, theme `light | dark | auto`, nextHint, padPart, clickAccent, openSection, playMode `loop | chain`, learnTab, chordMood) are saved but not undoable. `readSettings` fills defaults and ignores unknown fields.
+- **Settings** (voiceLeading, octave, inversion, loop, theme `light | dark | auto`, nextHint, padPart, clickAccent, openSection, playMode `loop | chain`, learnTab, chordMood, soundPreview) are saved but not undoable. `readSettings` fills defaults and ignores unknown fields.
 
 ### Saves (keep them loading)
 

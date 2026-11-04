@@ -46,6 +46,7 @@ Three modes, one rule: **Play** is the instrument; **Song** is *what* plays (cho
 ### Parts: how it sounds
 
 - **Parts mode**: every part as a mixer row (dot, name, instrument, **M**, **S**, volume bar), **+ Part**, and a **Master** row. The selected part shows **Instrument**, **Play as / Style**, **Tone** and **Effects**.
+- **Hear what you change**: while the song is stopped, changing a part's sound (instrument, style, tone, effects, volume, or the master's reverb and delay) plays the key's root on that part on every beat, so you hear the change at once: the tonic chord for a chord part (block, strummed or arpeggiated, as set), the root note for bass and melody, kick and snare for drums. It stops two beats after your last change, and stays quiet while the song plays (you hear it in the song). Off in ⚙ → Hear sound changes.
 - **Fourteen level-matched instruments.** Sampled (bundled with the app): Piano, E-Piano, Strings, Organ, Brass, Marimba, Celesta. Synths: Pad, Warm Pad, Drawbar, Lead, Bass, Chiptune, Pluck. Samples load in the background; until they arrive a synth version plays, so the first chord never waits.
 - **Tone per part**: Attack, Release, Brightness, Pan and Glide knobs; 12 o'clock is the instrument as designed.
 - **Effects per part**: Drive, Chorus, Tremolo (in 1/8 notes of the tempo), and sends to a shared **Reverb** and **Delay** set up under Master (with All dry and a Mix overview). Only the effects that are on show as knobs; **+ Effect** adds one, double-tap removes it. Drums get the sends only.
@@ -60,7 +61,7 @@ A reference to read while writing, never a generator. On a phone it opens full s
 
 ### ⚙ Settings
 
-Theme (Light / Dark / Auto), Click, Accent the downbeat, Next chords on the screen, Chord mood in Play mode, **Pocket Operator sync**, How to play, and Credits. The intro: tap the start key and a random chord rings out while the app fades in.
+Theme (Light / Dark / Auto), Click, Accent the downbeat, Next chords on the screen, Chord mood in Play mode, **Hear sound changes** (on by default), **Pocket Operator sync**, How to play, and Credits. The intro: tap the start key and a random chord rings out while the app fades in.
 
 ### 🔌 Pocket Operator sync
 

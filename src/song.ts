@@ -173,6 +173,8 @@ export interface Settings {
     learnTab: LearnTab;
     /** Play mode's chord info adds a one-word mood ("i · 9th · bittersweet"). */
     chordMood: boolean;
+    /** While stopped, changing a part's sound in Parts plays its root on the beat, to hear the change. */
+    soundPreview: boolean;
 }
 
 export type PlaybackMode = 'loop' | 'chain';
@@ -206,7 +208,7 @@ export function newSong(): Song {
 
 export const defaultSettings = (): Settings => ({
     voiceLeading: false, octave: 4, inversion: 0, loop: true, theme: 'dark', nextHint: true, padPart: '', clickAccent: true,
-    openSection: '', playMode: 'loop', learnTab: 'progressions', chordMood: false,
+    openSection: '', playMode: 'loop', learnTab: 'progressions', chordMood: false, soundPreview: true,
 });
 
 /** A part without its content: what a FullSong keeps song-wide. */
@@ -433,6 +435,7 @@ export function readSettings(v: unknown): Settings {
         playMode: oneOf<PlaybackMode>(v.playMode, ['loop', 'chain'], d.playMode),
         learnTab: oneOf<LearnTab>(v.learnTab, ['progressions', 'chords', 'melody'], d.learnTab),
         chordMood: bool(v.chordMood, d.chordMood),
+        soundPreview: bool(v.soundPreview, d.soundPreview),
     };
 }
 
