@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const { appVersion } = require('./scripts/version.cjs');
 
 /** Emits everything under public/ except index.html (samples, icons, manifest) as build assets. */
 class PublicFilesPlugin {
@@ -91,5 +92,7 @@ module.exports = {
         }),
         new PublicFilesPlugin(),
         new ServiceWorkerPlugin(),
+        // the version on the start screen: 1.<highest merged PR>.0 (scripts/version.cjs)
+        new (require('webpack').DefinePlugin)({ __APP_VERSION__: JSON.stringify(appVersion()) }),
     ],
 };

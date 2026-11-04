@@ -99,7 +99,7 @@ npm run build      # production bundle in dist/ (also type-checks)
 npm run levels     # renders every instrument offline in headless Chromium and checks loudness
 ```
 
-Every push to `master` runs the tests, builds and publishes to GitHub Pages at chords.metju.cz (`.github/workflows/deploy.yml`). Pull requests run the tests and the build (`.github/workflows/ci.yml`).
+The start screen shows the version in its corner: `1.<highest merged pull request>.0`, so 1.37.0 has everything up to #37. Every push to `master` runs the tests, builds and publishes to GitHub Pages at chords.metju.cz (`.github/workflows/deploy.yml`). Pull requests run the tests and the build (`.github/workflows/ci.yml`).
 
 ## Contributing
 

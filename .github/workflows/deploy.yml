@@ -21,6 +21,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # full history: the version is 1.<highest merged PR>.0, read from the merge commits
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -33,6 +36,9 @@ jobs:
 
       - name: Test
         run: npm test
+
+      - name: Version
+        run: echo "Building version $(node scripts/version.cjs)"
 
       - name: Build
         run: npm run build
