@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import './PartsView.css';
 import './FxMatrix.css';
 import Knob from './Knob';
+import { MenuAnchor, PopMenu } from './PopMenu';
 import FxMatrix, { FX_HINTS, FX_LABELS, SpaceControls, fxText } from './FxMatrix';
 import { ArpPattern, StrumDirection } from '../theory';
 import { STRUM_PATTERNS, STRUM_SPREAD_LABELS, StrumPattern } from '../strum';
@@ -296,37 +297,33 @@ const FX_START: { [k in keyof PartFx]: number } = { drive: 0.3, chorus: 0.35, tr
 /** Effects shown under EFFECTS (glide sits with the tone: it's how notes connect). */
 const EFFECT_KEYS = FX_KEYS.filter(k => k !== 'glide');
 
-/** "+ Effect": the effects that are off, to turn one on. */
+/**
+ * "+ Effect": the effects that are off, to turn one on. A PopMenu, so it stays in the window: on a
+ * landscape phone the button sits low on the screen and the list opens above it.
+ */
 const AddEffectMenu: React.FC<{ off: (keyof PartFx)[]; onAdd: (k: keyof PartFx) => void }> = ({ off, onAdd }) => {
-    const [open, setOpen] = useState(false);
-    const root = useRef<HTMLDivElement>(null);
-    useEffect(() => {
-        if (!open) return;
-        const close = (e: PointerEvent | KeyboardEvent) => {
-            if (e instanceof KeyboardEvent ? e.key === 'Escape' : !root.current?.contains(e.target as Node)) setOpen(false);
-        };
-        document.addEventListener('pointerdown', close);
-        document.addEventListener('keydown', close);
-        return () => {
-            document.removeEventListener('pointerdown', close);
-            document.removeEventListener('keydown', close);
-        };
-    }, [open]);
+    const [anchor, setAnchor] = useState<MenuAnchor | null>(null);
     if (off.length === 0) return null;
     return (
-        <div className="add-effect" ref={root}>
-            <button className="knob-tile add-tile" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(o => !o)}>
+        <div className="add-effect">
+            <button
+                className="knob-tile add-tile"
+                aria-haspopup="menu"
+                aria-expanded={!!anchor}
+                // while open, a press here only closes it (the menu's outside-press would close it and the click reopen it)
+                onPointerDown={e => anchor && e.stopPropagation()}
+                onClick={e => setAnchor(anchor ? null : { rect: e.currentTarget.getBoundingClientRect() })}
+            >
                 <span className="add-plus" aria-hidden="true">+</span>
                 <span className="knob-label">Effect</span>
             </button>
-            {open && (
-                <div className="song-popover add-effect-popover panel" role="menu" aria-label="Add an effect">
-                    {off.map(k => (
-                        <button key={k} role="menuitem" onClick={() => { setOpen(false); onAdd(k); }}>
-                            {FX_LABELS[k]} <span className="add-part-hint">{FX_HINTS[k]}</span>
-                        </button>
-                    ))}
-                </div>
+            {anchor && (
+                <PopMenu
+                    anchor={anchor}
+                    label="Add an effect"
+                    onClose={() => setAnchor(null)}
+                    items={off.map(k => ({ label: FX_LABELS[k], note: FX_HINTS[k], onSelect: () => onAdd(k) }))}
+                />
             )}
         </div>
     );

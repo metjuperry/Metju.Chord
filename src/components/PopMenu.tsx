@@ -6,6 +6,8 @@ export type MenuAnchor = { rect: DOMRect } | { x: number; y: number };
 export interface MenuItem {
     label: string;
     hint?: string;
+    /** A short description after the label, in plain text (not a key). */
+    note?: string;
     disabled?: boolean;
     danger?: boolean;
     /** Leave the menu open after picking it (e.g. "Rename…" swaps in a text box). */
@@ -27,15 +29,17 @@ export const PopMenu: React.FC<{ anchor: MenuAnchor; label: string; items: MenuI
         const el = box.current;
         if (!el) return;
         const w = el.offsetWidth;
-        const h = el.offsetHeight;
+        // never taller than the window (it scrolls inside itself then)
+        const h = Math.min(el.offsetHeight, window.innerHeight - 16);
         const vw = window.innerWidth;
         const vh = window.innerHeight;
         let left: number;
         let top: number;
         if ('rect' in anchor) {
+            // under the element if it fits, else over it, else as low as it fits (a short landscape phone)
             left = anchor.rect.left;
             top = anchor.rect.bottom + 4;
-            if (top + h > vh - 8) top = Math.max(8, anchor.rect.top - h - 4);
+            if (top + h > vh - 8) top = anchor.rect.top - h - 4 >= 8 ? anchor.rect.top - h - 4 : Math.max(8, vh - h - 8);
         } else {
             left = anchor.x;
             top = anchor.y;
@@ -82,7 +86,7 @@ export const PopMenu: React.FC<{ anchor: MenuAnchor; label: string; items: MenuI
             className="song-popover pop-menu panel"
             role="menu"
             aria-label={label}
-            style={{ position: 'fixed', left: pos?.left ?? -9999, top: pos?.top ?? -9999, right: 'auto' }}
+            style={{ position: 'fixed', left: pos?.left ?? -9999, top: pos?.top ?? -9999, right: 'auto', maxHeight: 'calc(100vh - 16px)', maxWidth: 'calc(100vw - 16px)', overflowY: 'auto' }}
         >
             {children}
             {items.map(it => (
@@ -97,6 +101,7 @@ export const PopMenu: React.FC<{ anchor: MenuAnchor; label: string; items: MenuI
                     }}
                 >
                     {it.label}
+                    {it.note && <span className="add-part-hint">{it.note}</span>}
                     {it.hint && <span className="kbd">{it.hint}</span>}
                 </button>
             ))}
