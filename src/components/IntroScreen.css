@@ -11,6 +11,16 @@
         var(--bg);
 }
 
+.intro-version {
+    position: absolute;
+    right: max(16px, env(safe-area-inset-right));
+    bottom: max(12px, env(safe-area-inset-bottom));
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--faint);
+    font-variant-numeric: tabular-nums;
+}
+
 .intro-card {
     display: flex;
     flex-direction: column;

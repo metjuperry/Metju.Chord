@@ -22,6 +22,7 @@ Node **22.12+** (Vitest 5 requires it; CI uses Node 22).
 | `npm test` | Vitest, all `src/**/*.test.ts` (pure logic only; no DOM tests) |
 | `npm run build` | production bundle in `dist/`; `ts-loader` type-checks, so a type error fails the build |
 | `npm run levels` | bundles `scripts/levels-page.ts`, renders every instrument offline in headless Chromium, prints peak/RMS per instrument and checks the targets below. Set `CHROMIUM_PATH` if Chromium isn't at `/opt/pw-browsers/chromium` |
+| `node scripts/version.cjs` | prints the version the build will show |
 | `node scripts/icons.cjs` | re-renders `public/icons/` from the favicon design (needs Chromium) |
 | `python3 scripts/samples/prepare.py …` | rebuilds `public/samples/` and `src/audio/samples.json` from the original sample libraries (see its docstring) |
 
@@ -31,6 +32,7 @@ CI: `.github/workflows/ci.yml` runs tests and build on every pull request; `.git
 
 - One topic per branch, one PR per topic, **based on `master`**. Don't stack PRs on each other's branches: when the bottom one merges, GitHub merges the upper ones into the old branch, not into `master` (this happened with #20–#23 and needed a catch-up PR, #24). If work depends on an unmerged PR, say so in the description and rebase once it's in.
 - Keep the README out of feature PRs that are likely to be open at the same time, or keep README edits to the lines of your feature, so parallel PRs don't conflict.
+- **Versions** are automatic: `1.<highest merged PR number>.0`, read from git history by `scripts/version.cjs` at build time and shown on the start screen (1.37.0 = everything up to #37). PRs don't bump anything; don't edit a version by hand. The deploy checks out the full history for it; `APP_VERSION=… npm run build` overrides it.
 - Commit messages: a short summary line ("Melody grid: note letters in shades of the part colour"), then what and why.
 - PR descriptions: what changed for the user, how it was checked (tests, which screen sizes, which browser checks), and anything not verifiable in a sandbox (real-phone feel, sound on real speakers).
 - Cloud sandbox notes: `gh api` (REST) works and GraphQL doesn't, so use `gh api repos/metjuperry/Metju.Chord/pulls …` instead of `gh pr …`. A shallow clone may not track new branches: add `+refs/heads/claude/*:refs/remotes/origin/claude/*` to `remote.origin.fetch`.

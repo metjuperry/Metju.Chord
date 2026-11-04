@@ -30,6 +30,8 @@ const IntroScreen: React.FC<IntroScreenProps> = ({ phase, chord, onStart }) => (
             </button>
             <span className="intro-note">Your browser needs a tap before it can play sound.</span>
         </div>
+        {/* 1.<highest merged PR>.0: which pull requests are in this build */}
+        <span className="intro-version">v{__APP_VERSION__}</span>
     </div>
 );
 
