@@ -239,14 +239,28 @@ describe('glide', () => {
 });
 
 describe('strummed chord parts', () => {
-    it('play each chord once, strummed, alternating along the row', () => {
-        const part = { ...(newPart('chords', []) as ChordPart), playMode: 'Strum' as const, strumSpread: 0.04, strumDirection: 'alternate' as const };
-        const notes = chordPartNotes(part, song);
+    const strum = (patch: Partial<ChordPart>): ChordPart => ({ ...(newPart('chords', []) as ChordPart), playMode: 'Strum', strumSpread: 0.04, ...patch });
+
+    it("'once' plays each chord one stroke, alternating along the row, on the wider voicing", () => {
+        const notes = chordPartNotes(strum({ strumPattern: 'once', strumDirection: 'alternate' }), song);
         expect(notes.map(n => n.start)).toEqual([0, 4 * S, 8 * S, 12 * S]);
-        const first = notes[0], second = notes[1];
+        const [first, second] = notes;
+        expect(first.midi.length).toBe(5); // a triad plus its root and third an octave up
         expect(first.strum![first.midi.indexOf(Math.min(...first.midi))]).toBe(0);
-        expect(second.strum![second.midi.indexOf(Math.max(...second.midi))]).toBe(0);
         expect(Math.max(...first.strum!)).toBeCloseTo(0.04);
+        // the second chord is an up stroke: its top three notes, high to low, quicker and lighter
+        expect(second.midi.length).toBe(3);
+        expect(second.strum![second.midi.indexOf(Math.max(...second.midi))]).toBe(0);
+        expect(second.velocity).toBeLessThan(first.velocity!);
+    });
+
+    it('plays a pattern through each chord, each stroke lasting until the next', () => {
+        const notes = chordPartNotes(strum({ strumPattern: 'pop' }), song); // D-DU-UDU, one chord per bar
+        const bar = notes.filter(n => n.start < 4 * S);
+        expect(bar.map(n => n.start / (S / 2))).toEqual([0, 2, 3, 5, 6, 7]);
+        expect(bar.map(n => (n.midi.length === 5 ? 'D' : 'U')).join('')).toBe('DDUUDU');
+        bar.forEach((n, i) => expect(n.start + n.len).toBe(i + 1 < bar.length ? bar[i + 1].start : 4 * S));
+        expect(bar[0].velocity).toBeGreaterThan(bar[1].velocity!); // the bar's first stroke is accented
     });
 });
 

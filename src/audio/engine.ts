@@ -356,13 +356,13 @@ export class Engine {
     // ---- playing -----------------------------------------------------------
 
     /** Play a chord for `duration` (seconds or Tone time) at an audio-clock `time`, on `track` (default: the selected one). */
-    playChord(midi: number[], opts: { duration: Tone.Unit.Time; time?: number; track?: string; strum?: number[] }) {
+    playChord(midi: number[], opts: { duration: Tone.Unit.Time; time?: number; track?: string; strum?: number[]; velocity?: number }) {
         const strip = this.strip(opts.track);
         const time = opts.time ?? Tone.now();
         const seconds = Tone.Time(opts.duration).toSeconds();
         if (opts.strum) {
-            // each note starts a little later; all of them stop together
-            const velocity = velocityFor(midi.length);
+            // each note starts a little later; all of them stop together (the next stroke damps them)
+            const velocity = velocityFor(midi.length) * (opts.velocity ?? 1);
             midi.forEach((m, i) => strip.voice.attack([m], time + Math.min(opts.strum![i] ?? 0, 0.8 * seconds), velocity));
         } else {
             this.start(strip, midi, time, velocityFor(midi.length), 0.8 * seconds);
@@ -374,12 +374,12 @@ export class Engine {
      * Start a chord on `track` (default: the selected one); returns how to release it, on that same
      * synth even if the selection changes.
      */
-    attack(midi: number[], time?: number, track?: string, strum?: number[]): () => void {
+    attack(midi: number[], time?: number, track?: string, strum?: number[], strength = 1): () => void {
         const strip = this.strip(track);
         const voice = strip.voice;
         const at = time ?? Tone.now();
         if (strum) {
-            const velocity = velocityFor(midi.length);
+            const velocity = velocityFor(midi.length) * strength;
             midi.forEach((m, i) => voice.attack([m], at + (strum[i] ?? 0), velocity));
         } else {
             this.start(strip, midi, at, velocityFor(midi.length));

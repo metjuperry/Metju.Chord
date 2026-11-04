@@ -4,6 +4,7 @@ import './FxMatrix.css';
 import Knob from './Knob';
 import FxMatrix, { FX_HINTS, FX_LABELS, SpaceControls, fxText } from './FxMatrix';
 import { ArpPattern, StrumDirection } from '../theory';
+import { STRUM_PATTERNS, STRUM_SPREAD_LABELS, StrumPattern } from '../strum';
 import { ArpRate } from '../audio/engine';
 import { INSTRUMENTS, InstrumentId } from '../audio/instruments';
 import {
@@ -61,6 +62,7 @@ export interface ChordStyle {
     noteLength: number;
     strumSpread: number;
     strumDirection: StrumDirection;
+    strumPattern: StrumPattern;
 }
 
 const STRUM_LABELS: { [d in StrumDirection]: string } = { down: 'Down ↓', up: 'Up ↑', alternate: 'Alt ↕' };
@@ -70,6 +72,15 @@ const STRUM_HINTS: { [d in StrumDirection]: string } = {
     alternate: 'down, then up, then down… every chord hit',
 };
 const ms = (s: number) => `${Math.round(s * 1000)} ms`;
+
+/** A strum pattern's strokes as a row of 8 cells: ↓ down, ↑ up, a dot for a rest; beats are marked. */
+const StrumPreview: React.FC<{ strokes: string }> = ({ strokes }) => (
+    <span className="strum-preview" aria-hidden="true">
+        {strokes.split('').map((c, i) => (
+            <span key={i} className={`sp-cell ${i % 2 === 0 ? 'beat' : ''} ${c === '-' ? 'rest' : ''}`}>{c === 'D' ? '↓' : c === 'U' ? '↑' : '·'}</span>
+        ))}
+    </span>
+);
 
 const KIND_TAG: { [k in PartKind]: string } = { chords: 'Chords', bass: 'Bass', melody: 'Melody', drums: 'Drums' };
 const KIND_HINT: { [k in PartKind]: string } = {
@@ -531,16 +542,28 @@ const ChordStyleRow: React.FC<{ style: ChordStyle; onChange: (patch: Partial<Cho
                 {style.playMode === 'Chord' && <span className="section-note">chords ring for as long as they're held</span>}
                 {style.playMode === 'Strum' && (
                     <>
-                        <div className="segmented small-seg" role="group" aria-label="Strum spread">
-                            {STRUM_SPREADS.map(sp => (
-                                <button key={sp} aria-pressed={Math.abs(style.strumSpread - sp) < 0.001} onClick={() => onChange({ strumSpread: sp })}>{ms(sp)}</button>
+                        <div className="bass-row strum-row" role="radiogroup" aria-label="Strum pattern">
+                            {STRUM_PATTERNS.map(p => (
+                                <button key={p.id} role="radio" aria-checked={style.strumPattern === p.id} className="bass-tile strum-tile" title={p.hint} onClick={() => onChange({ strumPattern: p.id })}>
+                                    <StrumPreview strokes={p.strokes} />
+                                    <span>{p.label}</span>
+                                </button>
                             ))}
                         </div>
-                        <div className="segmented small-seg" role="group" aria-label="Strum direction">
+                        <div className="segmented small-seg" role="group" aria-label="Strum speed">
+                            {STRUM_SPREADS.map((sp, i) => (
+                                <button key={sp} aria-pressed={Math.abs(style.strumSpread - sp) < 0.001} title={`${ms(sp)} from the low note to the high one`} onClick={() => onChange({ strumSpread: sp })}>{STRUM_SPREAD_LABELS[i]}</button>
+                            ))}
+                        </div>
+                        <div className="segmented small-seg" role="group" aria-label={style.strumPattern === 'once' ? 'Strum direction' : 'Strum direction on the pads'}>
                             {STRUM_DIRECTIONS.map(d => (
                                 <button key={d} aria-pressed={style.strumDirection === d} title={STRUM_HINTS[d]} onClick={() => onChange({ strumDirection: d })}>{STRUM_LABELS[d]}</button>
                             ))}
                         </div>
+                        <span className="section-note pd-hint">
+                            {STRUM_PATTERNS.find(p => p.id === style.strumPattern)?.label}: {STRUM_PATTERNS.find(p => p.id === style.strumPattern)?.hint}.
+                            {style.strumPattern === 'once' ? ' The direction sets which way it rolls.' : ' Up strokes are lighter and catch the top notes; the pads play one stroke, in the direction set here.'}
+                        </span>
                     </>
                 )}
                 {style.playMode === 'Arp' && (

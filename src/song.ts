@@ -4,6 +4,7 @@ import { INSTRUMENTS, InstrumentId } from './audio/instruments';
 import { Clip, PPQ, STEPS_PER_ROW } from './progression';
 import { DRUM_VOICES, DrumPattern, PATTERN_BARS, PatternBars, TICKS_PER_SIXTEENTH, emptyPattern, fitPattern, isEmptyPattern, sixteenthsPerBar } from './drums';
 import type { LearnTab } from './learn';
+import { STRUM_PATTERN_IDS, StrumPattern, nearestSpread } from './strum';
 import { BASS_STYLES, BassStyle, FX_KEYS, MAX_PARTS, MELODY_STEPS, Note, PART_COLORS, Part, PartFx, PartKind, PartTone, PlayMode, STRUM_DIRECTIONS, TONE_KEYS, fxAvailable, neutralTone, newPart } from './parts';
 
 // ---- the song: everything undo/redo, saving and sharing cover ---------------------------
@@ -372,8 +373,10 @@ function readPart(v: unknown, index: number, existing: Part[], maxTick: number, 
                 arpPattern: oneOf(v.arpPattern, ARP_PATTERNS, 'up'),
                 arpRate: oneOf(v.arpRate, ARP_RATES, '8n'),
                 noteLength: num(v.noteLength, 0.05, 2, 0.3),
-                strumSpread: num(v.strumSpread, 0.005, 0.1, 0.025),
+                // older saves had 12–60 ms spreads: they snap to the nearest speed offered now
+                strumSpread: nearestSpread(num(v.strumSpread, 0.005, 0.1, 0.035)),
                 strumDirection: oneOf(v.strumDirection, STRUM_DIRECTIONS, 'down'),
+                strumPattern: oneOf<StrumPattern>(v.strumPattern, STRUM_PATTERN_IDS, 'pop'),
             };
         case 'bass':
             return {

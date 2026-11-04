@@ -5,7 +5,7 @@ import { FullSong, Section, Song, TimeSignature, ticksPerBar, ticksPerStep } fro
 
 /** What the sequencer schedules: some notes or a drum hit, and the part that plays them. */
 export type Scheduled =
-    | { midi: number[]; gate?: number; strum?: number[]; legato: number; part: string; drum?: undefined }
+    | { midi: number[]; gate?: number; strum?: number[]; velocity?: number; legato: number; part: string; drum?: undefined }
     | { drum: DrumVoice; part: string };
 
 /** An event at `tick` lasting `duration` ticks (the shape `SequencerPlayer` takes). */
@@ -42,12 +42,12 @@ export function sectionEvents(view: Song, mutes: Section['mutes'], length: numbe
         ? expandPattern(p.drums, view.timeSignature, length)
             .filter(hit => outsideRests(restSpans(view.chords, p), hit.tick))
             .map(hit => ({ tick: hit.tick + offset, duration: TICKS_PER_SIXTEENTH, data: { drum: hit.voice, part: p.id } }))
-        : partNotes(p, h, { beatTicks, kicks })
+        : partNotes(p, h, { beatTicks, barTicks: ticksPerBar(view.timeSignature), kicks })
             .filter(n => n.start < length)
             .map(n => ({
                 tick: n.start + offset,
                 duration: cut ? Math.min(n.len, length - n.start) : n.len,
-                data: { midi: n.midi, gate: n.gate, strum: n.strum, legato: LEGATO[p.kind], part: p.id },
+                data: { midi: n.midi, gate: n.gate, strum: n.strum, velocity: n.velocity, legato: LEGATO[p.kind], part: p.id },
             }))));
 }
 
