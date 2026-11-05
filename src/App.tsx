@@ -34,6 +34,7 @@ import {
     duplicateEntry, duplicateSection, findSection, isCleanSlate, moveEntry, removeEntry, renameSection, sectionView, setSectionMute, slotAt,
 } from './sections';
 import { PREVIEW_TAIL_BEATS, previewSound } from './preview';
+import type { ShapeOverrides } from './sound';
 import { Scheduled, chainEvents, kickTicks, sectionEvents, sectionLoopLength, sectionMusicEnd } from './playback';
 import SongView from './components/SongView';
 import SectionSwitcher from './components/SectionSwitcher';
@@ -78,7 +79,7 @@ const MAX_INVERSION = 3;
 /** Keep the engine's strips in step with the parts: an instrument per instrument part, a kit per drum part. */
 function syncParts(engine: ReturnType<typeof getEngine>, parts: Part[]) {
     parts.forEach(p => (hasInstrument(p)
-        ? engine.setTrack(p.id, { instrument: p.instrument, volume: p.volume, fx: p.fx, tone: p.tone })
+        ? engine.setTrack(p.id, { instrument: p.instrument, volume: p.volume, fx: p.fx, tone: p.tone, shape: p.shape })
         : engine.setDrumTrack(p.id, { volume: p.volume, fx: p.fx })));
 }
 
@@ -305,6 +306,12 @@ const App: React.FC = () => {
     // turning one tone knob is one undo step
     const setTone = (id: string, key: keyof PartTone, value: number) =>
         setParts(ps => ps.map(p => (p.id === id && hasInstrument(p) ? { ...p, tone: { ...p.tone, [key]: value } } : p)), `tone:${id}:${key}`);
+    // turning one shape knob is one undo step; Reset puts the part back to its instrument's own sound
+    const shapeActions = {
+        set: (id: string, patch: ShapeOverrides, key: string) =>
+            setParts(ps => ps.map(p => (p.id === id && hasInstrument(p) ? { ...p, shape: { ...p.shape, ...patch } } : p)), `shape:${id}:${key}`),
+        reset: (id: string) => setParts(ps => ps.map(p => (p.id === id && hasInstrument(p) ? { ...p, shape: {} } : p))),
+    };
     const clips = chords;
     const [selected, setSelected] = useState(0);
     const [playhead, setPlayhead] = useState(0);
@@ -1749,6 +1756,14 @@ const App: React.FC = () => {
             }}
             onFx={(id, key, value) => {
                 fxActions.set(id, key, value);
+                hearPart(id);
+            }}
+            onShape={(id, key, value) => {
+                shapeActions.set(id, { [key]: value }, key);
+                hearPart(id);
+            }}
+            onShapeReset={id => {
+                shapeActions.reset(id);
                 hearPart(id);
             }}
             onSpace={space => {

@@ -3,7 +3,8 @@ import { ArpPattern, arpOrder } from '../theory';
 import { Instrument, InstrumentId, createInstrument } from './instruments';
 import { DrumKit } from './drumkit';
 import type { DrumVoice } from '../drums';
-import { PartFx, PartTone, glideSeconds, glides, neutralTone, noFx, shapeBrightness, shapePan } from '../parts';
+import { PartFx, PartTone, glideSeconds, glides, neutralTone, noFx, shapePan } from '../parts';
+import { PartShape, ShapeOverrides, driveCurve, driveMakeupDb, effectiveShape, filterEnvelope, lfoRange, resonanceQ } from '../sound';
 import type { Space } from '../song';
 import { PULSE_SECONDS, SyncOut, defaultSync, pulseTime } from '../sync';
 
@@ -19,16 +20,17 @@ export interface ArpOptions {
 const velocityFor = (voices: number) => 1 / Math.sqrt(Math.max(1, voices));
 
 /**
- * A part's channel: instrument -> drive -> makeup -> chorus -> level -> master, with the level also
- * feeding two sends into the shared reverb and delay. Drum parts skip drive and chorus.
+ * A part's channel: instrument -> filter -> drive -> makeup -> chorus -> tremolo -> pan -> level -> master,
+ * with the level also feeding two sends into the shared reverb and delay. Drum parts skip everything
+ * between the input and the pan.
  */
 interface Channel {
     input: Tone.Gain;
-    /** Brightness: a low-pass that closes to darken, and a high shelf that lifts to brighten. */
-    tone?: Tone.Filter;
-    shelf?: Tone.Filter;
+    /** The part's filter (sound.ts): its frequency follows the LFO, its detune the filter envelope. */
+    filter?: Tone.Filter;
+    lfo?: Tone.LFO;
     pan: Tone.Panner;
-    drive?: Tone.Distortion;
+    drive?: Tone.WaveShaper;
     makeup?: Tone.Gain;
     chorus?: Tone.Chorus;
     tremolo?: Tone.Tremolo;
@@ -42,6 +44,9 @@ interface Strip extends Channel {
     instrument: InstrumentId;
     voice: Instrument;
     shaped: PartTone;
+    /** The part's shape as last applied (its instrument's, with the part's changes on top). */
+    shape: PartShape;
+    over: ShapeOverrides;
     fx: PartFx;
     /** The last note this part was told to play, for glide: what it was and when it started. */
     last?: { midi: number; time: number };
@@ -52,12 +57,7 @@ const GLIDE_WINDOW = 2;
 /** Tremolo speed: 1/8 notes of the tempo. */
 const TREMOLO_RATE = '8n';
 
-/**
- * Drive gets louder as it squashes; this pulls it back so turning drive up adds grit, not volume.
- * Fitted to the average loudness rise measured on E-Piano, Bass, Lead and Strings (about +3.5 dB at
- * 25% up to +6.5 dB at 100%), in dB at drive amount `a`.
- */
-export const driveMakeupDb = (a: number) => (a <= 0 ? 0 : -(1.5 + 5.2 * Math.pow(a, 0.6)));
+
 
 /** Master gain at full output level. */
 const MASTER_GAIN = 0.8;
@@ -189,37 +189,71 @@ export class Engine {
             input.connect(pan);
             return { input, pan, level, sendReverb, sendDelay, nodes: [input, pan, level, sendReverb, sendDelay] };
         }
-        const tone = new Tone.Filter({ type: 'lowpass', frequency: 20000, rolloff: -12, Q: 0.5 });
-        const shelf = new Tone.Filter({ type: 'highshelf', frequency: 2500, gain: 0 });
-        const drive = new Tone.Distortion({ distortion: 0, wet: 0, oversample: '2x' });
+        const filter = new Tone.Filter({ type: 'lowpass', frequency: 20000, rolloff: -24, Q: 0.5 });
+        // the LFO drives the cutoff; at depth 0 its range is just the cutoff
+        const lfo = new Tone.LFO({ frequency: 2, min: 20000, max: 20000 }).start();
+        lfo.connect(filter.frequency);
+        const drive = new Tone.WaveShaper(x => x, 4096);
         const makeup = new Tone.Gain(1);
         const chorus = new Tone.Chorus({ frequency: 1.5, delayTime: 3.5, depth: 0.7, spread: 180, wet: 0 }).start();
         // a mono wobble (no stereo spread) that does nothing at depth 0
         const tremolo = new Tone.Tremolo({ frequency: Tone.Time(TREMOLO_RATE).toFrequency(), depth: 0, spread: 0 }).start();
-        input.chain(tone, shelf, drive, makeup, chorus, tremolo, pan);
+        input.chain(filter, drive, makeup, chorus, tremolo, pan);
         return {
-            input, tone, shelf, drive, makeup, chorus, tremolo, pan, level, sendReverb, sendDelay,
-            nodes: [input, tone, shelf, drive, makeup, chorus, tremolo, pan, level, sendReverb, sendDelay],
+            input, filter, lfo, drive, makeup, chorus, tremolo, pan, level, sendReverb, sendDelay,
+            nodes: [input, filter, lfo, drive, makeup, chorus, tremolo, pan, level, sendReverb, sendDelay],
         };
     }
 
-    /** Set a strip's tone: the instrument's envelope, the brightness filters and the pan. */
+    /** Set a strip's pan. */
     private applyTone(strip: Strip, t: PartTone) {
-        const { cutoff, shelfDb } = shapeBrightness(t.brightness);
-        strip.tone?.frequency.rampTo(cutoff, 0.05);
-        strip.shelf?.gain.rampTo(shelfDb, 0.05);
         strip.pan.pan.rampTo(shapePan(t.pan), 0.05);
-        strip.voice.shape(t.attack, t.release);
         strip.shaped = { ...t };
+    }
+
+    /** Set a strip's shape (sound.ts): the voice's envelope, the filter and its LFO, and the drive. */
+    private applyShape(strip: Strip, over: ShapeOverrides) {
+        const prev = strip.shape;
+        const s = effectiveShape(strip.instrument, over);
+        // envelope: only what the part changes; the voice keeps its own preset for the rest
+        const { attack, decay, sustain, release } = over;
+        strip.voice.shape(Object.fromEntries(Object.entries({ attack, decay, sustain, release }).filter(([, v]) => v !== undefined)));
+        if (strip.filter && strip.lfo) {
+            strip.filter.type = s.filterType;
+            strip.filter.Q.rampTo(resonanceQ(s.filterType, s.resonance), 0.03);
+            const { min, max } = lfoRange(s);
+            strip.lfo.min = min;
+            strip.lfo.max = max;
+            strip.lfo.frequency.rampTo(Tone.Time(s.lfoRate).toFrequency(), 0.03);
+            if (s.envAmount === 0) strip.filter.detune.rampTo(0, 0.03);
+        }
+        if (strip.drive && strip.makeup && (!prev || prev.drive !== s.drive || prev.driveType !== s.driveType)) {
+            strip.drive.curve = driveCurve(s.driveType, s.drive);
+            strip.drive.oversample = s.drive > 0 && s.driveType !== 'bitcrush' ? '4x' : 'none';
+            strip.makeup.gain.rampTo(Tone.dbToGain(driveMakeupDb(s.driveType, s.drive)), 0.03);
+        }
+        strip.shape = s;
+        strip.over = { ...over };
+    }
+
+    /**
+     * Each note (or strum stroke) opens or closes the filter by the part's Env Amount: up to the full
+     * amount over the attack, then down to amount × sustain over the decay (sound.ts filterEnvelope).
+     */
+    private filterEnv(strip: Strip, time: number) {
+        const s = strip.shape;
+        if (!strip.filter || s.envAmount === 0) return;
+        const { peakCents, sustainCents } = filterEnvelope(s);
+        const d = strip.filter.detune;
+        const peakAt = time + Math.max(0.003, s.attack);
+        d.cancelScheduledValues(time);
+        d.setValueAtTime(0, time);
+        d.linearRampToValueAtTime(peakCents, peakAt);
+        d.setTargetAtTime(sustainCents, peakAt, Math.max(0.005, s.decay) / 3);
     }
 
     /** Set a channel's effects, smoothly. */
     private applyFx(ch: Channel, fx: PartFx) {
-        if (ch.drive && ch.makeup) {
-            ch.drive.distortion = 0.1 + 0.8 * fx.drive;
-            ch.drive.wet.rampTo(fx.drive > 0 ? 1 : 0, 0.03);
-            ch.makeup.gain.rampTo(Tone.dbToGain(driveMakeupDb(fx.drive)), 0.03);
-        }
         ch.chorus?.wet.rampTo(fx.chorus, 0.05);
         ch.tremolo?.depth.rampTo(fx.tremolo, 0.05);
         ch.sendReverb.gain.rampTo(fx.reverb, 0.05);
@@ -246,11 +280,14 @@ export class Engine {
     // ---- instruments -------------------------------------------------------
 
     /** Create or update a part's strip. Changing its instrument swaps the synth with a short fade. */
-    setTrack(id: string, opts: { instrument: InstrumentId; volume: number; fx?: PartFx; tone?: PartTone }) {
+    setTrack(id: string, opts: { instrument: InstrumentId; volume: number; fx?: PartFx; tone?: PartTone; shape?: ShapeOverrides }) {
         let strip = this.strips.get(id);
         if (!strip) {
             const voice = createInstrument(opts.instrument);
-            strip = { ...this.makeChannel(opts.volume, true), instrument: opts.instrument, voice, shaped: neutralTone(), fx: NO_FX };
+            strip = {
+                ...this.makeChannel(opts.volume, true), instrument: opts.instrument, voice,
+                shaped: neutralTone(), shape: undefined as unknown as PartShape, over: {}, fx: NO_FX,
+            };
             voice.output.connect(strip.input);
             this.strips.set(id, strip);
         } else {
@@ -266,6 +303,8 @@ export class Engine {
         strip.fx = { ...(opts.fx ?? NO_FX) };
         this.applyFx(strip, strip.fx);
         this.applyTone(strip, opts.tone ?? strip.shaped);
+        // a new voice starts with its own envelope, so the part's changes always go on again
+        this.applyShape(strip, opts.shape ?? strip.over);
     }
 
     /** Fade a voice out over 50 ms (still through its channel) and dispose it, so swapping instruments mid-note doesn't click. */
@@ -293,7 +332,7 @@ export class Engine {
         } else {
             ch.level.volume.rampTo(opts.volume, 0.05);
         }
-        this.applyFx(ch, { ...(opts.fx ?? NO_FX), drive: 0, chorus: 0, tremolo: 0, glide: 0 });
+        this.applyFx(ch, { ...(opts.fx ?? NO_FX), chorus: 0, tremolo: 0, glide: 0 });
     }
 
     /** Play one drum hit on a drum part at an audio-clock `time`. */
@@ -349,6 +388,7 @@ export class Engine {
         const glide = glides(strip.fx, midi.length) && last && last.midi !== midi[0] && time - last.time < GLIDE_WINDOW && time >= last.time
             ? { from: last.midi, time: Math.min(glideSeconds(strip.fx.glide), maxGlide) }
             : undefined;
+        this.filterEnv(strip, time);
         strip.voice.attack(midi, time, velocity, glide);
         if (midi.length === 1) strip.last = { midi: midi[0], time };
     }
@@ -363,6 +403,7 @@ export class Engine {
         if (opts.strum) {
             // each note starts a little later; all of them stop together (the next stroke damps them)
             const velocity = velocityFor(midi.length) * (opts.velocity ?? 1);
+            this.filterEnv(strip, time);
             midi.forEach((m, i) => strip.voice.attack([m], time + Math.min(opts.strum![i] ?? 0, 0.8 * seconds), velocity));
         } else {
             this.start(strip, midi, time, velocityFor(midi.length), 0.8 * seconds);
@@ -380,6 +421,7 @@ export class Engine {
         const at = time ?? Tone.now();
         if (strum) {
             const velocity = velocityFor(midi.length) * strength;
+            this.filterEnv(strip, at);
             midi.forEach((m, i) => voice.attack([m], at + (strum[i] ?? 0), velocity));
         } else {
             this.start(strip, midi, at, velocityFor(midi.length));
@@ -436,6 +478,8 @@ export class Engine {
         // tremolo wobbles in 1/8 notes of the tempo
         const rate = Tone.Time(TREMOLO_RATE).toFrequency();
         this.strips.forEach(s => s.tremolo?.frequency.rampTo(rate, 0.05));
+        // so is each part's filter LFO
+        this.strips.forEach(s => s.lfo?.frequency.rampTo(Tone.Time(s.shape.lfoRate).toFrequency(), 0.05));
         // the delay is tempo-synced: re-read its note value at the new tempo
         this.delay.delayTime.rampTo(Tone.Time(this.space.delay.time).toSeconds(), 0.05);
     }

@@ -571,3 +571,94 @@
         min-height: 40px;
     }
 }
+
+/* ---- shape (Simple): read-only envelope and filter over six knobs ------------------------------- */
+
+.shape-block {
+    gap: 6px;
+}
+
+.shape-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.shape-space {
+    flex: 1;
+}
+
+.shape-reset {
+    min-height: 28px;
+    padding: 0 12px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.shape-reset:disabled {
+    opacity: 0.4;
+}
+
+.shape-graphs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    max-width: 520px;
+}
+
+.shape-graph {
+    margin: 0;
+    padding: 6px 8px 5px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.shape-graph svg {
+    display: block;
+    width: 100%;
+    height: 58px;
+}
+
+.shape-graph figcaption {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.shape-graph figcaption span {
+    font-weight: 400;
+    color: var(--faint);
+    margin-left: 4px;
+}
+
+.sg-line {
+    fill: none;
+    stroke-width: 2;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+}
+
+.sg-axis,
+.sg-grid {
+    stroke: var(--line);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+}
+
+.sg-gate {
+    stroke: var(--faint);
+    stroke-width: 1;
+    stroke-dasharray: 3 3;
+    vector-effect: non-scaling-stroke;
+}
+
+.sg-band {
+    fill: var(--accent);
+    fill-opacity: 0.12;
+}

@@ -10,10 +10,12 @@ import { ArpRate } from '../audio/engine';
 import { INSTRUMENTS, InstrumentId } from '../audio/instruments';
 import {
     BASS_STYLES, BassPart, BassStyle, FX_KEYS, Harmony, InstrumentPart, MAX_PARTS, PART_LABELS, Part, PartFx, PartKind, PartTone, PlayMode,
-    STRUM_DIRECTIONS, STRUM_SPREADS, TONE_KEYS, bassNotes, fxAvailable, hasInstrument, shapeBrightness, shapePan,
+    STRUM_DIRECTIONS, STRUM_SPREADS, TONE_KEYS, bassNotes, fxAvailable, hasInstrument, shapePan,
 } from '../parts';
 import { PPQ } from '../progression';
 import { Space } from '../song';
+import { KNOBS, ShapeKnob, defaultShape, effectiveShape, fromKnob, shapeText, toKnob } from '../sound';
+import ShapeGraphs from './ShapeGraphs';
 
 // ---- shared bits: instrument icons, chord style ------------------------------------------------
 
@@ -93,28 +95,29 @@ const KIND_HINT: { [k in PartKind]: string } = {
 
 // ---- tone knobs ---------------------------------------------------------------------------------
 
-const TONE_LABELS: { [k in keyof PartTone]: string } = { attack: 'Attack', release: 'Release', brightness: 'Bright', pan: 'Pan' };
-const TONE_HINTS: { [k in keyof PartTone]: string } = {
-    attack: 'how fast notes come in: left snappy, right a slow swell',
-    release: 'how long notes ring after you let go',
-    brightness: 'left darker, right brighter',
-    pan: 'left to right',
-};
+const TONE_LABELS: { [k in keyof PartTone]: string } = { pan: 'Pan' };
+const TONE_HINTS: { [k in keyof PartTone]: string } = { pan: 'left to right' };
 
-/** What a tone knob reads as. The middle is always the instrument as designed. */
-export function toneText(k: keyof PartTone, v: number): string {
-    const off = Math.round((v - 0.5) * 200);
-    if (k === 'pan') {
-        const p = shapePan(v);
-        return Math.abs(p) < 0.02 ? 'centre' : `${Math.round(Math.abs(p) * 100)}% ${p < 0 ? 'L' : 'R'}`;
-    }
-    if (Math.abs(off) < 2) return 'as is';
-    if (k === 'brightness') {
-        const { cutoff, shelfDb } = shapeBrightness(v);
-        return shelfDb > 0 ? `+${shelfDb.toFixed(1)} dB` : `${cutoff >= 1000 ? `${(cutoff / 1000).toFixed(1)}k` : Math.round(cutoff)} Hz`;
-    }
-    return off < 0 ? `shorter ${-off}%` : `longer ${off}%`;
+/** What a tone knob reads as. */
+export function toneText(_k: keyof PartTone, v: number): string {
+    const p = shapePan(v);
+    return Math.abs(p) < 0.02 ? 'centre' : `${Math.round(Math.abs(p) * 100)}% ${p < 0 ? 'L' : 'R'}`;
 }
+
+// ---- shape knobs (Simple): standard synth names, each audible across its whole range -------------
+
+const SIMPLE_KNOBS: ShapeKnob[] = ['attack', 'release', 'cutoff', 'resonance', 'envAmount', 'drive'];
+const SHAPE_HINTS: { [k in ShapeKnob]: string } = {
+    attack: 'Attack: how fast a note comes in. Short = a click or pluck, long = a slow swell',
+    decay: 'Decay: how fast it falls from its peak to the Sustain level',
+    sustain: 'Sustain: the level a held note settles at',
+    release: 'Release: how long a note rings after you let go',
+    cutoff: 'Cutoff: where the filter starts cutting the highs. Lower = darker, muffled',
+    resonance: 'Resonance: a boost right at the cutoff. Higher = sharper, squelchier, whistling',
+    envAmount: 'Env Amount: each note opens (right) or closes (left) the filter, then it settles. Needs the Cutoff turned down to hear',
+    lfoDepth: 'LFO Depth: how far the LFO sweeps the cutoff up and down',
+    drive: 'Drive: pushes the sound until it saturates. Warm, Crunch or Bitcrush',
+};
 
 /** A knob with its label and value under it, in a small tile. */
 const KnobCell: React.FC<{
@@ -127,11 +130,12 @@ const KnobCell: React.FC<{
     title?: string;
     resetTo?: number;
     offAtZero?: boolean;
+    bipolar?: boolean;
     onChange: (v: number) => void;
     onPointerDown?: () => void;
-}> = ({ label, aria, value, display, color, on, title, resetTo, offAtZero, onChange, onPointerDown }) => (
+}> = ({ label, aria, value, display, color, on, title, resetTo, offAtZero, bipolar, onChange, onPointerDown }) => (
     <div className={`knob-tile ${on ? 'on' : ''}`} title={title} style={{ '--track': color } as React.CSSProperties} onPointerDownCapture={onPointerDown}>
-        <Knob value={value} onChange={onChange} color={color} label={aria} display={display} size={36} resetTo={resetTo} offAtZero={offAtZero} />
+        <Knob value={value} onChange={onChange} color={color} label={aria} display={display} size={36} resetTo={resetTo} offAtZero={offAtZero} bipolar={bipolar} />
         <span className="knob-label">{label}</span>
         <span className="knob-value">{display}</span>
     </div>
@@ -293,7 +297,7 @@ export const MASTER = 'master';
 // ---- the selected part --------------------------------------------------------------------------
 
 /** Effect amounts a newly added effect starts at. */
-const FX_START: { [k in keyof PartFx]: number } = { drive: 0.3, chorus: 0.35, tremolo: 0.4, glide: 0.3, reverb: 0.3, delay: 0.25 };
+const FX_START: { [k in keyof PartFx]: number } = { chorus: 0.35, tremolo: 0.4, glide: 0.3, reverb: 0.3, delay: 0.25 };
 /** Effects shown under EFFECTS (glide sits with the tone: it's how notes connect). */
 const EFFECT_KEYS = FX_KEYS.filter(k => k !== 'glide');
 
@@ -352,12 +356,14 @@ interface PartDetailProps {
     onRemove: () => void;
     onUpdate: (patch: Partial<Part>) => void;
     onTone: (key: keyof PartTone, value: number) => void;
+    onShape: (key: ShapeKnob, value: number) => void;
+    onShapeReset: () => void;
     onFx: (key: keyof PartFx, value: number) => void;
     /** Drums: jump to Song with this part's beat open. */
     onOpenBeat: () => void;
 }
 
-const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onPadPart, onRemove, onUpdate, onTone, onFx, onOpenBeat }) => {
+const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onPadPart, onRemove, onUpdate, onTone, onShape, onShapeReset, onFx, onOpenBeat }) => {
     // Effects stay on screen while you turn them (even down to 0) and after "+ Effect"; double-tap (0) takes one away
     const [pinned, setPinned] = useState<(keyof PartFx)[]>([]);
     useEffect(() => {
@@ -458,6 +464,10 @@ const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onP
                 </div>
             )}
 
+            {hasInstrument(part) && (
+                <ShapeBlock part={part} onShape={onShape} onReset={onShapeReset} />
+            )}
+
             <div className="pd-knobs">
                 {hasInstrument(part) && (
                     <div className="knob-group" role="group" aria-label={`${part.name} tone`}>
@@ -521,6 +531,44 @@ const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onP
                 </div>
             </div>
         </section>
+    );
+};
+
+/**
+ * Shape (Simple): the envelope and filter drawn read-only, six knobs under their standard names, and
+ * Reset back to the instrument's own sound. A knob's double-tap puts just that one back.
+ */
+const ShapeBlock: React.FC<{ part: InstrumentPart; onShape: (k: ShapeKnob, v: number) => void; onReset: () => void }> = ({ part, onShape, onReset }) => {
+    const own = defaultShape(part.instrument);
+    const shape = effectiveShape(part.instrument, part.shape);
+    const changed = Object.keys(part.shape).length > 0;
+    return (
+        <div className="pd-block shape-block" role="group" aria-label={`${part.name} shape`}>
+            <div className="shape-head">
+                <span className="pd-label">Shape</span>
+                <span className="section-note">how each note rises, falls and is filtered</span>
+                <span className="shape-space" />
+                <button className="chip-button shape-reset" disabled={!changed} title={`Back to ${instrumentLabel(part.instrument)} as designed`} onClick={onReset}>Reset</button>
+            </div>
+            <ShapeGraphs shape={shape} color={part.color} />
+            <div className="knob-row shape-knobs">
+                {SIMPLE_KNOBS.map(k => (
+                    <KnobCell
+                        key={k}
+                        label={KNOBS[k].label}
+                        aria={`${part.name} ${KNOBS[k].label}`}
+                        title={`${SHAPE_HINTS[k]} · double-tap: back to ${instrumentLabel(part.instrument)}'s own`}
+                        value={toKnob(k, shape[k] as number)}
+                        display={shapeText(k, shape[k] as number)}
+                        color={part.color}
+                        on={part.shape[k] !== undefined && Math.abs(toKnob(k, part.shape[k] as number) - toKnob(k, own[k] as number)) > 0.005}
+                        resetTo={toKnob(k, own[k] as number)}
+                        bipolar={k === 'envAmount'}
+                        onChange={v => onShape(k, fromKnob(k, v))}
+                    />
+                ))}
+            </div>
+        </div>
     );
 };
 
@@ -633,6 +681,8 @@ interface PartsViewProps {
     onPadPart: (id: string) => void;
     onUpdate: (id: string, patch: Partial<Part>) => void;
     onTone: (id: string, key: keyof PartTone, value: number) => void;
+    onShape: (id: string, key: ShapeKnob, value: number) => void;
+    onShapeReset: (id: string) => void;
     onFx: (id: string, key: keyof PartFx, value: number) => void;
     onSpace: (space: Space) => void;
     onDryAll: () => void;
@@ -695,6 +745,8 @@ const PartsView: React.FC<PartsViewProps> = p => {
                     onRemove={() => p.onRemove(part.id)}
                     onUpdate={patch => p.onUpdate(part.id, patch)}
                     onTone={(k, v) => p.onTone(part.id, k, v)}
+                    onShape={(k, v) => p.onShape(part.id, k, v)}
+                    onShapeReset={() => p.onShapeReset(part.id)}
                     onFx={(k, v) => p.onFx(part.id, k, v)}
                     onOpenBeat={() => p.onOpenBeat(part.id)}
                 />

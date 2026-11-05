@@ -5,6 +5,7 @@ import { Clip, PPQ, STEPS_PER_ROW } from './progression';
 import { DRUM_VOICES, DrumPattern, PATTERN_BARS, PatternBars, TICKS_PER_SIXTEENTH, emptyPattern, fitPattern, isEmptyPattern, sixteenthsPerBar } from './drums';
 import type { LearnTab } from './learn';
 import { STRUM_PATTERN_IDS, StrumPattern, nearestSpread } from './strum';
+import { legacyShape, readShape } from './sound';
 import { BASS_STYLES, BassStyle, FX_KEYS, MAX_PARTS, MELODY_STEPS, Note, PART_COLORS, Part, PartFx, PartKind, PartTone, PlayMode, STRUM_DIRECTIONS, TONE_KEYS, fxAvailable, neutralTone, newPart } from './parts';
 
 // ---- the song: everything undo/redo, saving and sharing cover ---------------------------
@@ -365,12 +366,24 @@ function readPart(v: unknown, index: number, existing: Part[], maxTick: number, 
         solo: bool(v.solo, false),
         fx: readFx(v.fx, kind),
     };
-    const instrument = () => oneOf(v.instrument, INSTRUMENT_IDS, (base as { instrument: string }).instrument) as InstrumentId;
+    const inst = oneOf(v.instrument, INSTRUMENT_IDS, (base as { instrument: string }).instrument) as InstrumentId;
+    const instrument = () => inst;
     const tone = readTone(v.tone);
+    // the part's sound shape; a song saved before it had relative Attack/Release/Brightness knobs and a
+    // Drive effect, which turn into the same sound as shape changes
+    const oldTone = isObj(v.tone) ? v.tone : {};
+    const oldFx = isObj(v.fx) ? v.fx : {};
+    const shape = isObj(v.shape)
+        ? readShape(v.shape)
+        : readShape(legacyShape(inst, {
+            attack: typeof oldTone.attack === 'number' ? oldTone.attack : undefined,
+            release: typeof oldTone.release === 'number' ? oldTone.release : undefined,
+            brightness: typeof oldTone.brightness === 'number' ? oldTone.brightness : undefined,
+        }, typeof oldFx.drive === 'number' ? oldFx.drive : undefined));
     switch (kind) {
         case 'chords':
             return {
-                ...common, kind, instrument: instrument(), tone,
+                ...common, kind, instrument: instrument(), tone, shape,
                 playMode: oneOf<PlayMode>(v.playMode, ['Chord', 'Strum', 'Arp'], 'Chord'),
                 arpPattern: oneOf(v.arpPattern, ARP_PATTERNS, 'up'),
                 arpRate: oneOf(v.arpRate, ARP_RATES, '8n'),
@@ -382,12 +395,12 @@ function readPart(v: unknown, index: number, existing: Part[], maxTick: number, 
             };
         case 'bass':
             return {
-                ...common, kind, instrument: instrument(), tone,
+                ...common, kind, instrument: instrument(), tone, shape,
                 style: oneOf<BassStyle>(v.style, BASS_STYLES.map(b => b.id), 'pulse'),
                 octave: int(v.octave, 1, 3, 2),
             };
         case 'melody':
-            return { ...common, kind, instrument: instrument(), tone, octave: int(v.octave, 3, 5, 4), notes: readNotes(v.notes, maxTick) };
+            return { ...common, kind, instrument: instrument(), tone, shape, octave: int(v.octave, 3, 5, 4), notes: readNotes(v.notes, maxTick) };
         case 'drums':
             return { ...common, kind, drums: readPattern(v.drums, barLen) };
     }
