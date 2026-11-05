@@ -146,7 +146,7 @@ describe('time signatures', () => {
 describe('effects in the song', () => {
     it('new parts start dry, with the default shared space', () => {
         const song = newSong();
-        expect(song.parts.every(p => p.fx.drive === 0 && p.fx.chorus === 0 && p.fx.reverb === 0 && p.fx.delay === 0)).toBe(true);
+        expect(song.parts.every(p => p.fx.chorus === 0 && p.fx.reverb === 0 && p.fx.delay === 0)).toBe(true);
         expect(song.space.delay.time).toBe('8n');
     });
 
@@ -161,8 +161,10 @@ describe('effects in the song', () => {
         })!;
         const bass = song.parts.find(p => p.kind === 'bass')!;
         const drums = song.parts.find(p => p.kind === 'drums')!;
-        expect(bass.fx).toEqual({ drive: 0.6, chorus: 1, tremolo: 0, glide: 0, reverb: 0, delay: 0 });
-        expect(drums.fx).toEqual({ drive: 0, chorus: 0, tremolo: 0, glide: 0, reverb: 0.2, delay: 0.1 });
+        expect(bass.fx).toEqual({ chorus: 1, tremolo: 0, glide: 0, reverb: 0, delay: 0 });
+        // the old Drive effect became the part's shape: crunch, at the same amount
+        expect(bass.kind === 'bass' && bass.shape).toEqual({ driveType: 'crunch', drive: 0.6 });
+        expect(drums.fx).toEqual({ chorus: 0, tremolo: 0, glide: 0, reverb: 0.2, delay: 0.1 });
         expect(song.space).toEqual({ reverb: { size: 8, ret: 0.5 }, delay: { time: '8n', feedback: 0.9, ret: 0.4 }, out: { level: 0.6 } });
     });
 
@@ -176,25 +178,41 @@ describe('effects in the song', () => {
     });
 });
 
-describe('part tone (attack, release, brightness, pan)', () => {
-    it('new instrument parts start as designed', () => {
+describe('part tone (pan) and shape', () => {
+    it('new instrument parts start centred, sounding as designed', () => {
         const song = newSong();
-        for (const p of song.parts) if (p.kind !== 'drums') expect(p.tone).toEqual({ attack: 0.5, release: 0.5, brightness: 0.5, pan: 0.5 });
+        for (const p of song.parts) if (p.kind !== 'drums') expect([p.tone, p.shape]).toEqual([{ pan: 0.5 }, {}]);
     });
 
-    it('reads tone back clamped, and fills it in for songs saved before it existed', () => {
+    it('reads pan and shape back clamped', () => {
         const song = readSong({
             chords: [],
             parts: [
-                { kind: 'chords', tone: { attack: 0.1, release: 3, brightness: 'x', pan: -2 } },
+                { kind: 'chords', tone: { pan: -2 }, shape: { cutoff: 800, resonance: 4, filterType: 'x' } },
                 { kind: 'bass' },
-                { kind: 'drums', tone: { attack: 0 } },
+                { kind: 'drums', tone: { pan: 0 }, shape: { cutoff: 100 } },
             ],
         })!;
         const [keys, bass, drums] = song.parts;
-        expect(keys.kind === 'chords' && keys.tone).toEqual({ attack: 0.1, release: 1, brightness: 0.5, pan: 0 });
-        expect(bass.kind === 'bass' && bass.tone).toEqual({ attack: 0.5, release: 0.5, brightness: 0.5, pan: 0.5 });
-        expect('tone' in drums).toBe(false);
+        expect(keys.kind === 'chords' && [keys.tone, keys.shape]).toEqual([{ pan: 0 }, { cutoff: 800, resonance: 1 }]);
+        expect(bass.kind === 'bass' && [bass.tone, bass.shape]).toEqual([{ pan: 0.5 }, {}]);
+        expect('tone' in drums || 'shape' in drums).toBe(false);
+    });
+
+    it('turns the old Attack, Release and Brightness knobs into the same sound', () => {
+        const song = readSong({
+            chords: [],
+            parts: [
+                { kind: 'chords', instrument: 'pluck', tone: { attack: 1, release: 0.5, brightness: 0, pan: 0.2 } },
+                { kind: 'melody', tone: { attack: 0.5, release: 0.5, brightness: 0.5, pan: 0.5 } },
+            ],
+        })!;
+        const [keys, mel] = song.parts;
+        expect(keys.kind === 'chords' && keys.tone).toEqual({ pan: 0.2 });
+        expect(keys.kind === 'chords' && keys.shape.attack).toBeCloseTo(2);
+        expect(keys.kind === 'chords' && keys.shape.cutoff).toBeCloseTo(300);
+        expect(keys.kind === 'chords' && keys.shape.release).toBeUndefined();
+        expect(mel.kind === 'melody' && mel.shape).toEqual({});
     });
 });
 
@@ -203,7 +221,8 @@ describe('tremolo and glide', () => {
         const song = readSong({ chords: [], parts: [{ kind: 'melody', fx: { tremolo: 0.4, glide: 3 } }, { kind: 'bass', fx: { drive: 0.2 } }] })!;
         const of = (kind: string) => song.parts.find(p => p.kind === kind)!.fx;
         expect(of('melody')).toMatchObject({ tremolo: 0.4, glide: 1 });
-        expect(of('bass')).toMatchObject({ drive: 0.2, tremolo: 0, glide: 0 });
+        expect(of('bass')).toMatchObject({ tremolo: 0, glide: 0 });
+        expect('drive' in of('bass')).toBe(false);
     });
 });
 

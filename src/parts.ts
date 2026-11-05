@@ -1,7 +1,7 @@
 import { ArpPattern, MusicalKey, ResolvedChord, SCALES, ScaleId, StrumDirection, arpOrder, keyPitchClass, resolveChord } from './theory';
 import { StrumPattern, strokeNotes, strumStrokes, strumVoicing } from './strum';
 import type { ArpRate } from './audio/engine';
-import type { InstrumentId } from './audio/instruments';
+import type { InstrumentId, ShapeOverrides } from './sound';
 import { ChordClip, Clip, PPQ, RestClip, clipEnd, isChordClip, lastEnd, TICKS_PER_BAR } from './progression';
 import type { DrumPattern } from './drums';
 
@@ -53,11 +53,11 @@ export function withAcc<N extends Note>(note: N, acc: Accidental): N {
 export const MELODY_STEPS = 15;
 
 /**
- * A part's effects, each 0..1 with 0 meaning off. Drive and chorus colour this part only; reverb and
- * delay are how much of it is sent into the song's shared reverb and delay. Drums only use the sends.
+ * A part's effects, each 0..1 with 0 meaning off. Chorus, tremolo and glide colour this part only;
+ * reverb and delay are how much of it is sent into the song's shared reverb and delay. Drums only use
+ * the sends. (Drive lives in the part's shape, sound.ts.)
  */
 export interface PartFx {
-    drive: number;
     chorus: number;
     /** Depth of a volume wobble at 1/8 notes of the song's tempo. */
     tremolo: number;
@@ -67,9 +67,9 @@ export interface PartFx {
     delay: number;
 }
 
-export const FX_KEYS: (keyof PartFx)[] = ['drive', 'chorus', 'tremolo', 'glide', 'reverb', 'delay'];
-export const noFx = (): PartFx => ({ drive: 0, chorus: 0, tremolo: 0, glide: 0, reverb: 0, delay: 0 });
-/** Drive, chorus, tremolo and glide would smear a beat, so drum parts only get the reverb and delay sends. */
+export const FX_KEYS: (keyof PartFx)[] = ['chorus', 'tremolo', 'glide', 'reverb', 'delay'];
+export const noFx = (): PartFx => ({ chorus: 0, tremolo: 0, glide: 0, reverb: 0, delay: 0 });
+/** Chorus, tremolo and glide would smear a beat, so drum parts only get the reverb and delay sends. */
 export const fxAvailable = (kind: PartKind, key: keyof PartFx) => kind !== 'drums' || key === 'reverb' || key === 'delay';
 
 /** Glide time in seconds for knob value `v`: 0 off, then up to half a second (fine control at the short end). */
@@ -82,41 +82,13 @@ export const glideSeconds = (v: number) => (v <= 0 ? 0 : 0.5 * v * v);
  */
 export const glides = (fx: PartFx, notes: number) => fx.glide > 0 && notes === 1;
 
-/**
- * How an instrument part's notes are shaped, each 0..1 with 0.5 meaning "as the instrument is
- * designed": Attack and Release scale its envelope times, Brightness darkens (below 0.5, a low-pass)
- * or brightens it (above, a high shelf), Pan places it left to right. Works the same for synths and samples.
- */
+/** Where an instrument part sits left to right: 0..1, 0.5 = centre. (How it sounds is its `shape`, sound.ts.) */
 export interface PartTone {
-    attack: number;
-    release: number;
-    brightness: number;
     pan: number;
 }
 
-export const TONE_KEYS: (keyof PartTone)[] = ['attack', 'release', 'brightness', 'pan'];
-export const neutralTone = (): PartTone => ({ attack: 0.5, release: 0.5, brightness: 0.5, pan: 0.5 });
-
-/** `preset` scaled by knob `v`: v = 0.5 keeps it, 0 goes down to `lo`, 1 up to `hi` (geometrically, as ears hear time). */
-function scaleTime(preset: number, v: number, lo: number, hi: number): number {
-    const p = Math.min(hi, Math.max(lo, preset));
-    return v <= 0.5 ? lo * Math.pow(p / lo, v / 0.5) : p * Math.pow(hi / p, (v - 0.5) / 0.5);
-}
-
-/** Attack time in seconds for an instrument whose own attack is `preset`: from 1 ms (snappy) up to a 2 s swell. */
-export const shapeAttack = (preset: number, v: number) => scaleTime(preset, v, 0.001, Math.max(2, preset * 4));
-
-/** Release time in seconds for an instrument whose own release is `preset`: from 20 ms (dry stop) up to 5 s (ringing out). */
-export const shapeRelease = (preset: number, v: number) => scaleTime(preset, v, 0.02, Math.max(5, preset * 4));
-
-/**
- * Brightness as filter settings: below 0.5 a low-pass closes from fully open (20 kHz) down to
- * 300 Hz; above 0.5 a high shelf at 2.5 kHz lifts the top by up to 9 dB.
- */
-export function shapeBrightness(v: number): { cutoff: number; shelfDb: number } {
-    if (v >= 0.5) return { cutoff: 20000, shelfDb: Math.round(((v - 0.5) / 0.5) * 9 * 10) / 10 };
-    return { cutoff: 300 * Math.pow(20000 / 300, v / 0.5), shelfDb: 0 };
-}
+export const TONE_KEYS: (keyof PartTone)[] = ['pan'];
+export const neutralTone = (): PartTone => ({ pan: 0.5 });
 
 /** Pan position -1 (left) .. 1 (right). */
 export const shapePan = (v: number) => Math.max(-1, Math.min(1, (v - 0.5) * 2));
@@ -137,6 +109,8 @@ export interface ChordPart extends PartBase {
     kind: 'chords';
     instrument: InstrumentId;
     tone: PartTone;
+    /** What the part changes of its instrument's envelope, filter and drive; the rest is the instrument's own (sound.ts). */
+    shape: ShapeOverrides;
     playMode: PlayMode;
     arpPattern: ArpPattern;
     arpRate: ArpRate;
@@ -155,6 +129,8 @@ export interface BassPart extends PartBase {
     kind: 'bass';
     instrument: InstrumentId;
     tone: PartTone;
+    /** What the part changes of its instrument's envelope, filter and drive; the rest is the instrument's own (sound.ts). */
+    shape: ShapeOverrides;
     style: BassStyle;
     octave: number;
 }
@@ -164,6 +140,8 @@ export interface MelodyPart extends PartBase {
     kind: 'melody';
     instrument: InstrumentId;
     tone: PartTone;
+    /** What the part changes of its instrument's envelope, filter and drive; the rest is the instrument's own (sound.ts). */
+    shape: ShapeOverrides;
     octave: number;
     notes: Note[];
 }
@@ -205,11 +183,11 @@ export function newPart(kind: PartKind, existing: Part[], drums?: DrumPattern): 
     };
     switch (kind) {
         case 'chords':
-            return { ...base, kind, instrument: same ? 'warmpad' : 'epiano', tone: neutralTone(), playMode: 'Chord', arpPattern: 'up', arpRate: '8n', noteLength: 0.3, strumSpread: 0.035, strumDirection: 'down', strumPattern: 'pop' };
+            return { ...base, kind, instrument: same ? 'warmpad' : 'epiano', tone: neutralTone(), shape: {}, playMode: 'Chord', arpPattern: 'up', arpRate: '8n', noteLength: 0.3, strumSpread: 0.035, strumDirection: 'down', strumPattern: 'pop' };
         case 'bass':
-            return { ...base, kind, instrument: 'bass', tone: neutralTone(), style: 'pulse', octave: 2 };
+            return { ...base, kind, instrument: 'bass', tone: neutralTone(), shape: {}, style: 'pulse', octave: 2 };
         case 'melody':
-            return { ...base, kind, instrument: 'lead', tone: neutralTone(), octave: 4, notes: [] };
+            return { ...base, kind, instrument: 'lead', tone: neutralTone(), shape: {}, octave: 4, notes: [] };
         case 'drums':
             return { ...base, kind, drums: drums ?? { bars: 1, hits: {} } };
     }

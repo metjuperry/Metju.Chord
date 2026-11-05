@@ -1,10 +1,8 @@
 import * as Tone from 'tone';
 import SAMPLES from './samples.json';
-import { shapeAttack, shapeRelease } from '../parts';
+import { Adsr, InstrumentId, SAMPLE_ENVELOPES, SYNTH_ENVELOPES } from '../sound';
 
-export type InstrumentId =
-    | 'piano' | 'pad' | 'epiano' | 'organ' | 'pluck' | 'lead'
-    | 'strings' | 'warmpad' | 'brass' | 'drawbar' | 'bells' | 'mallets' | 'chip' | 'bass';
+export type { InstrumentId } from '../sound';
 
 /**
  * `sustains`: the note holds while the key is down (used for level matching; plucked/struck sounds decay).
@@ -41,26 +39,11 @@ const SAMPLE_VOLUMES: { [id in SampledId]: number } = {
     piano: -4, epiano: -5.5, strings: 8.5, organ: -4.5, brass: -1.5, mallets: -4.5, bells: -6,
 };
 
-/** Each sample set's own envelope: how fast a note comes in, and how long it rings after the key is let go. */
-const SAMPLE_ENVELOPES: { [id in SampledId]: Envelope } = {
-    piano: { attack: 0.002, release: 0.5 },
-    epiano: { attack: 0.002, release: 0.6 },
-    strings: { attack: 0.18, release: 0.9 },
-    organ: { attack: 0.03, release: 0.3 },
-    brass: { attack: 0.05, release: 0.35 },
-    mallets: { attack: 0.002, release: 2 },
-    bells: { attack: 0.002, release: 2.5 },
-};
-
 /** The synth that stands in for a sampled instrument until its samples are decoded (or if they fail to load). */
 const STAND_IN: { [id in SampledId]: InstrumentId } = {
     piano: 'epiano', epiano: 'epiano', strings: 'strings', organ: 'organ', brass: 'brass', mallets: 'mallets', bells: 'bells',
 };
 
-export interface Envelope {
-    attack: number;
-    release: number;
-}
 
 /** Slide a single note in from another pitch. */
 export interface Glide {
@@ -74,8 +57,8 @@ export interface Voice {
     attack(midi: number[], time: number, velocity: number, glide?: Glide): void;
     release(midi: number[], time: number): void;
     releaseAll(time: number): void;
-    /** Scale the envelope: knob values 0..1, 0.5 = as designed (see `shapeAttack`, `shapeRelease`). */
-    shape(attack: number, release: number): void;
+    /** The part's envelope changes: any of attack, decay, sustain, release; the rest stays the instrument's own. */
+    shape(over: Partial<Adsr>): void;
 }
 
 export interface Instrument extends Voice {
@@ -93,7 +76,7 @@ const mtof = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
 /** What the pool needs from a monophonic Tone synth (Synth, FMSynth, AMSynth, MonoSynth). */
 interface Mono {
     frequency: Tone.Signal<'frequency'>;
-    envelope: { attack: Tone.Unit.Time; release: Tone.Unit.Time };
+    envelope: { attack: Tone.Unit.Time; decay: Tone.Unit.Time; sustain: number; release: Tone.Unit.Time };
     triggerAttack(note: number, time: number, velocity: number): unknown;
     triggerRelease(time: number): unknown;
     connect(node: Tone.InputNode): unknown;
@@ -118,22 +101,24 @@ export class SynthPool implements Voice {
     readonly output: Tone.Volume;
     private slots: Slot[] = [];
     /** The envelope as currently shaped (starts as the preset's). */
-    private env: Envelope;
-    private readonly preset: Envelope;
+    private env: Adsr;
+    private readonly preset: Adsr;
 
-    constructor(private readonly ctor: MonoCtor, private readonly options: { envelope: Envelope } & object, volume: number, private readonly max = 24) {
+    constructor(private readonly ctor: MonoCtor, private readonly options: { envelope: Adsr } & object, volume: number, private readonly max = 24) {
         this.output = new Tone.Volume(volume);
-        this.preset = { attack: options.envelope.attack, release: options.envelope.release };
+        this.preset = { ...options.envelope };
         this.env = { ...this.preset };
     }
 
-    shape(attack: number, release: number) {
-        this.env = { attack: shapeAttack(this.preset.attack, attack), release: shapeRelease(this.preset.release, release) };
+    shape(over: Partial<Adsr>) {
+        this.env = { ...this.preset, ...over };
         this.slots.forEach(s => this.applyEnv(s.synth));
     }
 
     private applyEnv(synth: Mono) {
         synth.envelope.attack = this.env.attack;
+        synth.envelope.decay = Math.max(0.001, this.env.decay);
+        synth.envelope.sustain = this.env.sustain;
         synth.envelope.release = this.env.release;
     }
 
@@ -190,7 +175,7 @@ interface Built {
 }
 
 const pool = (ctor: unknown, options: object, id: InstrumentId) =>
-    new SynthPool(ctor as MonoCtor, options as { envelope: Envelope }, VOLUMES[id]);
+    new SynthPool(ctor as MonoCtor, options as { envelope: Adsr }, VOLUMES[id]);
 
 /** The synth presets. `volume` leaves headroom for chords: velocity is additionally scaled by 1/sqrt(voices) at trigger time. */
 function buildSynth(id: InstrumentId): Built {
@@ -203,7 +188,7 @@ function buildSynth(id: InstrumentId): Built {
         case 'pad':
             return through(pool(Tone.Synth, {
                 oscillator: { type: 'fatsawtooth', count: 3, spread: 20 },
-                envelope: { attack: 0.08, decay: 0.3, sustain: 0.7, release: 1.5 },
+                envelope: SYNTH_ENVELOPES.pad,
             }, id), new Tone.Filter(2200, 'lowpass'));
         case 'piano':
         case 'epiano':
@@ -211,7 +196,7 @@ function buildSynth(id: InstrumentId): Built {
                 harmonicity: 3,
                 modulationIndex: 10,
                 oscillator: { type: 'sine' },
-                envelope: { attack: 0.005, decay: 1.2, sustain: 0.2, release: 1 },
+                envelope: SYNTH_ENVELOPES.piano,
                 modulation: { type: 'sine' },
                 modulationEnvelope: { attack: 0.005, decay: 0.4, sustain: 0.1, release: 0.5 },
             }, id));
@@ -222,26 +207,26 @@ function buildSynth(id: InstrumentId): Built {
                 harmonicity: 2,
                 oscillator: { type: 'sine' },
                 modulation: { type: 'square' },
-                envelope: { attack: 0.01, decay: 0, sustain: 1, release: 0.08 },
+                envelope: SYNTH_ENVELOPES.organ,
             }, id), chorus);
         }
         case 'pluck':
             return through(pool(Tone.Synth, {
                 oscillator: { type: 'triangle' },
-                envelope: { attack: 0.002, decay: 0.35, sustain: 0, release: 0.4 },
+                envelope: SYNTH_ENVELOPES.pluck,
             }, id), new Tone.Filter(3500, 'lowpass'));
         case 'strings':
             // Detuned saws with a slow bow-like attack, darkened and given a gentle vibrato
             return through(pool(Tone.Synth, {
                 oscillator: { type: 'fatsawtooth', count: 5, spread: 30 },
-                envelope: { attack: 0.35, decay: 0.2, sustain: 0.9, release: 1.6 },
+                envelope: SYNTH_ENVELOPES.strings,
             }, id), new Tone.Filter(1800, 'lowpass'), new Tone.Vibrato(5, 0.06));
         case 'warmpad':
             return through(pool(Tone.AMSynth, {
                 harmonicity: 1.5,
                 oscillator: { type: 'fattriangle', count: 3, spread: 15 },
                 modulation: { type: 'sine' },
-                envelope: { attack: 0.5, decay: 0.3, sustain: 0.9, release: 2.5 },
+                envelope: SYNTH_ENVELOPES.warmpad,
                 modulationEnvelope: { attack: 0.8, decay: 0.2, sustain: 1, release: 2 },
             }, id), new Tone.Filter(1400, 'lowpass'));
         case 'brass':
@@ -249,7 +234,7 @@ function buildSynth(id: InstrumentId): Built {
             return only(pool(Tone.MonoSynth, {
                 oscillator: { type: 'sawtooth' },
                 filter: { Q: 1, type: 'lowpass', rolloff: -24 },
-                envelope: { attack: 0.05, decay: 0.2, sustain: 0.8, release: 0.3 },
+                envelope: SYNTH_ENVELOPES.brass,
                 filterEnvelope: { attack: 0.08, decay: 0.4, sustain: 0.55, release: 0.3, baseFrequency: 300, octaves: 2.6 },
             }, id));
         case 'drawbar': {
@@ -258,7 +243,7 @@ function buildSynth(id: InstrumentId): Built {
             chorus.wet.value = 0.4;
             return through(pool(Tone.Synth, {
                 oscillator: { type: 'custom', partials: [1, 0.85, 0.6, 0, 0.45, 0, 0.3, 0.25] },
-                envelope: { attack: 0.005, decay: 0, sustain: 1, release: 0.06 },
+                envelope: SYNTH_ENVELOPES.drawbar,
             }, id), new Tone.Tremolo(6.5, 0.25).start(), chorus);
         }
         case 'bells':
@@ -267,7 +252,7 @@ function buildSynth(id: InstrumentId): Built {
                 harmonicity: 3.01,
                 modulationIndex: 14,
                 oscillator: { type: 'sine' },
-                envelope: { attack: 0.001, decay: 2.5, sustain: 0, release: 2.5 },
+                envelope: SYNTH_ENVELOPES.bells,
                 modulation: { type: 'sine' },
                 modulationEnvelope: { attack: 0.001, decay: 1.6, sustain: 0, release: 1 },
             }, id));
@@ -277,7 +262,7 @@ function buildSynth(id: InstrumentId): Built {
                 harmonicity: 4,
                 modulationIndex: 3,
                 oscillator: { type: 'sine' },
-                envelope: { attack: 0.001, decay: 0.7, sustain: 0, release: 0.6 },
+                envelope: SYNTH_ENVELOPES.mallets,
                 modulation: { type: 'sine' },
                 modulationEnvelope: { attack: 0.001, decay: 0.12, sustain: 0, release: 0.1 },
             }, id), new Tone.Filter(4000, 'lowpass'));
@@ -285,13 +270,13 @@ function buildSynth(id: InstrumentId): Built {
             // 25% pulse wave, like an 8-bit console. A 25% pulse carries a DC offset; the high-pass removes it so it can't stack up in the effects
             return through(pool(Tone.Synth, {
                 oscillator: { type: 'pulse', width: 0.25 },
-                envelope: { attack: 0.002, decay: 0.1, sustain: 0.6, release: 0.08 },
+                envelope: SYNTH_ENVELOPES.chip,
             }, id), new Tone.Filter(40, 'highpass'), new Tone.Filter(6000, 'lowpass'));
         case 'bass':
             // a round saw bass: the filter opens on each note and settles low, so lines stay punchy but warm
             return through(pool(Tone.MonoSynth, {
                 oscillator: { type: 'fatsawtooth', count: 2, spread: 12 },
-                envelope: { attack: 0.004, decay: 0.25, sustain: 0.8, release: 0.12 },
+                envelope: SYNTH_ENVELOPES.bass,
                 filter: { Q: 1, rolloff: -24 },
                 filterEnvelope: { attack: 0.004, decay: 0.2, sustain: 0.35, release: 0.2, baseFrequency: 260, octaves: 2.6 },
             }, id), new Tone.Filter(30, 'highpass'));
@@ -300,7 +285,7 @@ function buildSynth(id: InstrumentId): Built {
             return only(pool(Tone.MonoSynth, {
                 oscillator: { type: 'square' },
                 filter: { Q: 2 },
-                envelope: { attack: 0.005, decay: 0.1, sustain: 0.9, release: 1 },
+                envelope: SYNTH_ENVELOPES.lead,
                 filterEnvelope: { attack: 0.01, decay: 0.3, sustain: 0.4, baseFrequency: 200, octaves: 3 },
             }, 'lead'));
     }
@@ -316,7 +301,7 @@ class SynthInstrument implements Instrument {
     attack(midi: number[], time: number, velocity: number, glide?: Glide) { this.built.pool.attack(midi, time, velocity, glide); }
     release(midi: number[], time: number) { this.built.pool.release(midi, time); }
     releaseAll(time: number) { this.built.pool.releaseAll(time); }
-    shape(attack: number, release: number) { this.built.pool.shape(attack, release); }
+    shape(over: Partial<Adsr>) { this.built.pool.shape(over); }
     dispose() {
         this.built.pool.dispose();
         this.built.nodes.forEach(n => n.dispose());
@@ -385,15 +370,15 @@ interface Playing {
 export class SamplePlayer implements Voice {
     readonly output: Tone.Volume;
     private playing: Playing[] = [];
-    private env: Envelope;
+    private env: Adsr;
 
-    constructor(private readonly bank: Bank, volume: number, private readonly preset: Envelope) {
+    constructor(private readonly bank: Bank, volume: number, private readonly preset: Adsr) {
         this.output = new Tone.Volume(volume);
         this.env = { ...preset };
     }
 
-    shape(attack: number, release: number) {
-        this.env = { attack: shapeAttack(this.preset.attack, attack), release: shapeRelease(this.preset.release, release) };
+    shape(over: Partial<Adsr>) {
+        this.env = { ...this.preset, ...over };
     }
 
     attack(midi: number[], time: number, velocity: number, glide?: Glide) {
@@ -413,8 +398,11 @@ export class SamplePlayer implements Voice {
                 source.playbackRate.setValueAtTime(rate(glide.from), time);
                 source.playbackRate.exponentialRampToValueAtTime(rate(m), time + glide.time);
             }
+            const peakAt = time + Math.max(0.002, this.env.attack);
             env.gain.setValueAtTime(0, time);
-            env.gain.linearRampToValueAtTime(velocity, time + Math.max(0.002, this.env.attack));
+            env.gain.linearRampToValueAtTime(velocity, peakAt);
+            // a recording fades by itself; sustain below 1 also pulls it down to that level over the decay
+            if (this.env.sustain < 1) env.gain.setTargetAtTime(velocity * this.env.sustain, peakAt, Math.max(0.005, this.env.decay) / 3);
             const note: Playing = { midi: m, start: time, source, env, released: false };
             source.onended = () => {
                 this.playing = this.playing.filter(p => p !== note);
@@ -466,7 +454,7 @@ class SampledInstrument implements Instrument {
     private standIn: SynthInstrument;
     private player: SamplePlayer | null = null;
     private disposed = false;
-    private shaped: [number, number] = [0.5, 0.5];
+    private shaped: Partial<Adsr> = {};
 
     constructor(id: SampledId) {
         this.standIn = new SynthInstrument(STAND_IN[id]);
@@ -474,7 +462,7 @@ class SampledInstrument implements Instrument {
         const use = (bank: Bank) => {
             if (this.disposed || this.player) return;
             this.player = new SamplePlayer(bank, SAMPLE_VOLUMES[id], SAMPLE_ENVELOPES[id]);
-            this.player.shape(...this.shaped);
+            this.player.shape(this.shaped);
             this.player.output.connect(this.output);
         };
         const ready = decoded.get(id);
@@ -500,10 +488,10 @@ class SampledInstrument implements Instrument {
         this.player?.releaseAll(time);
         this.standIn.releaseAll(time);
     }
-    shape(attack: number, release: number) {
-        this.shaped = [attack, release];
-        this.player?.shape(attack, release);
-        this.standIn.shape(attack, release);
+    shape(over: Partial<Adsr>) {
+        this.shaped = { ...over };
+        this.player?.shape(over);
+        this.standIn.shape(over);
     }
     dispose() {
         this.disposed = true;

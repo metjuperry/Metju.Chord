@@ -14,6 +14,8 @@ interface KnobProps {
     offAtZero?: boolean;
     /** Double-click / double-tap goes here (default 0). */
     resetTo?: number;
+    /** The arc grows from 12 o'clock both ways (for controls whose middle is "off", like Env Amount). */
+    bipolar?: boolean;
 }
 
 const SWEEP = 270;
@@ -24,7 +26,7 @@ const DRAG_RANGE = 160;
  * A rotary knob: drag up or down (mouse or touch), scroll, or use the arrow keys; double-click resets.
  * Drawn as an arc from 7 to 5 o'clock with a pointer, like the rest of the instrument's controls.
  */
-const Knob: React.FC<KnobProps> = ({ value, onChange, color, label, display, size = 38, offAtZero = false, resetTo = 0 }) => {
+const Knob: React.FC<KnobProps> = ({ value, onChange, color, label, display, size = 38, offAtZero = false, resetTo = 0, bipolar = false }) => {
     const drag = useRef<{ y: number; start: number; id: number } | null>(null);
     const el = useRef<HTMLSpanElement>(null);
     const latest = useRef({ value, onChange });
@@ -57,6 +59,11 @@ const Knob: React.FC<KnobProps> = ({ value, onChange, color, label, display, siz
     const [xe, ye] = at(a0 + SWEEP);
     const [xv, yv] = at(a1);
     const pointer: [number, number] = [c + (r - 8) * Math.cos(rad(a1)), c + (r - 8) * Math.sin(rad(a1))];
+    // bipolar: from the top (the middle of the sweep) to the value, whichever way
+    const [xm, ym] = at(a0 + SWEEP / 2);
+    const bipolarArc = Math.abs(value - 0.5) > 0.005
+        ? `M${xm} ${ym} A${r} ${r} 0 0 ${value > 0.5 ? 1 : 0} ${xv} ${yv}`
+        : null;
 
     return (
         <span
@@ -105,9 +112,9 @@ const Knob: React.FC<KnobProps> = ({ value, onChange, color, label, display, siz
         >
             <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
                 <path d={`M${x0} ${y0} A${r} ${r} 0 1 1 ${xe} ${ye}`} className="knob-track" />
-                {value > 0.001 && (
-                    <path d={`M${x0} ${y0} A${r} ${r} 0 ${SWEEP * value > 180 ? 1 : 0} 1 ${xv} ${yv}`} className="knob-arc" />
-                )}
+                {bipolar
+                    ? bipolarArc && <path d={bipolarArc} className="knob-arc" />
+                    : value > 0.001 && <path d={`M${x0} ${y0} A${r} ${r} 0 ${SWEEP * value > 180 ? 1 : 0} 1 ${xv} ${yv}`} className="knob-arc" />}
                 <circle cx={c} cy={c} r={r - 5} className="knob-cap" />
                 <line x1={c} y1={c} x2={pointer[0]} y2={pointer[1]} className="knob-pointer" />
             </svg>

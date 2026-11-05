@@ -368,7 +368,7 @@ describe('clear all: a clean slate', () => {
         const p = c.parts[0];
         expect(p).toMatchObject({ id: keys.id, kind: 'chords', instrument: 'piano', volume: 0, mute: false, solo: false, playMode: 'Chord', name: 'Keys' });
         expect(Object.values(p.fx).every(v => v === 0)).toBe(true);
-        if (p.kind === 'chords') expect(p.tone).toEqual({ attack: 0.5, release: 0.5, brightness: 0.5, pan: 0.5 });
+        if (p.kind === 'chords') expect([p.tone, p.shape]).toEqual([{ pan: 0.5 }, {}]);
     });
 
     it('resets the shared reverb, delay and output, and keeps key, scale, tempo and time signature', () => {

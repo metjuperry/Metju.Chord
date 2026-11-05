@@ -4,11 +4,10 @@ import Knob from './Knob';
 import { FX_KEYS, Part, PartFx, fxAvailable, glideSeconds } from '../parts';
 import { DELAY_TIMES, DelayTime, Space } from '../song';
 
-export const FX_LABELS: { [k in keyof PartFx]: string } = { drive: 'Drive', chorus: 'Chorus', tremolo: 'Tremolo', glide: 'Glide', reverb: '→ Reverb', delay: '→ Delay' };
-/** Column heads on narrow phones, where six columns share 330 px. */
-const FX_SHORT: { [k in keyof PartFx]: string } = { drive: 'Drive', chorus: 'Chorus', tremolo: 'Trem', glide: 'Glide', reverb: '→ Rev', delay: '→ Dly' };
+export const FX_LABELS: { [k in keyof PartFx]: string } = { chorus: 'Chorus', tremolo: 'Tremolo', glide: 'Glide', reverb: '→ Reverb', delay: '→ Delay' };
+/** Column heads on narrow phones, where five columns share 330 px. */
+const FX_SHORT: { [k in keyof PartFx]: string } = { chorus: 'Chorus', tremolo: 'Trem', glide: 'Glide', reverb: '→ Rev', delay: '→ Dly' };
 export const FX_HINTS: { [k in keyof PartFx]: string } = {
-    drive: 'grit and warmth, on this part only',
     chorus: 'width and shimmer, on this part only',
     tremolo: 'a volume wobble in 1/8 notes of the tempo, on this part only',
     glide: 'single notes slide into the next one (bass, melody, arpeggios; block chords don\'t glide)',
