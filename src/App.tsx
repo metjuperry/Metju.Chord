@@ -31,7 +31,8 @@ import {
 } from './song';
 import {
     ChainSlot, addSection, appendToChain, applySectionEdit, chainCount, chainLayout, changeSongTimeSignature, cleanSlate, deleteSection,
-    duplicateEntry, duplicateSection, findSection, isCleanSlate, moveEntry, removeEntry, renameSection, sectionView, setSectionMute, slotAt,
+    duplicateEntry, duplicateSection, engineStrips, findSection, isCleanSlate, moveEntry, removeEntry, renameSection, sectionView, setSectionMute, slotAt,
+    SoundScope, stripId,
 } from './sections';
 import { PREVIEW_TAIL_BEATS, previewSound } from './preview';
 import type { ShapeOverrides } from './sound';
@@ -76,11 +77,14 @@ const MELODY_OCT_MIN = 3;
 const MELODY_OCT_MAX = 5;
 const MAX_INVERSION = 3;
 
-/** Keep the engine's strips in step with the parts: an instrument per instrument part, a kit per drum part. */
-function syncParts(engine: ReturnType<typeof getEngine>, parts: Part[]) {
-    parts.forEach(p => (hasInstrument(p)
-        ? engine.setTrack(p.id, { instrument: p.instrument, volume: p.volume, fx: p.fx, tone: p.tone, shape: p.shape })
-        : engine.setDrumTrack(p.id, { volume: p.volume, fx: p.fx })));
+/**
+ * Keep the engine's strips in step with the parts: an instrument per instrument part, a kit per drum
+ * part, and one more for each section that changes how a part sounds (`engineStrips`).
+ */
+function syncParts(engine: ReturnType<typeof getEngine>, strips: { id: string; part: Part }[]) {
+    strips.forEach(({ id, part: p }) => (hasInstrument(p)
+        ? engine.setTrack(id, { instrument: p.instrument, volume: p.volume, fx: p.fx, tone: p.tone, shape: p.shape })
+        : engine.setDrumTrack(id, { volume: p.volume, fx: p.fx })));
 }
 
 /** How far a section plays on its own (Loop mode) before it wraps, or stops when loop is off. */
@@ -235,20 +239,28 @@ const App: React.FC = () => {
     const openKey = findSection(full, openId).id;
     const openRef = useRef(openKey);
     openRef.current = openKey;
-    /** The open section as an ordinary single-section song: everything below edits and plays this. */
-    const song = useMemo(() => sectionView(full, openKey), [full, openKey]);
+    /** Song mode shows the whole song (sections and chain) or zooms into the open section. */
+    const [songZoom, setSongZoom] = useState<'song' | 'section'>('song');
+    /** Where Parts edits go: the open section while Song is zoomed into it, otherwise the whole song. */
+    const soundScope: SoundScope = songZoom === 'section' ? 'section' : 'song';
+    const scopeRef = useRef(soundScope);
+    scopeRef.current = soundScope;
+    /**
+     * The open section as an ordinary single-section song: everything below edits and plays this. Its
+     * parts sound the way they do in the section while it's open, the way the song has them otherwise.
+     */
+    const song = useMemo(() => sectionView(full, openKey, soundScope === 'section'), [full, openKey, soundScope]);
     /** Edit the open section (and anything song-wide) through its view; the edit is written back into the section. */
     const editSong = useCallback((update: (s: Song) => Song, mergeKey?: string) => history.commit(f => {
         const id = findSection(f, openRef.current).id;
-        const view = sectionView(f, id);
+        const scope = scopeRef.current;
+        const view = sectionView(f, id, scope === 'section');
         const next = update(view);
-        return next === view ? f : applySectionEdit(f, id, next);
+        return next === view ? f : applySectionEdit(f, id, next, scope);
     }, mergeKey), [history.commit]);
     /** Edit the whole song: sections, chain, every section at once. */
     const editFull = history.commit;
     const [playMode, setPlayModeState] = useState<PlaybackMode>(initial.playMode);
-    /** Song mode shows the whole song (sections and chain) or zooms into the open section. */
-    const [songZoom, setSongZoom] = useState<'song' | 'section'>('song');
     const { chords, parts, steps: total, bpm, timeSignature: ts, key: selectedKey, scale } = song;
     const harmony: Harmony = useMemo(() => ({ chords, key: selectedKey, scale }), [chords, selectedKey, scale]);
     // One step is one beat of the time signature; rows hold whole bars
@@ -273,6 +285,8 @@ const App: React.FC = () => {
     /** The part Parts mode shows (a part id or the Master). */
     const [partsSel, setPartsSel] = useState('');
     const partsShown = partsSel === MASTER || parts.some(p => p.id === partsSel) ? partsSel : padPart.id;
+    /** The engine strip a part plays through live (pads, previews): the open section's while it's open, the song's otherwise. */
+    const trackOf = (partId: string) => (soundScope === 'section' ? stripId(findSection(full, openKey), partId) : partId);
     // Notes mode: the pads play single scale notes on a melody part and record into it
     const [padModeSetting, setPadMode] = useState<PadMode>('chords');
     const [melodyPartId, setMelodyPartId] = useState('');
@@ -360,8 +374,8 @@ const App: React.FC = () => {
         await Tone.start();
         const engine = getEngine(); // built on first use, after the user gesture
         engine.setBpm(transportBpm(bpm, ts));
-        syncParts(engine, parts);
-        engine.selectTrack(padPart.id);
+        syncParts(engine, engineStrips(full));
+        engine.selectTrack(trackOf(padPart.id));
         setAudioReady(true);
     };
 
@@ -380,20 +394,23 @@ const App: React.FC = () => {
     }, [song.space, audioReady]);
 
     // Keep the engine's per-part strips (instrument, volume) in step with the parts
+    const strips = useMemo(() => engineStrips(full), [full.parts, full.sections]); // eslint-disable-line react-hooks/exhaustive-deps
     const engineParts = useRef(new Set<string>());
     useEffect(() => {
         if (!audioReady) return;
         const engine = getEngine();
-        syncParts(engine, parts);
+        syncParts(engine, strips);
+        const ids = new Set(strips.map(x => x.id));
         engineParts.current.forEach(id => {
-            if (!parts.some(p => p.id === id)) engine.removeTrack(id);
+            if (!ids.has(id)) engine.removeTrack(id);
         });
-        engineParts.current = new Set(parts.map(p => p.id));
-    }, [parts, audioReady]);
+        engineParts.current = ids;
+    }, [strips, audioReady]);
 
+    const padTrack = trackOf(padPart.id);
     useEffect(() => {
-        if (audioReady) getEngine().selectTrack(padPart.id);
-    }, [padPart.id, audioReady]);
+        if (audioReady) getEngine().selectTrack(padTrack);
+    }, [padTrack, audioReady]);
 
     // ---- chords -------------------------------------------------------------------
 
@@ -563,7 +580,7 @@ const App: React.FC = () => {
             const sec = findSection(s.full, t.section);
             const view = sectionView(s.full, sec.id);
             result = {
-                events: sectionEvents(view, sec.mutes, playLength(view, s.loop), 0, false),
+                events: sectionEvents(view, sec, playLength(view, s.loop), 0, false),
                 opts: { loop: s.loop, loopEnd: sectionLoopLength(view), end: sectionMusicEnd(view) },
             };
         }
@@ -802,8 +819,8 @@ const App: React.FC = () => {
     /** The part being previewed, and the latest song bits the loop reads each beat. */
     const previewRef = useRef({ part: '', until: 0 });
     const previewLoop = useRef<Tone.Loop | null>(null);
-    const previewData = useRef({ parts, key: selectedKey, scale, octave });
-    previewData.current = { parts, key: selectedKey, scale, octave };
+    const previewData = useRef({ parts, key: selectedKey, scale, octave, track: trackOf });
+    previewData.current = { parts, key: selectedKey, scale, octave, track: trackOf };
     const stopPreview = useCallback(() => {
         const loop = previewLoop.current;
         if (!loop) return;
@@ -834,11 +851,11 @@ const App: React.FC = () => {
             const sound = previewSound(part, d.key, d.scale, d.octave, n++);
             const len = Tone.Time(`${ts.unit}n`).toSeconds();
             if (sound.kind === 'drums') {
-                sound.voices.forEach(v => engine.playDrum(part.id, v, time));
+                sound.voices.forEach(v => engine.playDrum(d.track(part.id), v, time));
             } else if (sound.arp && part.kind === 'chords') {
-                engine.scheduleArp(sound.midi, { pattern: part.arpPattern, rate: part.arpRate, noteLength: part.noteLength }, time, len, part.id);
+                engine.scheduleArp(sound.midi, { pattern: part.arpPattern, rate: part.arpRate, noteLength: part.noteLength }, time, len, d.track(part.id));
             } else {
-                engine.playChord(sound.midi, { duration: 0.9 * len, time, track: part.id, strum: sound.strum });
+                engine.playChord(sound.midi, { duration: 0.9 * len, time, track: d.track(part.id), strum: sound.strum });
             }
         }, `${ts.unit}n`);
         const startAt = engine.quantizedStart(`${ts.unit}n`);
@@ -957,7 +974,7 @@ const App: React.FC = () => {
         : null;
     /** Hear a melody note while stopped (when it's placed or picked). */
     const auditionNote = (part: MelodyPart, n: Note) => {
-        if (!playing) getEngine().playChord([noteMidi(part, harmony, n)], { duration: Math.min(0.4, ticksToSeconds(n.len)), track: part.id });
+        if (!playing) getEngine().playChord([noteMidi(part, harmony, n)], { duration: Math.min(0.4, ticksToSeconds(n.len)), track: trackOf(part.id) });
     };
     const melodyActions = {
         /** Tap an empty cell: a new note, selected. Tap a note: select it. Tap the selected note: remove it. */
@@ -1247,14 +1264,14 @@ const App: React.FC = () => {
         if (playing) stopPlayback();
         await startAudio();
         const engine = getEngine();
-        const melodyTrack = (padMelody ?? padPart).id;
+        const melodyTrack = trackOf((padMelody ?? padPart).id);
         const t0 = Tone.now() + 0.06;
         let end = 0;
         for (const e of events) {
             const at = ticksToSeconds(e.start);
             const duration = ticksToSeconds(e.len) * 0.92;
             end = Math.max(end, at + duration);
-            const track = e.layer === 'melody' ? melodyTrack : padPart.id;
+            const track = e.layer === 'melody' ? melodyTrack : trackOf(padPart.id);
             const fire = () => engine.playChord(e.midi, { duration, time: Math.max(Tone.now(), t0 + at), track });
             const wait = (at - 0.25) * 1000;
             if (wait <= 0) fire();
@@ -1877,7 +1894,7 @@ const App: React.FC = () => {
                                     }}
                                 >
                                     {t.label}
-                                    <span className="desk-tab-hint">{t.id === 'song' ? 'what plays' : 'how it sounds'}</span>
+                                    {songZoom === 'section' && <span className="desk-tab-hint">: {openSec.name}</span>}
                                 </button>
                             ))}
                         </div>

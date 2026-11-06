@@ -1,9 +1,9 @@
 import { DrumVoice, TICKS_PER_SIXTEENTH, expandPattern } from './drums';
 import { Harmony, Part, PartKind, audibleParts, musicEnd, musicLoopEnd, outsideRests, partNotes, restSpans } from './parts';
-import { ChainSlot, chainLayout, chainTicks, sectionView } from './sections';
+import { ChainSlot, chainLayout, chainTicks, sectionView, stripId } from './sections';
 import { FullSong, Section, Song, TimeSignature, ticksPerBar, ticksPerStep } from './song';
 
-/** What the sequencer schedules: some notes or a drum hit, and the part that plays them. */
+/** What the sequencer schedules: some notes or a drum hit, and the engine strip that plays them (`stripId`). */
 export type Scheduled =
     | { midi: number[]; gate?: number; strum?: number[]; velocity?: number; legato: number; part: string; drum?: undefined }
     | { drum: DrumVoice; part: string };
@@ -29,9 +29,11 @@ export function kickTicks(parts: Part[], ts: TimeSignature, end: number): number
 /**
  * What one section view plays from tick 0 to `length`, shifted by `offset`: every audible part not muted
  * in the section, each its own way. Drum patterns start from the top of the section; with `cut`, notes
- * and held chords are cut at `length` (in a chain the next section takes over there).
+ * and held chords are cut at `length` (in a chain the next section takes over there). Each part plays
+ * through its engine strip in section `sec` (its own when the section changes how the part sounds).
  */
-export function sectionEvents(view: Song, mutes: Section['mutes'], length: number, offset = 0, cut = true): TimedEvent[] {
+export function sectionEvents(view: Song, sec: Section, length: number, offset = 0, cut = true): TimedEvent[] {
+    const mutes = sec.mutes;
     const h: Harmony = { chords: view.chords, key: view.key, scale: view.scale };
     const beatTicks = ticksPerStep(view.timeSignature);
     const total = view.steps * beatTicks;
@@ -41,13 +43,13 @@ export function sectionEvents(view: Song, mutes: Section['mutes'], length: numbe
         // a drum pattern repeats from the top of the section until it ends
         ? expandPattern(p.drums, view.timeSignature, length)
             .filter(hit => outsideRests(restSpans(view.chords, p), hit.tick))
-            .map(hit => ({ tick: hit.tick + offset, duration: TICKS_PER_SIXTEENTH, data: { drum: hit.voice, part: p.id } }))
+            .map(hit => ({ tick: hit.tick + offset, duration: TICKS_PER_SIXTEENTH, data: { drum: hit.voice, part: stripId(sec, p.id) } }))
         : partNotes(p, h, { beatTicks, barTicks: ticksPerBar(view.timeSignature), kicks })
             .filter(n => n.start < length)
             .map(n => ({
                 tick: n.start + offset,
                 duration: cut ? Math.min(n.len, length - n.start) : n.len,
-                data: { midi: n.midi, gate: n.gate, strum: n.strum, velocity: n.velocity, legato: LEGATO[p.kind], part: p.id },
+                data: { midi: n.midi, gate: n.gate, strum: n.strum, velocity: n.velocity, legato: LEGATO[p.kind], part: stripId(sec, p.id) },
             }))));
 }
 
@@ -67,7 +69,7 @@ export function chainEvents(song: FullSong, layout: ChainSlot[] = chainLayout(so
             view = sectionView(song, slot.section.id);
             views.set(slot.section.id, view);
         }
-        return sectionEvents(view, slot.section.mutes, slot.len, slot.start);
+        return sectionEvents(view, slot.section, slot.len, slot.start);
     });
     return { events, length: chainTicks(layout) };
 }
