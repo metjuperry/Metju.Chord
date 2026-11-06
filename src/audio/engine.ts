@@ -32,6 +32,8 @@ interface Channel {
     pan: Tone.Panner;
     drive?: Tone.WaveShaper;
     makeup?: Tone.Gain;
+    /** A waveform tap after the level, made when the Parts scope first asks (`analyser`). */
+    scope?: Tone.Analyser;
     chorus?: Tone.Chorus;
     tremolo?: Tone.Tremolo;
     level: Tone.Volume;
@@ -344,6 +346,18 @@ export class Engine {
         } catch {
             // two hits on one monophonic voice at the same instant: the second is dropped
         }
+    }
+
+    /** The waveform of a part's output (after its level), for the Parts scope; tapped on first ask, null for an unknown part. */
+    analyser(id: string): Tone.Analyser | null {
+        const ch = this.strips.get(id) ?? this.kits.get(id);
+        if (!ch) return null;
+        if (!ch.scope) {
+            ch.scope = new Tone.Analyser('waveform', 1024);
+            ch.level.connect(ch.scope);
+            ch.nodes.push(ch.scope);
+        }
+        return ch.scope;
     }
 
     removeTrack(id: string) {
