@@ -1,9 +1,9 @@
 import { isEmptyPattern } from './drums';
-import { ChordPart, Part, audibleParts, newPart } from './parts';
+import { ChordPart, Part, audibleParts, musicLoopEnd, newPart } from './parts';
 import { isChordClip } from './progression';
 import {
     ChainEntry, FullSong, MAX_CHAIN, MAX_SECTIONS, PartContent, Section, Song, TimeSignature, changeTimeSignature, contentOf, defaultSpace, letterFor,
-    stepsPerRow, stripContent, ticksPerStep,
+    stepsPerRow, stripContent, ticksPerBar, ticksPerStep,
 } from './song';
 
 // ---- the projection: one section as an ordinary single-section Song, and edits back --------------
@@ -213,16 +213,30 @@ export interface ChainSlot {
     bars: number;
 }
 
-/** The chain laid end to end: where each slot starts, in ticks and bars. */
+/**
+ * How long a section plays: where its music ends, rounded up to a bar (at least one), and never past
+ * its length. The same length Loop mode loops it at, so a 16-bar section with 12 bars of music plays
+ * 12 bars in the chain too.
+ */
+export function playedTicks(song: FullSong, sec: Section): number {
+    const view = sectionView(song, sec.id);
+    return Math.min(musicLoopEnd(view.chords, view.parts, ticksPerBar(song.timeSignature)), sectionTicks(song, sec));
+}
+
+/** The chain laid end to end: where each slot starts, in ticks and bars, each section for as long as it plays. */
 export function chainLayout(song: FullSong): ChainSlot[] {
-    const step = ticksPerStep(song.timeSignature);
+    const bar = ticksPerBar(song.timeSignature);
+    const played = new Map<string, number>();
     let tick = 0;
-    let beat = 0;
     return song.chain.map((entry, index) => {
         const section = findSection(song, entry.sectionId);
-        const slot = { index, entry, section, start: tick, len: section.steps * step, startBar: Math.floor(beat / song.timeSignature.beats) + 1, bars: sectionBars(song.timeSignature, section) };
-        tick += slot.len;
-        beat += section.steps;
+        let len = played.get(section.id);
+        if (len === undefined) {
+            len = playedTicks(song, section);
+            played.set(section.id, len);
+        }
+        const slot = { index, entry, section, start: tick, len, startBar: Math.floor(tick / bar) + 1, bars: Math.round((len / bar) * 10) / 10 };
+        tick += len;
         return slot;
     });
 }

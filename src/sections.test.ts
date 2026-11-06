@@ -3,10 +3,10 @@ import {
     FullSong, SAVE_VERSION, SavedState, Song, defaultSettings, encodeShare, decodeShare, fromSingleSection, newFullSong, newSong, readFullSong, readSaved, stepsPerRow,
 } from './song';
 import {
-    addSection, appendToChain, applySectionEdit, chainLayout, changeSongTimeSignature, cleanSlate, deleteSection, duplicateEntry,
+    addSection, appendToChain, applySectionEdit, chainLayout, playedTicks, changeSongTimeSignature, cleanSlate, deleteSection, duplicateEntry,
     duplicateSection, isCleanSlate, moveEntry, partStateIn, removeEntry, renameSection, sectionView, setSectionMute, slotAt,
 } from './sections';
-import { chainEvents, sectionEvents } from './playback';
+import { chainEvents, sectionEvents, sectionLoopLength } from './playback';
 import { newPart, placeNote } from './parts';
 import { TICKS_PER_STEP as S } from './progression';
 
@@ -213,12 +213,32 @@ describe('sections and the chain', () => {
     });
 
     it('lays the chain out in ticks and bars', () => {
-        let song = base(); // A: 16 steps = 4 bars
-        const b = addSection(song); // B: 8 steps = 2 bars
+        let song = base(); // A: 16 steps, music for the first 2 bars
+        const b = addSection(song); // B: 8 steps, empty
         song = appendToChain(appendToChain(b.song, b.id), 's1');
         const layout = chainLayout(song);
-        expect(layout.map(s => [s.startBar, s.bars, s.start])).toEqual([[1, 4, 0], [5, 2, 16 * S], [7, 4, 24 * S]]);
-        expect(slotAt(layout, 20 * S).section.id).toBe(b.id);
+        // each section for as long as it plays (where its music ends, a bar at least), like Loop mode
+        expect(layout.map(s => [s.startBar, s.bars, s.start])).toEqual([[1, 2, 0], [3, 1, 8 * S], [4, 2, 12 * S]]);
+        expect(slotAt(layout, 9 * S).section.id).toBe(b.id);
+    });
+
+    it('plays a section in the chain as long as Loop mode loops it, not its whole length', () => {
+        // a 16-bar section whose chords stop after 12 bars
+        let song = base();
+        const view = sectionView(song, 's1');
+        song = applySectionEdit(song, 's1', {
+            ...view,
+            steps: 64,
+            chords: [{ start: 0, len: 48 * S, chord: { degree: 0, type: 'triad', inversion: 0, octave: 4 } }],
+            parts: view.parts.map(p => (p.kind === 'melody' ? { ...p, notes: [] } : p.kind === 'drums' ? { ...p, drums: { bars: 1, hits: {} } } : p)),
+        });
+        song = appendToChain(song, 's1');
+        const layout = chainLayout(song);
+        expect(layout.map(s => s.bars)).toEqual([12, 12]);
+        expect(playedTicks(song, song.sections[0])).toBe(sectionLoopLength(sectionView(song, 's1')));
+        expect(chainEvents(song).length).toBe(2 * 48 * S);
+        // and never longer than the section: music running past its end is cut there
+        expect(playedTicks({ ...song, sections: [{ ...song.sections[0], steps: 32 }] }, { ...song.sections[0], steps: 32 })).toBe(32 * S);
     });
 
     it('says which parts play in a section', () => {
@@ -235,18 +255,18 @@ describe('sections and the chain', () => {
 describe('chain playback', () => {
     it('restarts drum patterns at each section and cuts notes at the section end', () => {
         let song = base2();
-        // A (4 bars) then B (2 bars), B has a long melody note running past its end
+        // A (music for 2 bars) then B (2 bars), B's melody note runs to its very end
         const layout = chainLayout(song);
         const { events, length } = chainEvents(song, layout);
-        expect(length).toBe(24 * S);
+        expect(length).toBe(16 * S);
         const kicks = events.filter(e => e.data.drum === 'kick').map(e => e.tick);
-        // the A pattern (kicks on 1/16 0 and 8 of each bar) for 4 bars, then B's own pattern from its top (kick on 0 only)
-        expect(kicks).toEqual([0, 192, 384, 576, 768, 960, 1152, 1344, 16 * S, 20 * S]);
+        // the A pattern (kicks on 1/16 0 and 8 of each bar) for its 2 bars, then B's own pattern from its top (kick on 0 only)
+        expect(kicks).toEqual([0, 192, 384, 576, 8 * S, 12 * S]);
         const mel = song.parts.find(p => p.kind === 'melody')!.id;
         const last = events.filter(e => e.data.part === mel).pop()!;
-        expect(last.tick + last.duration).toBe(24 * S);
+        expect(last.tick + last.duration).toBe(16 * S);
         song = setSectionMute(song, song.sections[1].id, mel, true);
-        expect(chainEvents(song).events.some(e => e.data.part === mel && e.tick >= 16 * S)).toBe(false);
+        expect(chainEvents(song).events.some(e => e.data.part === mel && e.tick >= 8 * S)).toBe(false);
     });
 
     it('a section on its own plays like the v2 song did', () => {
