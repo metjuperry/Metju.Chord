@@ -15,10 +15,11 @@ import {
 import { PPQ } from '../progression';
 import { ShapeView, Space } from '../song';
 import {
-    DRIVE_TYPES, DriveType, FILTER_TYPES, FilterType, KNOBS, LFO_RATES, LfoRate, ShapeKnob, ShapeOverrides, defaultShape, effectiveShape, fromKnob, shapeText, toKnob,
+    DRIVE_TYPES, DriveType, FILTER_TYPES, FilterType, KNOBS, LFO_RATES, LfoRate, PartShape, ShapeKnob, ShapeOverrides, defaultShape, effectiveShape, fromKnob, shapeText, toKnob,
 } from '../sound';
 import ShapeGraphs, { EnvelopeGraph, FilterGraph } from './ShapeGraphs';
 import Scope, { WaveSource } from './Scope';
+import { useMorph } from '../motion';
 
 // ---- shared bits: instrument icons, chord style ------------------------------------------------
 
@@ -567,9 +568,24 @@ interface ShapeBlockProps {
  * Both edit the same shape. Reset goes back to the instrument's own sound; a knob's double-tap puts
  * just that one back.
  */
-const ShapeBlock: React.FC<ShapeBlockProps> = ({ part, view, onView, onShape, onReset, scope }) => {
+/** Two shapes mixed `t` of the way, knob by knob (in knob travel, so a log knob swings evenly); switches flip at once. */
+function lerpShape(a: PartShape, b: PartShape, t: number): PartShape {
+    const out = { ...b };
+    for (const k of Object.keys(KNOBS) as ShapeKnob[]) {
+        out[k] = fromKnob(k, toKnob(k, a[k] as number) + (toKnob(k, b[k] as number) - toKnob(k, a[k] as number)) * t);
+    }
+    return out;
+}
+
+const ShapeBlock: React.FC<ShapeBlockProps> = ({ part, view, onView, onShape, onReset: reset, scope }) => {
     const own = defaultShape(part.instrument);
-    const shape = effectiveShape(part.instrument, part.shape);
+    const target = useMemo(() => effectiveShape(part.instrument, part.shape), [part.instrument, part.shape]);
+    // Reset swings the knobs and graphs back to the instrument's own sound; everything else follows at once
+    const [shape, armMorph] = useMorph(target, lerpShape);
+    const onReset = () => {
+        armMorph();
+        reset();
+    };
     const changed = Object.keys(part.shape).length > 0;
     const knob = (k: ShapeKnob) => (
         <KnobCell

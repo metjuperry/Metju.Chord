@@ -67,6 +67,7 @@ src/
   shades.ts              a part colour's seven shades for the melody grid's note letters, per theme
   useHistory.ts          undo/redo with merge keys (one knob turn or slider drag = one step)
   useMedia.ts            matchMedia hook (the compact layout switch)
+  motion.ts              animation helpers: section zoom, slide and fade, segmented thumbs, the Reset morph; reduced-motion check
   preview.ts             sound preview: what a part plays on each beat while its sound is being changed in Parts
   audio/
     engine.ts            every audio node: per-part channels, shared reverb/delay, master, limiter, transport helpers, intro chord
@@ -147,6 +148,7 @@ Keep these when changing anything visible.
 - **No text selection**: `body` has `user-select: none` and no iOS touch callout, because quick repeated pad taps would otherwise select text. Inputs and reading text (help, credits, Learn) opt back in; add new reading areas to that list in `index.css`.
 - **Accessibility**: everything has a keyboard path and an aria label. Dialogs (`role="dialog"`, `aria-modal`) use `useDialog` (focus in, Tab trapped, Esc closes the top one, focus back). Global shortcuts live in App's keydown handler, which ignores inputs, selects and `role="slider"`.
 - **Effects return nothing or a cleanup**: write `useEffect(() => { … })` with a block body. An expression body returns its value as the cleanup, and React calling a non-function on unmount blanks the whole app (newer browsers return a Promise from `scrollTo`, which did exactly that to Learn). `effects.test.ts` enforces it.
+- **Motion: calm, never in the way** (`motion.ts`, tokens `--motion-fast` 140 ms, `--motion` 200 ms, `--ease` in `index.css`). What moves: the sequencer playhead glides (App writes `--pp` on `.playhead` every frame while playing); a section tile grows into the editor and back (`zoomSection`, View Transitions, `data-section` on the tile); ‹ › slides the sequencer in from that side; every `.segmented` group has a sliding thumb (`useSegmentThumbs` writes `--seg-x/-y/-w/-h`; a variant with another pressed colour sets `--seg-thumb`); the part detail fades up on a switch; Record pulses while on; Reset swings the shape back (`useMorph`). Nothing delays a pad or a sound. Every animation stops with `prefers-reduced-motion`, and anything without browser support simply jumps. Keep new motion to that: few things, short, on purpose.
 - **Undo**: every edit to the song is one undo step (use merge keys in `useHistory` for drags and knob turns). Settings are not undoable.
 - **Playback never moves the chord info or stick**: those only follow live playing.
 - **Learn is a reference, not a generator**: it never writes notes on its own. "Use in song" is explicit and undoable.

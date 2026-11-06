@@ -102,7 +102,7 @@ const SectionTile: React.FC<{
     const states: { color: string; state: PartState; name: string }[] = song.parts.map(p => ({ color: p.color, state: partStateIn(song, section, p), name: p.name }));
     const playsLabel = states.filter(s => s.state === 'plays').map(s => s.name).join(', ') || 'nothing';
     return (
-        <div className={`sec-tile ${open ? 'open' : ''} ${tag === 'playing' ? 'playing' : ''}`}>
+        <div className={`sec-tile ${open ? 'open' : ''} ${tag === 'playing' ? 'playing' : ''}`} data-section={section.id}>
             <button
                 className="sec-main"
                 aria-label={`Open ${section.name}, ${plural(bars, 'bar')}, ${chords.length ? `chords ${chords.join(' ')}` : 'no chords'}; playing: ${playsLabel}${tag === 'playing' ? '. Playing now' : tag === 'next' ? '. Next' : ''}. Long-press for options`}

@@ -366,6 +366,7 @@
 }
 
 .segmented.dark {
+    --seg-thumb: var(--cap);
     background: var(--device-inset);
     border-color: var(--device-edge);
 }

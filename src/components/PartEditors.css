@@ -13,6 +13,10 @@
     gap: 6px 8px;
 }
 
+.part-head .segmented {
+    --seg-thumb: var(--track);
+}
+
 .part-head .segmented > button {
     min-height: 30px;
     padding: 0 10px;

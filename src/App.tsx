@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as Tone from 'tone';
 import './App.css';
 import TopBar, { AppMode, BPM_MAX, BPM_MIN, OCTAVE_MAX, OCTAVE_MIN } from './components/TopBar';
@@ -35,6 +35,7 @@ import {
     SoundScope, stripId,
 } from './sections';
 import { PREVIEW_TAIL_BEATS, previewSound } from './preview';
+import { slideIn, useSegmentThumbs, zoomSection } from './motion';
 import type { ShapeOverrides } from './sound';
 import { Scheduled, chainEvents, kickTicks, sectionEvents, sectionLoopLength, sectionMusicEnd } from './playback';
 import SongView from './components/SongView';
@@ -242,6 +243,7 @@ const App: React.FC = () => {
     openRef.current = openKey;
     /** Song mode shows the whole song (sections and chain) or zooms into the open section. */
     const [songZoom, setSongZoom] = useState<'song' | 'section'>('song');
+    useSegmentThumbs();
     /** Where Parts edits go: the open section while Song is zoomed into it, otherwise the whole song. */
     const soundScope: SoundScope = songZoom === 'section' ? 'section' : 'song';
     const scopeRef = useRef(soundScope);
@@ -651,6 +653,18 @@ const App: React.FC = () => {
     /** The next bar line at or after song tick `tick`. */
     const nextBar = (tick: number) => Math.ceil(tick / barTicks) * barTicks;
 
+    // ‹ › and the section list: the sequencer slides in from the side of the section it came from
+    const shownSection = useRef({ id: openKey, zoom: songZoom });
+    useLayoutEffect(() => {
+        const was = shownSection.current;
+        shownSection.current = { id: openKey, zoom: songZoom };
+        if (was.zoom !== 'section' || songZoom !== 'section' || was.id === openKey) return;
+        const from = full.sections.findIndex(sec => sec.id === was.id);
+        const to = full.sections.findIndex(sec => sec.id === openKey);
+        if (from < 0 || to < 0) return;
+        slideIn(document.querySelectorAll('.progression > :not(.prog-head), .progression .ss-current'), to > from ? 1 : -1);
+    }, [openKey, songZoom]); // eslint-disable-line react-hooks/exhaustive-deps
+
     /** Open a section. In Loop mode while playing, playback switches to it at the next bar line (it shows NEXT until then). */
     const openSection = (id: string) => {
         if (id !== openKey) {
@@ -762,6 +776,12 @@ const App: React.FC = () => {
                 }
                 // the sequencer and editors show the playhead only while their section is the one playing
                 const here = sec === openRef.current;
+                // the sequencer's playhead glides: its exact place, in steps, every frame
+                const exact = here ? String(local / live.current.stepTicks) : '';
+                document.querySelectorAll<HTMLElement>('.playhead').forEach(el => {
+                    if (exact) el.style.setProperty('--pp', exact);
+                    else el.style.removeProperty('--pp');
+                });
                 const step = here ? Math.floor(local / live.current.stepTicks) : -1;
                 if (step !== last) {
                     last = step;
@@ -779,6 +799,7 @@ const App: React.FC = () => {
         return () => {
             cancelAnimationFrame(frame);
             setPlaySixteenth(-1);
+            document.querySelectorAll<HTMLElement>('.playhead').forEach(el => el.style.removeProperty('--pp'));
         };
     }, [playing]);
 
@@ -1704,7 +1725,7 @@ const App: React.FC = () => {
                     timeSignature={ts}
                     counts={Object.fromEntries(full.sections.map(sec => [sec.id, chainCount(full, sec.id)]))}
                     queued={queued}
-                    onBack={() => setSongZoom('song')}
+                    onBack={() => zoomSection(openKey, () => setSongZoom('song'))}
                     onPick={openSection}
                 />
             )}
@@ -1725,10 +1746,10 @@ const App: React.FC = () => {
             chainPos={chainPos}
             playingSection={playingSection}
             queued={queued}
-            onOpen={id => {
+            onOpen={id => zoomSection(id, () => {
                 openSection(id);
                 setSongZoom('section');
-            }}
+            })}
             onPickSlot={slot => {
                 openSection(slot.section.id);
                 jumpToSlot(slot);
