@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import './PartsView.css';
 import './FxMatrix.css';
 import Knob from './Knob';
@@ -13,9 +13,12 @@ import {
     STRUM_DIRECTIONS, STRUM_SPREADS, TONE_KEYS, bassNotes, fxAvailable, hasInstrument, shapePan,
 } from '../parts';
 import { PPQ } from '../progression';
-import { Space } from '../song';
-import { KNOBS, ShapeKnob, defaultShape, effectiveShape, fromKnob, shapeText, toKnob } from '../sound';
-import ShapeGraphs from './ShapeGraphs';
+import { ShapeView, Space } from '../song';
+import {
+    DRIVE_TYPES, DriveType, FILTER_TYPES, FilterType, KNOBS, LFO_RATES, LfoRate, ShapeKnob, ShapeOverrides, defaultShape, effectiveShape, fromKnob, shapeText, toKnob,
+} from '../sound';
+import ShapeGraphs, { EnvelopeGraph, FilterGraph } from './ShapeGraphs';
+import Scope, { WaveSource } from './Scope';
 
 // ---- shared bits: instrument icons, chord style ------------------------------------------------
 
@@ -356,14 +359,17 @@ interface PartDetailProps {
     onRemove: () => void;
     onUpdate: (patch: Partial<Part>) => void;
     onTone: (key: keyof PartTone, value: number) => void;
-    onShape: (key: ShapeKnob, value: number) => void;
+    onShape: (patch: ShapeOverrides, key: string) => void;
     onShapeReset: () => void;
+    shapeView: ShapeView;
+    onShapeView: (v: ShapeView) => void;
+    scope: () => WaveSource | null;
     onFx: (key: keyof PartFx, value: number) => void;
     /** Drums: jump to Song with this part's beat open. */
     onOpenBeat: () => void;
 }
 
-const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onPadPart, onRemove, onUpdate, onTone, onShape, onShapeReset, onFx, onOpenBeat }) => {
+const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onPadPart, onRemove, onUpdate, onTone, onShape, onShapeReset, shapeView, onShapeView, scope, onFx, onOpenBeat }) => {
     // Effects stay on screen while you turn them (even down to 0) and after "+ Effect"; double-tap (0) takes one away
     const [pinned, setPinned] = useState<(keyof PartFx)[]>([]);
     useEffect(() => {
@@ -465,7 +471,7 @@ const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onP
             )}
 
             {hasInstrument(part) && (
-                <ShapeBlock part={part} onShape={onShape} onReset={onShapeReset} />
+                <ShapeBlock part={part} view={shapeView} onView={onShapeView} onShape={onShape} onReset={onShapeReset} scope={scope} />
             )}
 
             <div className="pd-knobs">
@@ -534,40 +540,111 @@ const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onP
     );
 };
 
+const FILTER_LABELS: { [t in FilterType]: [string, string] } = {
+    lowpass: ['Low-pass', 'lets the lows through: turning Cutoff down makes it darker'],
+    highpass: ['High-pass', 'lets the highs through: turning Cutoff up makes it thinner'],
+    bandpass: ['Band-pass', 'only a band around the cutoff: nasal, like a radio or a telephone'],
+};
+const DRIVE_LABELS: { [t in DriveType]: [string, string] } = {
+    warm: ['Warm', 'soft saturation: rounder, fuller, like tape or a tube'],
+    crunch: ['Crunch', 'hard distortion: buzzy and aggressive'],
+    bitcrush: ['Bitcrush', 'fewer bits: grainy, stepped lo-fi, like old samplers'],
+};
+const LFO_LABELS: { [r in LfoRate]: string } = { '1n': '1/1', '2n': '1/2', '4n': '1/4', '8n': '1/8', '16n': '1/16', '8t': '1/8T' };
+
+interface ShapeBlockProps {
+    part: InstrumentPart;
+    view: ShapeView;
+    onView: (v: ShapeView) => void;
+    onShape: (patch: ShapeOverrides, key: string) => void;
+    onReset: () => void;
+    scope: () => WaveSource | null;
+}
+
 /**
- * Shape (Simple): the envelope and filter drawn read-only, six knobs under their standard names, and
- * Reset back to the instrument's own sound. A knob's double-tap puts just that one back.
+ * Shape: Simple shows the envelope and filter read-only over six knobs; Advanced makes the graphs
+ * draggable and adds Decay, Sustain, the filter type, the LFO and the drive type, plus a live scope.
+ * Both edit the same shape. Reset goes back to the instrument's own sound; a knob's double-tap puts
+ * just that one back.
  */
-const ShapeBlock: React.FC<{ part: InstrumentPart; onShape: (k: ShapeKnob, v: number) => void; onReset: () => void }> = ({ part, onShape, onReset }) => {
+const ShapeBlock: React.FC<ShapeBlockProps> = ({ part, view, onView, onShape, onReset, scope }) => {
     const own = defaultShape(part.instrument);
     const shape = effectiveShape(part.instrument, part.shape);
     const changed = Object.keys(part.shape).length > 0;
+    const knob = (k: ShapeKnob) => (
+        <KnobCell
+            key={k}
+            label={KNOBS[k].label}
+            aria={`${part.name} ${KNOBS[k].label}`}
+            title={`${SHAPE_HINTS[k]} · double-tap: back to ${instrumentLabel(part.instrument)}'s own`}
+            value={toKnob(k, shape[k] as number)}
+            display={shapeText(k, shape[k] as number)}
+            color={part.color}
+            on={part.shape[k] !== undefined && Math.abs(toKnob(k, part.shape[k] as number) - toKnob(k, own[k] as number)) > 0.005}
+            resetTo={toKnob(k, own[k] as number)}
+            bipolar={k === 'envAmount'}
+            onChange={v => onShape({ [k]: fromKnob(k, v) }, k)}
+        />
+    );
     return (
         <div className="pd-block shape-block" role="group" aria-label={`${part.name} shape`}>
             <div className="shape-head">
                 <span className="pd-label">Shape</span>
-                <span className="section-note">how each note rises, falls and is filtered</span>
+                <span className="section-note shape-note">how each note rises, falls and is filtered</span>
                 <span className="shape-space" />
+                <div className="segmented small-seg" role="group" aria-label="Shape view">
+                    <button aria-pressed={view === 'simple'} title="six knobs" onClick={() => onView('simple')}>Simple</button>
+                    <button aria-pressed={view === 'advanced'} title="every control, draggable graphs and a scope" onClick={() => onView('advanced')}>Advanced</button>
+                </div>
                 <button className="chip-button shape-reset" disabled={!changed} title={`Back to ${instrumentLabel(part.instrument)} as designed`} onClick={onReset}>Reset</button>
             </div>
-            <ShapeGraphs shape={shape} color={part.color} />
-            <div className="knob-row shape-knobs">
-                {SIMPLE_KNOBS.map(k => (
-                    <KnobCell
-                        key={k}
-                        label={KNOBS[k].label}
-                        aria={`${part.name} ${KNOBS[k].label}`}
-                        title={`${SHAPE_HINTS[k]} · double-tap: back to ${instrumentLabel(part.instrument)}'s own`}
-                        value={toKnob(k, shape[k] as number)}
-                        display={shapeText(k, shape[k] as number)}
-                        color={part.color}
-                        on={part.shape[k] !== undefined && Math.abs(toKnob(k, part.shape[k] as number) - toKnob(k, own[k] as number)) > 0.005}
-                        resetTo={toKnob(k, own[k] as number)}
-                        bipolar={k === 'envAmount'}
-                        onChange={v => onShape(k, fromKnob(k, v))}
-                    />
-                ))}
-            </div>
+            {view === 'simple' ? (
+                <>
+                    <ShapeGraphs shape={shape} color={part.color} />
+                    <div className="knob-row shape-knobs">{SIMPLE_KNOBS.map(knob)}</div>
+                </>
+            ) : (
+                <>
+                    <div className="shape-graphs advanced">
+                        <EnvelopeGraph shape={shape} color={part.color} height={64} onChange={onShape} />
+                        <FilterGraph shape={shape} color={part.color} height={64} onChange={onShape} />
+                    </div>
+                    <div className="shape-sections">
+                        <div className="shape-section" role="group" aria-label="Envelope">
+                            <span className="shape-sub">Envelope</span>
+                            <div className="knob-row shape-knobs">{(['attack', 'decay', 'sustain', 'release'] as ShapeKnob[]).map(knob)}</div>
+                        </div>
+                        <div className="shape-section" role="group" aria-label="Filter">
+                            <span className="shape-sub">Filter</span>
+                            <div className="segmented small-seg" role="group" aria-label="Filter type">
+                                {FILTER_TYPES.map(t => (
+                                    <button key={t} aria-pressed={shape.filterType === t} title={FILTER_LABELS[t][1]} onClick={() => onShape({ filterType: t }, 'filterType')}>{FILTER_LABELS[t][0]}</button>
+                                ))}
+                            </div>
+                            <div className="knob-row shape-knobs">{(['cutoff', 'resonance', 'envAmount'] as ShapeKnob[]).map(knob)}</div>
+                        </div>
+                        <div className="shape-section" role="group" aria-label="LFO">
+                            <span className="shape-sub" title="LFO: a slow wave that sweeps the cutoff up and down, in time with the song">LFO</span>
+                            <div className="segmented small-seg" role="group" aria-label="LFO rate">
+                                {LFO_RATES.map(r => (
+                                    <button key={r} aria-pressed={shape.lfoRate === r} title={`LFO Rate: one sweep per ${LFO_LABELS[r]} note`} onClick={() => onShape({ lfoRate: r }, 'lfoRate')}>{LFO_LABELS[r]}</button>
+                                ))}
+                            </div>
+                            <div className="knob-row shape-knobs">{knob('lfoDepth')}</div>
+                        </div>
+                        <div className="shape-section" role="group" aria-label="Drive">
+                            <span className="shape-sub">Drive</span>
+                            <div className="segmented small-seg" role="group" aria-label="Drive type">
+                                {DRIVE_TYPES.map(t => (
+                                    <button key={t} aria-pressed={shape.driveType === t} title={DRIVE_LABELS[t][1]} onClick={() => onShape({ driveType: t }, 'driveType')}>{DRIVE_LABELS[t][0]}</button>
+                                ))}
+                            </div>
+                            <div className="knob-row shape-knobs">{knob('drive')}</div>
+                        </div>
+                    </div>
+                    <Scope source={scope} color={part.color} label={part.name} />
+                </>
+            )}
         </div>
     );
 };
@@ -681,8 +758,12 @@ interface PartsViewProps {
     onPadPart: (id: string) => void;
     onUpdate: (id: string, patch: Partial<Part>) => void;
     onTone: (id: string, key: keyof PartTone, value: number) => void;
-    onShape: (id: string, key: ShapeKnob, value: number) => void;
+    onShape: (id: string, patch: ShapeOverrides, key: string) => void;
     onShapeReset: (id: string) => void;
+    shapeView: ShapeView;
+    onShapeView: (v: ShapeView) => void;
+    /** The selected part's live waveform, for the Advanced scope. */
+    scope: (id: string) => WaveSource | null;
     onFx: (id: string, key: keyof PartFx, value: number) => void;
     onSpace: (space: Space) => void;
     onDryAll: () => void;
@@ -701,6 +782,10 @@ const subLabel = (p: Part) => (hasInstrument(p) ? instrumentLabel((p as Instrume
 const PartsView: React.FC<PartsViewProps> = p => {
     const part = p.parts.find(x => x.id === p.selected);
     const anySolo = p.parts.some(x => x.solo);
+    // one function per selected part, so the scope keeps drawing across re-renders
+    const scopeOf = p.scope;
+    const partId = part?.id ?? '';
+    const scopeFor = useCallback(() => scopeOf(partId), [scopeOf, partId]);
     return (
         <div className="parts-view">
             <aside className="parts-list panel" aria-label="Parts and mixer">
@@ -745,8 +830,11 @@ const PartsView: React.FC<PartsViewProps> = p => {
                     onRemove={() => p.onRemove(part.id)}
                     onUpdate={patch => p.onUpdate(part.id, patch)}
                     onTone={(k, v) => p.onTone(part.id, k, v)}
-                    onShape={(k, v) => p.onShape(part.id, k, v)}
+                    onShape={(patch, key) => p.onShape(part.id, patch, key)}
                     onShapeReset={() => p.onShapeReset(part.id)}
+                    shapeView={p.shapeView}
+                    onShapeView={p.onShapeView}
+                    scope={scopeFor}
                     onFx={(k, v) => p.onFx(part.id, k, v)}
                     onOpenBeat={() => p.onOpenBeat(part.id)}
                 />

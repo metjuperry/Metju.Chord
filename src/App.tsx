@@ -206,6 +206,7 @@ const App: React.FC = () => {
     const [learnTab, setLearnTab] = useState<LearnTab>(initial.learnTab);
     const [chordMoodOn, setChordMoodOn] = useState(initial.chordMood);
     const [soundPreview, setSoundPreview] = useState(initial.soundPreview);
+    const [shapeView, setShapeView] = useState(initial.shapeView);
     /** Sync out for a Pocket Operator: this device's setting, not the song's (sync.ts). */
     const [syncOut, setSyncOutState] = useState<SyncOut>(loadSync);
     const setSyncOut = (patch: Partial<SyncOut>) => setSyncOutState(s => {
@@ -320,6 +321,10 @@ const App: React.FC = () => {
     // turning one tone knob is one undo step
     const setTone = (id: string, key: keyof PartTone, value: number) =>
         setParts(ps => ps.map(p => (p.id === id && hasInstrument(p) ? { ...p, tone: { ...p.tone, [key]: value } } : p)), `tone:${id}:${key}`);
+    /** A part's live waveform for the Parts scope (null until the audio has started). */
+    // the scope listens to the strip the open thing plays through
+    const scopeSec = soundScope === 'section' ? findSection(full, openKey) : undefined;
+    const scopeOf = useCallback((id: string) => (audioReady ? getEngine().analyser(stripId(scopeSec, id)) : null), [audioReady, scopeSec]);
     // turning one shape knob is one undo step; Reset puts the part back to its instrument's own sound
     const shapeActions = {
         set: (id: string, patch: ShapeOverrides, key: string) =>
@@ -1129,7 +1134,7 @@ const App: React.FC = () => {
     const snapshot = (): SavedState => ({
         version: SAVE_VERSION,
         song: full,
-        settings: { voiceLeading, octave, inversion, loop, theme, nextHint, padPart: padPartId, clickAccent, openSection: openKey, playMode, learnTab, chordMood: chordMoodOn, soundPreview },
+        settings: { voiceLeading, octave, inversion, loop, theme, nextHint, padPart: padPartId, clickAccent, openSection: openKey, playMode, learnTab, chordMood: chordMoodOn, soundPreview, shapeView },
     });
 
     // Autosave a moment after any change
@@ -1143,7 +1148,7 @@ const App: React.FC = () => {
         }, 400);
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [full, voiceLeading, octave, inversion, loop, theme, nextHint, padPartId, clickAccent, openKey, playMode, learnTab, chordMoodOn, soundPreview]);
+    }, [full, voiceLeading, octave, inversion, loop, theme, nextHint, padPartId, clickAccent, openKey, playMode, learnTab, chordMoodOn, soundPreview, shapeView]);
 
     /** Replace the song (undoable) and take over its saved settings. */
     const loadState = (state: SavedState, message: string) => {
@@ -1160,6 +1165,7 @@ const App: React.FC = () => {
         setNextHint(st.nextHint);
         setChordMoodOn(st.chordMood);
         setSoundPreview(st.soundPreview);
+        setShapeView(st.shapeView);
         setPadPartId(st.padPart);
         setSelectedLane(CHORD_LANE);
         setSelected(0);
@@ -1775,10 +1781,13 @@ const App: React.FC = () => {
                 fxActions.set(id, key, value);
                 hearPart(id);
             }}
-            onShape={(id, key, value) => {
-                shapeActions.set(id, { [key]: value }, key);
+            onShape={(id, patch, key) => {
+                shapeActions.set(id, patch, key);
                 hearPart(id);
             }}
+            shapeView={shapeView}
+            onShapeView={setShapeView}
+            scope={scopeOf}
             onShapeReset={id => {
                 shapeActions.reset(id);
                 hearPart(id);
