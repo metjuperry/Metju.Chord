@@ -2,8 +2,8 @@ import { isEmptyPattern } from './drums';
 import { ChordPart, Part, audibleParts, musicLoopEnd, newPart } from './parts';
 import { isChordClip } from './progression';
 import {
-    ChainEntry, FullSong, MAX_CHAIN, MAX_SECTIONS, PartContent, Section, Song, TimeSignature, changeTimeSignature, contentOf, defaultSpace, letterFor,
-    stepsPerRow, stripContent, ticksPerBar, ticksPerStep,
+    ChainEntry, FullSong, MAX_CHAIN, MAX_SECTIONS, PartContent, STRIP_KEYS, Section, SectionSound, Song, TimeSignature, changeTimeSignature, contentOf,
+    defaultSpace, isSoundKey, letterFor, sameValue, stepsPerRow, stripContent, ticksPerBar, ticksPerStep, withSound,
 } from './song';
 
 // ---- the projection: one section as an ordinary single-section Song, and edits back --------------
@@ -21,8 +21,10 @@ function fill(p: Part, c: PartContent | undefined): Part {
  * Section `id` of `song` as an ordinary single-section Song: its chords and length, the song-wide key,
  * tempo, time signature and effects, and the parts with this section's notes and drum patterns. The
  * sequencer, the melody and drum editors, recording and playback all work on this, unchanged.
+ * The parts sound the way they do in this section; with `ownSound` false, the way the song has them
+ * (what Parts shows and edits while the whole song is open).
  */
-export function sectionView(song: FullSong, id: string): Song {
+export function sectionView(song: FullSong, id: string, ownSound = true): Song {
     const sec = findSection(song, id);
     return {
         key: song.key,
@@ -32,7 +34,7 @@ export function sectionView(song: FullSong, id: string): Song {
         space: song.space,
         chords: sec.chords,
         steps: sec.steps,
-        parts: song.parts.map(p => fill(p, sec.content[p.id])),
+        parts: song.parts.map(p => fill(ownSound ? withSound(p, sec.sound?.[p.id]) : p, sec.content[p.id])),
     };
 }
 
@@ -53,37 +55,120 @@ function onlyParts<T>(rec: { [id: string]: T }, ids: Set<string>): { [id: string
     return keys.every(k => ids.has(k)) ? rec : Object.fromEntries(keys.filter(k => ids.has(k)).map(k => [k, rec[k]]));
 }
 
+/** Where an edit to a part's sound goes: the open section only, or the whole song (every section). */
+export type SoundScope = 'section' | 'song';
+
+type Rec = { [k: string]: unknown };
+const rec = (p: Part) => p as unknown as Rec;
+
+/** `own` with `key` set to `value`, or without it when the song has that value anyway. */
+function setOwn(own: SectionSound, key: string, value: unknown, songValue: unknown): SectionSound {
+    const { [key]: _old, ...rest } = own;
+    return sameValue(value, songValue) ? rest : { ...rest, [key]: value };
+}
+
+/**
+ * A song-wide change to `key` (from `before` to `after`), as it reaches a section that had its own
+ * value: a plain value is the song's again; in a record (effects, pan, shape) just the entries that
+ * changed are.
+ */
+function followSong(own: SectionSound, key: string, before: unknown, after: unknown): SectionSound {
+    if (!(key in own)) return own;
+    const mine = own[key];
+    if (typeof mine !== 'object' || mine === null || typeof after !== 'object' || after === null) {
+        const { [key]: _gone, ...rest } = own;
+        return rest;
+    }
+    const b = (before ?? {}) as Rec;
+    const a = after as Rec;
+    const next: Rec = { ...(mine as Rec) };
+    for (const k of new Set([...Object.keys(b), ...Object.keys(a)])) {
+        if (b[k] === a[k]) continue;
+        if (a[k] === undefined) delete next[k];
+        else next[k] = a[k];
+    }
+    return setOwn(own, key, next, after);
+}
+
 /**
  * Write an edited section view back: its chords, length and content go into section `id`; key, scale,
- * tempo, time signature, effects and the parts' sound go song-wide. A part removed in the view loses its
- * content and mutes in every section. Unchanged parts and sections keep their objects.
+ * tempo, time signature and the shared effects go song-wide. A part's name, colour, mute and solo are
+ * song-wide too. Its sound and style (instrument, volume, effects, pan, shape, play mode…) go where
+ * `scope` says: with 'section', into this section's own sound (`view` shows the parts as they sound
+ * here); with 'song', into the song's part, replacing what any section had for that setting (`view`
+ * shows the song's parts). A part added in the view is added to the song; one removed loses its
+ * content, mutes and sound in every section. Unchanged parts and sections keep their objects.
  */
-export function applySectionEdit(song: FullSong, id: string, view: Song): FullSong {
+export function applySectionEdit(song: FullSong, id: string, view: Song, scope: SoundScope = 'section'): FullSong {
     const sec = findSection(song, id);
+    const before = sectionView(song, sec.id, scope === 'section');
     const content: Section['content'] = {};
     view.parts.forEach(p => {
         const c = contentOf(p);
         if (c) content[p.id] = c;
     });
+    /** Sections' own sound, per section id, as it changes. */
+    const sounds = new Map(song.sections.map(s => [s.id, s.sound ?? {}]));
     const parts = view.parts.map(p => {
         const stripped = stripContent(p);
         const old = song.parts.find(o => o.id === p.id);
-        return old && shallowEqual(old, stripped, ['notes', 'drums']) ? old : stripped;
+        const prev = before.parts.find(o => o.id === p.id);
+        if (!old || !prev || old.kind !== p.kind) return stripped;
+        const changed = Object.keys(stripped).filter(k => isSoundKey(k) && !sameValue(rec(stripped)[k], rec(prev)[k]));
+        let next: Part;
+        if (scope === 'section') {
+            // the song's part takes the name, colour, mute and solo; this section takes the sound
+            next = Object.fromEntries(Object.keys(stripped).map(k => [k, isSoundKey(k) ? rec(old)[k] : rec(stripped)[k]])) as unknown as Part;
+            let own = sounds.get(sec.id)![p.id] ?? {};
+            for (const k of changed) own = setOwn(own, k, rec(stripped)[k], rec(old)[k]);
+            const all = { ...sounds.get(sec.id)! };
+            if (Object.keys(own).length) all[p.id] = own;
+            else delete all[p.id];
+            sounds.set(sec.id, all);
+        } else {
+            next = stripped;
+            for (const [sid, all] of sounds) {
+                const mine = all[p.id];
+                if (!mine) continue;
+                let own = mine;
+                for (const k of changed) own = followSong(own, k, rec(prev)[k], rec(stripped)[k]);
+                if (own === mine) continue;
+                const nextAll = { ...all };
+                if (Object.keys(own).length) nextAll[p.id] = own;
+                else delete nextAll[p.id];
+                sounds.set(sid, nextAll);
+            }
+        }
+        return shallowEqual(old, next, ['notes', 'drums']) ? old : next;
     });
     const ids = new Set(parts.map(p => p.id));
+    /** The section's own sound after the edit: same object when nothing changed, left out when empty. */
+    const soundOf = (s: Section): Section['sound'] => {
+        const after = onlyParts(sounds.get(s.id)!, ids);
+        if (s.sound && shallowEqual(after, s.sound)) return s.sound;
+        if (!s.sound && !Object.keys(after).length) return undefined;
+        return Object.keys(after).length ? after : undefined;
+    };
+    const withSoundOf = (s: Section, next: Section): Section => {
+        const sound = soundOf(s);
+        if (sound === next.sound) return next;
+        const { sound: _old, ...rest } = next;
+        return sound ? { ...rest, sound } : rest;
+    };
     const sections = song.sections.map(s => {
         if (s.id !== sec.id) {
             const c = onlyParts(s.content, ids);
             const m = onlyParts(s.mutes, ids);
-            return c === s.content && m === s.mutes ? s : { ...s, content: c, mutes: m };
+            const out = withSoundOf(s, c === s.content && m === s.mutes ? s : { ...s, content: c, mutes: m });
+            return shallowEqual(out, s) ? s : out;
         }
-        const next = {
+        const next = withSoundOf(s, {
             ...s,
             chords: view.chords,
             steps: view.steps,
             content: sameContent(content, s.content) ? s.content : content,
             mutes: onlyParts(s.mutes, ids),
-        };
+        });
         return shallowEqual(next, s) ? s : next;
     });
     return {
@@ -96,6 +181,26 @@ export function applySectionEdit(song: FullSong, id: string, view: Song): FullSo
         sections: sections.every((s, i) => s === song.sections[i]) ? song.sections : sections,
         chain: song.chain,
     };
+}
+
+// ---- the engine strips: one per part, and one more for each section that sounds its own way ----------
+
+/** The engine strip a part plays through in section `sec`: its own when the section changes how the part sounds. */
+export function stripId(sec: Section | undefined, partId: string): string {
+    const own = sec?.sound?.[partId];
+    return own && STRIP_KEYS.some(k => k in own) ? `${partId}@${sec!.id}` : partId;
+}
+
+/** Every strip the song needs, with the part as it sounds through it. */
+export function engineStrips(song: FullSong): { id: string; part: Part }[] {
+    const out = song.parts.map(p => ({ id: p.id, part: p }));
+    for (const s of song.sections) {
+        for (const p of song.parts) {
+            const id = stripId(s, p.id);
+            if (id !== p.id) out.push({ id, part: withSound(p, s.sound?.[p.id]) });
+        }
+    }
+    return out;
 }
 
 // ---- sections ------------------------------------------------------------------------------------

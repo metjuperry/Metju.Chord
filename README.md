@@ -29,7 +29,8 @@ Three modes, one rule: **Play** is the instrument; **Song** is *what* plays (cho
 
 ### Song: sections and the chain
 
-- A song is made of **sections** (verse, chorus…), each with its own chord row, length, melody notes and drum patterns, and a **chain**, the running order. Key, scale, tempo, time signature, effects and the parts' sound are song-wide.
+- A song is made of **sections** (verse, chorus…), each with its own chord row, length, melody notes and drum patterns, and a **chain**, the running order. Key, scale, tempo, time signature and the shared effects are song-wide.
+- **Parts edits what Song has open**: with a section open (the tabs read *Song: Chorus · Parts: Chorus*), changes in Parts (instrument, play mode, arp, shape, effects, volume…) apply to that section only, so a copy of the verse can arpeggiate where the original holds chords. With the whole song open, a change reaches every section, replacing what any section had for that setting. A part's name, colour, mute and solo are always song-wide, and a duplicated section keeps its sound.
 - **The song view**: section tiles (chords as chips, which parts play there, length; tap to open, long-press / right-click / ⋯ for Rename, Duplicate, Add to chain, Delete) and the chain as blocks as wide as they are long (long-press for Move ← / →, Duplicate, Remove).
 - **Transport** (top bar): **■ Stop** (**Home**) stops and goes back to the start (of the open section; in Chain mode, of the chain), **▶ / ⏸** plays and pauses (Play carries on from where it paused), **●** records.
 - **Chain | Loop**: Chain plays the sections in order, each for as long as its music lasts (rounded up to a bar, the same length Loop mode loops it at, never more than the section's length) with a playhead, "bar 10 / 36 · Chorus · next Verse" and NEXT on the tiles; Loop loops the open section, and picking another while it plays switches at the next bar line. Record works in Loop (in Chain it switches to Loop first).

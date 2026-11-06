@@ -122,7 +122,16 @@ export interface Section {
     content: { [partId: string]: PartContent };
     /** Parts silenced in this section only. */
     mutes: { [partId: string]: true };
+    /**
+     * How parts sound and play in this section where that differs from the song: instrument, volume,
+     * effects, pan, shape, play mode and so on (anything but a part's name, colour, mute and solo).
+     * Only the differences are kept; `sectionView` lays them over the song's parts.
+     */
+    sound?: { [partId: string]: SectionSound };
 }
+
+/** A section's own values for some of a part's settings (see `Section.sound`). */
+export type SectionSound = { [key: string]: unknown };
 
 /** One slot of the chain (the song's running order); a repeat is the same section twice in a row. */
 export interface ChainEntry {
@@ -230,6 +239,26 @@ export function contentOf(p: Part): PartContent | undefined {
     if (p.kind === 'drums') return isEmptyPattern(p.drums) && p.drums.bars === 1 ? undefined : { drums: p.drums };
     return undefined;
 }
+
+// ---- a section's own sound for a part ----------------------------------------------------------
+
+/** What a part is everywhere: its identity, its song-wide mute and solo, and its content. A section can set everything else its own way. */
+const SONG_WIDE_KEYS = ['id', 'kind', 'name', 'color', 'mute', 'solo', 'notes', 'drums'];
+export const isSoundKey = (k: string) => !SONG_WIDE_KEYS.includes(k);
+/** Keys that change the engine strip a part plays through (the rest only changes which notes it plays). */
+export const STRIP_KEYS = ['instrument', 'volume', 'fx', 'tone', 'shape'];
+
+/** Equal values, looking one level into objects (fx, tone and shape are flat records). */
+export function sameValue(a: unknown, b: unknown): boolean {
+    if (a === b) return true;
+    if (!isObj(a) || !isObj(b)) return false;
+    const ka = Object.keys(a).filter(k => a[k] !== undefined);
+    const kb = Object.keys(b).filter(k => b[k] !== undefined);
+    return ka.length === kb.length && ka.every(k => a[k] === b[k]);
+}
+
+/** A part as it sounds in a section: the section's own values laid over the song's. */
+export const withSound = (p: Part, own: SectionSound | undefined): Part => (own && Object.keys(own).length ? { ...p, ...own } as Part : p);
 
 /** A version-2 song (one chord row) as a version-3 song: one section "A" holding all of it, chained once. */
 export function fromSingleSection(song: Song, id = 's1', name = 'A'): FullSong {
@@ -466,6 +495,29 @@ export const cleanName = (v: unknown, fallback: string) => (typeof v === 'string
 export const letterFor = (name: string) => (name.match(/[\p{L}\p{N}]/u)?.[0] ?? '?').toUpperCase();
 
 /**
+ * A section's own sound for each part, repaired the way a part is: its values are laid over the song's
+ * part and read back, and only what then differs from the song is kept. Undefined when nothing is.
+ */
+function readSectionSound(v: unknown, parts: Part[], barLen: number): Section['sound'] {
+    if (!isObj(v)) return undefined;
+    const out: NonNullable<Section['sound']> = {};
+    parts.forEach((p, i) => {
+        const raw = v[p.id];
+        if (!isObj(raw)) return;
+        const own = Object.fromEntries(Object.entries(raw).filter(([k]) => isSoundKey(k)));
+        const read = readPart({ ...p, ...own }, i, [], 0, barLen);
+        if (!read || read.kind !== p.kind) return;
+        const keep: SectionSound = {};
+        for (const k of Object.keys(own)) {
+            const val = (read as unknown as Obj)[k];
+            if (k in read && !sameValue(val, (p as unknown as Obj)[k])) keep[k] = val;
+        }
+        if (Object.keys(keep).length) out[p.id] = keep;
+    });
+    return Object.keys(out).length ? out : undefined;
+}
+
+/**
  * Rebuild a version-3 song from untrusted data. Sections are repaired like a v2 song's chord row
  * (clamped, overlaps dropped, unknown parts' content dropped); chain entries naming no section are
  * dropped; there is always at least one section and the chain is never empty.
@@ -507,7 +559,10 @@ export function readFullSong(v: unknown): FullSong | null {
         }
         const mutes: Section['mutes'] = {};
         if (isObj(raw.mutes)) for (const p of parts) if (raw.mutes[p.id] === true) mutes[p.id] = true;
-        sections.push({ id, name, letter, steps, chords, content, mutes });
+        const sec: Section = { id, name, letter, steps, chords, content, mutes };
+        const sound = readSectionSound(raw.sound, parts, barLen);
+        if (sound) sec.sound = sound;
+        sections.push(sec);
     });
     if (sections.length === 0) sections.push(fromSingleSection({ ...newSong(), timeSignature, parts }).sections[0]);
     const known = new Set(sections.map(x => x.id));
