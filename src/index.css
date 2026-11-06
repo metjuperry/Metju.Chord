@@ -1,4 +1,9 @@
 :root {
+    /* Motion (src/motion.ts uses the same values): short, calm, one easing */
+    --motion-fast: 140ms;
+    --motion: 200ms;
+    --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
     /* Dark theme (default) */
     --bg: #0d0d0b;
     --panel: #161613;
@@ -174,6 +179,89 @@ input[type='range'] {
 .segmented > button[aria-pressed='true'] {
     background: var(--accent);
     color: var(--accent-ink);
+}
+
+/* The sliding thumb (motion.ts useSegmentThumbs writes where the pressed button is): it slides to the
+   next button instead of the colour jumping. Variants set --seg-thumb to their own pressed colour. */
+.segmented {
+    position: relative;
+    isolation: isolate;
+    --seg-thumb: var(--accent);
+}
+
+.segmented > button {
+    transition: color var(--motion-fast) var(--ease);
+}
+
+.segmented[data-thumb]::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: -1;
+    width: var(--seg-w, 0);
+    height: var(--seg-h, 0);
+    transform: translate(var(--seg-x, 0), var(--seg-y, 0));
+    border-radius: 6px;
+    background: var(--seg-thumb);
+    transition: transform var(--motion) var(--ease), width var(--motion) var(--ease), height var(--motion) var(--ease), opacity var(--motion-fast);
+}
+
+.segmented[data-thumb='off']::before {
+    opacity: 0;
+}
+
+.segmented.segmented[data-thumb='on'] > button[aria-pressed='true'] {
+    background: transparent;
+}
+
+/* Song zooming into a section and back (motion.ts zoomSection): the tile and the editor share a name.
+   The card grows (or shrinks) between them, showing the content at its real size rather than stretched,
+   and what it's leaving fades out quickly. */
+::view-transition-group(section-zoom) {
+    animation-duration: 260ms;
+    animation-timing-function: var(--ease);
+    overflow: clip;
+    border-radius: 12px;
+}
+
+::view-transition-old(section-zoom),
+::view-transition-new(section-zoom) {
+    width: 100%;
+    height: 100%;
+    object-fit: none;
+    object-position: left top;
+}
+
+::view-transition-old(section-zoom) {
+    animation: vt-out 120ms var(--ease) both;
+}
+
+::view-transition-new(section-zoom) {
+    animation: vt-in 200ms var(--ease) both;
+}
+
+@keyframes vt-out {
+    to {
+        opacity: 0;
+    }
+}
+
+@keyframes vt-in {
+    from {
+        opacity: 0;
+    }
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation-duration: 200ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .segmented[data-thumb]::before {
+        transition: none;
+    }
 }
 
 .icon-button {

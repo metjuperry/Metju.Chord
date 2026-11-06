@@ -157,6 +157,26 @@
 .tb-rec.on {
     background: var(--hot);
     border-color: var(--hot);
+    animation: rec-pulse 1.6s ease-out infinite;
+}
+
+/* Recording: a ring keeps pulsing out of the button, so it's hard to forget it's on */
+@keyframes rec-pulse {
+    0% {
+        box-shadow: 0 0 0 0 color-mix(in srgb, var(--hot) 70%, transparent);
+    }
+
+    70%,
+    100% {
+        box-shadow: 0 0 0 9px color-mix(in srgb, var(--hot) 0%, transparent);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tb-rec.on {
+        animation: none;
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--hot) 45%, transparent);
+    }
 }
 
 .tb-rec.on .rec-dot {

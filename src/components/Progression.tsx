@@ -324,7 +324,11 @@ const Progression: React.FC<ProgressionProps> = props => {
                         {parts.map(p => renderPartLane(p, rowStart, rowEnd))}
                         {headHere && (
                             <div className="playhead-track" aria-hidden="true">
-                                <div className="playhead" style={{ left: `calc(${playhead - rowStart} * (100% + 4px) / ${STEPS_PER_ROW})` }} />
+                                <div
+                                    className="playhead"
+                                    // while playing, App writes the exact position (--pp, in steps) every frame so it glides
+                                    style={{ '--step': playhead, '--row-start': rowStart, left: `calc(clamp(0, var(--pp, var(--step)) - var(--row-start), ${STEPS_PER_ROW - 0.01}) * (100% + 4px) / ${STEPS_PER_ROW})` } as React.CSSProperties}
+                                />
                             </div>
                         )}
                     </div>
