@@ -1,0 +1,54 @@
+name: Voice data
+
+# Run by hand (Actions → Voice data → Run workflow). Measures the Voice part's singers from VocalSet
+# (CC BY 4.0) with scripts/voices/vocalset.py and opens a PR with src/audio/vocalset.json.
+# Only the straight long tones (~84 MB) are downloaded, by HTTP ranges, never the whole archive,
+# and no recording goes into the repository.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install numpy
+        run: pip install numpy
+
+      - name: Check the analysis on synthetic vowels
+        run: python3 scripts/voices/vocalset.py selftest
+
+      - name: Fetch VocalSet's straight long tones
+        run: python3 scripts/voices/vocalset.py fetch "$RUNNER_TEMP/vocalset"
+
+      - name: Measure them
+        run: python3 scripts/voices/vocalset.py make "$RUNNER_TEMP/vocalset" src/audio/vocalset.json | tee "$RUNNER_TEMP/summary.txt"
+
+      - name: Open a PR with the measurements
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="voice-data/run-${{ github.run_id }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add src/audio/vocalset.json
+          git commit -m "Voice data: singers and formants measured from VocalSet" -m "$(cat "$RUNNER_TEMP/summary.txt")"
+          git push origin "$branch"
+          body="Measured by the Voice data workflow (run ${{ github.run_id }}) with scripts/voices/vocalset.py from VocalSet (Wilkins, Seetharaman, Wahl, Pardo, 2018, https://doi.org/10.5281/zenodo.1442513, CC BY 4.0).
+
+          $(cat "$RUNNER_TEMP/summary.txt")"
+          gh pr create --base "${{ github.ref_name }}" --head "$branch" --title "Voice data: singers and formants from VocalSet" --body "$body" \
+            || echo "::notice::Pushed $branch. If the repository doesn't let Actions open PRs, open one from that branch."
