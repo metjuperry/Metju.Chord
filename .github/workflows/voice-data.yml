@@ -1,9 +1,12 @@
 name: Voice data
 
 # Run by hand (Actions → Voice data → Run workflow). Measures the Voice part's singers from VocalSet
-# (CC BY 4.0) with scripts/voices/vocalset.py and opens a PR with src/audio/vocalset.json.
-# Only the straight long tones (~84 MB) are downloaded, by HTTP ranges, never the whole archive,
-# and no recording goes into the repository.
+# (CC BY 4.0) with scripts/voices/vocalset.py and pushes a branch voice-data/run-<id> with:
+#   scripts/voices/analysis/vocalset-analysis.json  every note of every long tone, as numbers (the
+#                                                   tables can be redone from it without running this again)
+#   src/audio/vocalset.json                         the app's tables (when making them worked)
+# Only the long tones are downloaded, by HTTP ranges, never the whole archive, and no recording goes
+# into the repository. The branch is pushed even when making the tables fails, so the analysis is never lost.
 
 on:
   workflow_dispatch:
@@ -15,6 +18,7 @@ permissions:
 jobs:
   measure:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,18 +31,26 @@ jobs:
       - name: Install numpy
         run: pip install numpy
 
-      - name: Check the analysis on synthetic vowels
+      - name: Check it all on synthetic singers
         run: python3 scripts/voices/vocalset.py selftest
 
-      - name: Fetch VocalSet's straight long tones
+      - name: Fetch VocalSet's long tones
         run: python3 scripts/voices/vocalset.py fetch "$RUNNER_TEMP/vocalset"
 
-      - name: Measure them
+      - name: Analyse every note
+        run: |
+          mkdir -p scripts/voices/analysis
+          python3 scripts/voices/vocalset.py analyse "$RUNNER_TEMP/vocalset" scripts/voices/analysis/vocalset-analysis.json
+
+      - name: Make the app's tables
+        id: make
+        continue-on-error: true
         run: |
           set -o pipefail
-          python3 scripts/voices/vocalset.py make "$RUNNER_TEMP/vocalset" src/audio/vocalset.json | tee "$RUNNER_TEMP/summary.txt"
+          python3 scripts/voices/vocalset.py make scripts/voices/analysis/vocalset-analysis.json src/audio/vocalset.json | tee "$RUNNER_TEMP/summary.txt"
 
-      - name: Open a PR with the measurements
+      - name: Push a branch with the results
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -46,11 +58,16 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$branch"
-          git add src/audio/vocalset.json
-          git commit -m "Voice data: singers and formants measured from VocalSet" -m "$(cat "$RUNNER_TEMP/summary.txt")"
+          git add -f scripts/voices/analysis/vocalset-analysis.json 2>/dev/null || true
+          git add src/audio/vocalset.json 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "::error::Nothing to push: the analysis didn't run"
+            exit 1
+          fi
+          touch "$RUNNER_TEMP/summary.txt"
+          git commit -m "Voice data: VocalSet analysis (run ${{ github.run_id }})" -m "$(cat "$RUNNER_TEMP/summary.txt")"
           git push origin "$branch"
-          body="Measured by the Voice data workflow (run ${{ github.run_id }}) with scripts/voices/vocalset.py from VocalSet (Wilkins, Seetharaman, Wahl, Pardo, 2018, https://doi.org/10.5281/zenodo.1442513, CC BY 4.0).
-
-          $(cat "$RUNNER_TEMP/summary.txt")"
-          gh pr create --base "${{ github.ref_name }}" --head "$branch" --title "Voice data: singers and formants from VocalSet" --body "$body" \
-            || echo "::notice::Pushed $branch. If the repository doesn't let Actions open PRs, open one from that branch."
+          echo "::notice::Pushed $branch"
+          gh pr create --base "${{ github.ref_name }}" --head "$branch" --title "Voice data: VocalSet analysis (run ${{ github.run_id }})" \
+            --body "Measured by the Voice data workflow from VocalSet (Wilkins, Seetharaman, Wahl, Pardo, 2018, https://doi.org/10.5281/zenodo.1442513, CC BY 4.0). $(cat "$RUNNER_TEMP/summary.txt")" \
+            || echo "::notice::The repository doesn't let Actions open PRs: the branch $branch has the results."
