@@ -34,7 +34,9 @@ jobs:
         run: python3 scripts/voices/vocalset.py fetch "$RUNNER_TEMP/vocalset"
 
       - name: Measure them
-        run: python3 scripts/voices/vocalset.py make "$RUNNER_TEMP/vocalset" src/audio/vocalset.json | tee "$RUNNER_TEMP/summary.txt"
+        run: |
+          set -o pipefail
+          python3 scripts/voices/vocalset.py make "$RUNNER_TEMP/vocalset" src/audio/vocalset.json | tee "$RUNNER_TEMP/summary.txt"
 
       - name: Open a PR with the measurements
         env:
