@@ -309,11 +309,15 @@ def measure(files):
                 except ValueError as e:
                     report(f"{s} {v}: {e}")
                     break
-                if abs(12 * np.log2(f0 / NOTE[rng])) > 4:
+                off = 12 * np.log2(f0 / NOTE[rng])
+                if not -4 <= off <= 13:
                     report(f"{s} {v}: lowest note {f0:.0f} Hz, too far from {NOTE[rng]:.0f} Hz")
                     break
                 f0, amps = harmonics(mid, rate, f0)
                 per[v] = {
+                    # many singers skip or clip the lowest of the three notes on some vowels: their next
+                    # one (an octave up) still gives their colour, but formants only count from the low note
+                    "low": abs(off) <= 4,
                     "formants": formants(mid, rate),
                     "source": source(amps, f0, mid, rate),
                     "clean": harmonicity(mid, rate, f0),
@@ -321,9 +325,16 @@ def measure(files):
                 }
             if len(per) == len(VOWELS):
                 rows[s] = per
+                lows = sum(per[v]["low"] for v in per)
                 report(f"{s}: ok, " + ", ".join(f"{v} {per[v]['f0']:.0f} Hz" for v in VOWELS) +
+                       f", the low note on {lows} vowel{'s' if lows != 1 else ''}"
                        f", harmonicity {np.mean([per[v]['clean'] for v in VOWELS]):.2f}")
-        best = sorted(rows, key=lambda s: -np.mean([rows[s][v]["clean"] for v in VOWELS]))[:SINGERS]
+        # singers with the low note on at least two vowels; others only if there aren't enough of those
+        steady = {s: r for s, r in rows.items() if sum(r[v]["low"] for v in VOWELS) >= 2}
+        if len(steady) >= MIN_SINGERS:
+            rows = steady
+        # most vowels on the low note first, then the cleanest tone
+        best = sorted(rows, key=lambda s: (-sum(rows[s][v]["low"] for v in VOWELS), -np.mean([rows[s][v]["clean"] for v in VOWELS])))[:SINGERS]
         report(f"{rng}: {len(rows)} usable singers of {len(singers)}; using {', '.join(best)}")
         if len(best) < MIN_SINGERS:
             raise SystemExit(f"{rng}: only {len(best)} usable singers (need {MIN_SINGERS})")
@@ -331,14 +342,26 @@ def measure(files):
         best = [best[i % len(best)] for i in range(SINGERS)]
         out[rng]["singers"] = []
         for s in best:
-            src = np.mean([rows[s][v]["source"] / (rows[s][v]["source"][0] + 1e-12) for v in VOWELS], axis=0)
+            # a singer's colour from the vowels sung on one note (harmonic k means the same thing in all of
+            # them): the low note's, or else the most common one's
+            low = [v for v in VOWELS if rows[s][v]["low"]]
+            if not low:
+                pitches = [round(12 * np.log2(rows[s][v]["f0"])) for v in VOWELS]
+                common = max(set(pitches), key=pitches.count)
+                low = [v for v, p in zip(VOWELS, pitches) if p == common]
+            src = np.mean([rows[s][v]["source"] / (rows[s][v]["source"][0] + 1e-12) for v in low], axis=0)
             src = src / src.max()
             out[rng]["singers"].append([round(float(a), 5) for a in src])
-        out[rng]["formants"] = {
-            v: [[round(float(c)) if i < 2 else round(float(c), 1) for i, c in enumerate(col)]
-                for col in np.median([rows[s][v]["formants"] for s in best], axis=0)]
-            for v in VOWELS
-        }
+        # each vowel's formants: the median over every usable singer who sang it on the low note
+        out[rng]["formants"] = {}
+        out[rng]["counted"] = {}
+        for v in VOWELS:
+            on_low = [rows[s][v]["formants"] for s in rows if rows[s][v]["low"]]
+            use = on_low or [rows[s][v]["formants"] for s in rows]
+            out[rng]["counted"][v] = len(on_low)
+            out[rng]["formants"][v] = [[round(float(c)) if i < 2 else round(float(c), 1) for i, c in enumerate(col)]
+                                       for col in np.median(use, axis=0)]
+        report(f"{rng}: formants from " + ", ".join(f"{v} {out[rng]['counted'][v]} singers" for v in VOWELS))
         out[rng]["from"] = best
     # a vowel whose first two formants land outside where that vowel can be (LPC misses a formant that
     # falls between two widely spaced harmonics of a high note) takes the other range's, scaled by the
@@ -457,9 +480,11 @@ def selftest():
                     # three notes in a row, as VocalSet's long tones are: the octave, the fourth above it, then the lowest
                     base = f0 * 2 ** (np.random.default_rng(s).uniform(-0.2, 0.2) / 12)
                     gap = np.zeros(int(0.15 * 44100))
-                    x = np.concatenate([synth_vowel(base * 2, fm, tilt=1.0 + 0.1 * s, seed=s), gap,
-                                        synth_vowel(base * 2 ** (17 / 12), fm, tilt=1.0 + 0.1 * s, seed=s), gap,
-                                        synth_vowel(base, fm, tilt=1.0 + 0.1 * s, seed=s)])
+                    notes = [synth_vowel(base * 2, fm, tilt=1.0 + 0.1 * s, seed=s), gap,
+                             synth_vowel(base * 2 ** (17 / 12), fm, tilt=1.0 + 0.1 * s, seed=s), gap,
+                             synth_vowel(base, fm, tilt=1.0 + 0.1 * s, seed=s)]
+                    # as many real singers do on some vowel: singer 6 skips the low note on E
+                    x = np.concatenate(notes[:3] if (s, v) == (6, "e") else notes)
                     with wave.open(f"{d}/{sex}{s}_{v}.wav", "wb") as w:
                         w.setnchannels(1)
                         w.setsampwidth(2)
@@ -469,6 +494,8 @@ def selftest():
     for rng_ in ("low", "high"):
         assert len(out[rng_]["singers"]) == SINGERS and all(len(s) == HARMONICS for s in out[rng_]["singers"])
         assert set(out[rng_]["formants"]) == set(VOWELS)
+        # singer 6 still counts, but its E (sung an octave up) stays out of E's formants
+        assert out[rng_]["counted"] == {"a": 6, "e": 5, "i": 6, "o": 6, "u": 6}, out[rng_]["counted"]
         assert all(len(f) == 4 for f in out[rng_]["formants"].values())
         assert all(0 <= a <= 1 for s in out[rng_]["singers"] for a in s)
         # the fundamental and every harmonic near it are there: no note measured an octave off
