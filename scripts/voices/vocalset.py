@@ -46,6 +46,7 @@ LONG_TONE = re.compile(r"FULL/(?P<singer>(?:male|female)\d+)/long_tones/straight
 VOWELS = "aeiou"
 HARMONICS = 48
 SINGERS = 5
+MIN_SINGERS = 3
 SR = 16000            # analysis rate: formants below 5 kHz
 LPC_ORDER = 18        # 2 + SR / 1000, the usual rule
 # the note analysed per range: the lowest of each singer's long tones (men C3, women C4)
@@ -133,24 +134,49 @@ def pitch_track(x, rate, hop=0.02, size=0.05):
     return np.array(out), hop
 
 
-def lowest_note(x, rate, min_seconds=0.6):
+def notes_in(track, hop, min_seconds=0.4):
+    """The steady notes of a pitch track: (pitch, first frame, end frame), in order.
+
+    The track is median-smoothed over five frames; a note is a stretch staying within 0.6 semitone of
+    its own median, through dropouts of up to three frames, lasting at least `min_seconds`.
+    """
+    t = np.array(track, dtype=float)
+    padded = np.pad(t, 2, mode="edge")
+    smooth = np.array([np.median(padded[i:i + 5]) for i in range(len(t))])
+    notes, start, gap = [], None, 0
+    for i, f in enumerate(list(smooth) + [0.0] * 5):
+        if start is not None:
+            voiced = [x for x in smooth[start:i] if x > 0]
+            centre = np.median(voiced) if voiced else f
+            if f > 0 and abs(12 * np.log2(f / centre)) <= 0.6:
+                gap = 0
+                continue
+            gap += 1
+            if gap <= 3 and f == 0 and i < len(smooth):
+                continue
+            end = i - gap + 1
+            if (end - start) * hop >= min_seconds:
+                notes.append((float(np.median([x for x in smooth[start:end] if x > 0])), start, end))
+            start, gap = None, 0
+        if start is None and i < len(smooth) and f > 0:
+            start = i
+    return notes
+
+
+def lowest_note(x, rate, expect):
     """The long tones hold three notes in a row; the lowest one's steady middle and its pitch.
 
-    The pitch track is cut into stretches that stay within half a semitone; of those at least
-    `min_seconds` long, the lowest, trimmed by a fifth at each end (onset and release).
+    Of the steady notes (`notes_in`), the lowest not more than 5 semitones under `expect` (an octave
+    slip of the pitch tracker would be), trimmed by a fifth at each end (onset and release).
+    Raises ValueError saying what was found when there's none.
     """
     track, hop = pitch_track(x, rate)
-    notes, start = [], None
-    for i, f in enumerate(list(track) + [0.0]):
-        if start is not None and (f == 0 or abs(12 * np.log2(f / np.median(track[start:i]))) > 0.5):
-            if (i - start) * hop >= min_seconds:
-                notes.append((float(np.median(track[start:i])), start, i))
-            start = None
-        if start is None and f > 0:
-            start = i
-    if not notes:
-        raise ValueError("no steady note found")
-    f0, a, b = min(notes)
+    found = notes_in(track, hop)
+    usable = [n for n in found if 12 * np.log2(n[0] / expect) > -5]
+    if not usable:
+        heard = ", ".join(f"{f:.0f} Hz {(b - a) * hop:.1f} s" for f, a, b in found) or "nothing steady"
+        raise ValueError(f"no steady note near {expect:.0f} Hz ({heard})")
+    f0, a, b = min(usable)
     trim = (b - a) // 5
     return x[int((a + trim) * hop * rate): int((b - trim) * hop * rate)], f0
 
@@ -259,6 +285,11 @@ def source(amps, f0, x, rate):
 
 # ---- the tables ---------------------------------------------------------------------------------
 
+def report(line):
+    """What happened to each recording, on stderr (the workflow log shows it)."""
+    print(line, file=sys.stderr)
+
+
 def measure(files):
     """files: {(range, singer, vowel): path} -> the JSON the app reads."""
     out = {"credit": CREDIT, "low": {}, "high": {}}
@@ -270,25 +301,34 @@ def measure(files):
             for v in VOWELS:
                 p = files.get((rng, s, v))
                 if not p:
+                    report(f"{s} {v}: no recording")
                     break
                 x, rate = read_wav(p)
                 try:
-                    mid, f0 = lowest_note(x, rate)
-                except ValueError:
+                    mid, f0 = lowest_note(x, rate, NOTE[rng])
+                except ValueError as e:
+                    report(f"{s} {v}: {e}")
                     break
-                if abs(12 * np.log2(f0 / NOTE[rng])) > 2:
-                    break       # not the note we expect: leave the singer out
+                if abs(12 * np.log2(f0 / NOTE[rng])) > 4:
+                    report(f"{s} {v}: lowest note {f0:.0f} Hz, too far from {NOTE[rng]:.0f} Hz")
+                    break
                 f0, amps = harmonics(mid, rate, f0)
                 per[v] = {
                     "formants": formants(mid, rate),
                     "source": source(amps, f0, mid, rate),
                     "clean": harmonicity(mid, rate, f0),
+                    "f0": f0,
                 }
             if len(per) == len(VOWELS):
                 rows[s] = per
+                report(f"{s}: ok, " + ", ".join(f"{v} {per[v]['f0']:.0f} Hz" for v in VOWELS) +
+                       f", harmonicity {np.mean([per[v]['clean'] for v in VOWELS]):.2f}")
         best = sorted(rows, key=lambda s: -np.mean([rows[s][v]["clean"] for v in VOWELS]))[:SINGERS]
-        if len(best) < SINGERS:
-            raise SystemExit(f"{rng}: only {len(best)} usable singers")
+        report(f"{rng}: {len(rows)} usable singers of {len(singers)}; using {', '.join(best)}")
+        if len(best) < MIN_SINGERS:
+            raise SystemExit(f"{rng}: only {len(best)} usable singers (need {MIN_SINGERS})")
+        # fewer than a choir's worth: the clearest sing twice (each choir voice is detuned its own way anyway)
+        best = [best[i % len(best)] for i in range(SINGERS)]
         out[rng]["singers"] = []
         for s in best:
             src = np.mean([rows[s][v]["source"] / (rows[s][v]["source"][0] + 1e-12) for v in VOWELS], axis=0)
