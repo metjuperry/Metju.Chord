@@ -107,7 +107,7 @@ const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose }) => {
 
                 <h3 className="eyebrow">Notes mode</h3>
                 <p className="section-note">
-                    Switch the pads from Chords to Notes (or press N) and they play single notes of the key on your Melody part,
+                    Switch the pads from Chords to Notes (or press N) and they play single notes of the key on your Melody part (or a Voice part singing notes),
                     1–7 up the scale. The stick changes the note: <b>↑</b> the octave above (8va), <b>→</b> sharp (♯), <b>←</b> flat (♭),
                     and <b>↗</b> / <b>↖</b> both (octave up and sharp / flat), so an F♯ in A minor is pad 6 with the stick right. The lower
                     three directions do nothing here. With Record on, a stopped song writes each note at the cursor (length set in the

@@ -6,7 +6,7 @@ import { DRUM_VOICES, DrumPattern, PATTERN_BARS, PatternBars, TICKS_PER_SIXTEENT
 import type { LearnTab } from './learn';
 import { STRUM_PATTERN_IDS, StrumPattern, nearestSpread } from './strum';
 import { legacyShape, readShape } from './sound';
-import { BASS_STYLES, BassStyle, FX_KEYS, MAX_PARTS, MELODY_STEPS, Note, PART_COLORS, Part, PartFx, PartKind, PartTone, PlayMode, STRUM_DIRECTIONS, TONE_KEYS, fxAvailable, neutralTone, newPart } from './parts';
+import { BASS_STYLES, BassStyle, FX_KEYS, MAX_PARTS, MELODY_STEPS, Note, PART_COLORS, Part, PartFx, PartKind, PartTone, PlayMode, RANGE_OCTAVE, STRUM_DIRECTIONS, Singers, Sings, TONE_KEYS, VOWELS, VoiceRange, Vowel, fxAvailable, hasNotes, neutralTone, newPart } from './parts';
 
 // ---- the song: everything undo/redo, saving and sharing cover ---------------------------
 
@@ -58,7 +58,7 @@ export function changeTimeSignature(song: Song, next: TimeSignature): Song {
         chords: song.chords.map(c => ({ ...c, start: Math.round(c.start * scale), len: Math.max(1, Math.round(c.len * scale)) })),
         parts: song.parts.map(p => {
             if (p.kind === 'drums') return { ...p, drums: fitPattern(p.drums, next) };
-            if (p.kind === 'melody') return { ...p, notes: p.notes.map(n => ({ ...n, start: snap(n.start), len: Math.max(TICKS_PER_SIXTEENTH, snap(n.len)) })) };
+            if (hasNotes(p)) return { ...p, notes: p.notes.map(n => ({ ...n, start: snap(n.start), len: Math.max(TICKS_PER_SIXTEENTH, snap(n.len)) })) };
             return p;
         }),
     };
@@ -228,14 +228,14 @@ export const defaultSettings = (): Settings => ({
 
 /** A part without its content: what a FullSong keeps song-wide. */
 export function stripContent(p: Part): Part {
-    if (p.kind === 'melody') return p.notes.length ? { ...p, notes: [] } : p;
+    if (hasNotes(p)) return p.notes.length ? { ...p, notes: [] } : p;
     if (p.kind === 'drums') return p.drums.bars === 1 && Object.keys(p.drums.hits).length === 0 ? p : { ...p, drums: emptyPattern() };
     return p;
 }
 
 /** A part's content in a section view, ready to store in the section. */
 export function contentOf(p: Part): PartContent | undefined {
-    if (p.kind === 'melody') return p.notes.length ? { notes: p.notes } : undefined;
+    if (hasNotes(p)) return p.notes.length ? { notes: p.notes } : undefined;
     if (p.kind === 'drums') return isEmptyPattern(p.drums) && p.drums.bars === 1 ? undefined : { drums: p.drums };
     return undefined;
 }
@@ -246,7 +246,7 @@ export function contentOf(p: Part): PartContent | undefined {
 const SONG_WIDE_KEYS = ['id', 'kind', 'name', 'color', 'mute', 'solo', 'notes', 'drums'];
 export const isSoundKey = (k: string) => !SONG_WIDE_KEYS.includes(k);
 /** Keys that change the engine strip a part plays through (the rest only changes which notes it plays). */
-export const STRIP_KEYS = ['instrument', 'volume', 'fx', 'tone', 'shape'];
+export const STRIP_KEYS = ['instrument', 'volume', 'fx', 'tone', 'shape', 'singers', 'range', 'vowel', 'vibrato', 'breath'];
 
 /** Equal values, looking one level into objects (fx, tone and shape are flat records). */
 export function sameValue(a: unknown, b: unknown): boolean {
@@ -356,7 +356,7 @@ function readNotes(v: unknown, maxTick: number): Note[] {
     return notes.sort((a, b) => a.start - b.start).filter((n, i, all) => i === 0 || n.start >= all[i - 1].start + all[i - 1].len);
 }
 
-const PART_KINDS: PartKind[] = ['chords', 'bass', 'melody', 'drums'];
+const PART_KINDS: PartKind[] = ['chords', 'bass', 'melody', 'voice', 'drums'];
 
 function readFx(v: unknown, kind: PartKind): PartFx {
     const src = isObj(v) ? v : {};
@@ -434,6 +434,21 @@ function readPart(v: unknown, index: number, existing: Part[], maxTick: number, 
             };
         case 'melody':
             return { ...common, kind, instrument: instrument(), tone, shape, octave: int(v.octave, 3, 5, 4), notes: readNotes(v.notes, maxTick) };
+        case 'voice': {
+            const range = oneOf<VoiceRange>(v.range, ['low', 'high'], 'low');
+            return {
+                ...common, kind, instrument: 'voice', tone,
+                shape: isObj(v.shape) ? readShape(v.shape) : {},
+                singers: oneOf<Singers>(v.singers, ['solo', 'choir'], 'choir'),
+                range,
+                vowel: oneOf<Vowel>(v.vowel, VOWELS.map(x => x.id), 'u'),
+                vibrato: num(v.vibrato, 0, 1, 0.35),
+                breath: num(v.breath, 0, 1, 0.15),
+                sings: oneOf<Sings>(v.sings, ['notes', 'chords'], 'chords'),
+                octave: int(v.octave, 2, 5, RANGE_OCTAVE[range]),
+                notes: readNotes(v.notes, maxTick),
+            };
+        }
         case 'drums':
             return { ...common, kind, drums: readPattern(v.drums, barLen) };
     }
@@ -550,7 +565,7 @@ export function readFullSong(v: unknown): FullSong | null {
         for (const p of parts) {
             const c = src[p.id];
             if (!isObj(c)) continue;
-            if (p.kind === 'melody') {
+            if (hasNotes(p)) {
                 const notes = readNotes(c.notes, maxTick);
                 if (notes.length) content[p.id] = { notes };
             } else if (p.kind === 'drums' && isObj(c.drums)) {

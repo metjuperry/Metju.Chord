@@ -1,5 +1,5 @@
 import { isEmptyPattern } from './drums';
-import { ChordPart, Part, audibleParts, musicLoopEnd, newPart } from './parts';
+import { ChordPart, Part, audibleParts, hasNotes, musicLoopEnd, newPart } from './parts';
 import { isChordClip } from './progression';
 import {
     ChainEntry, FullSong, MAX_CHAIN, MAX_SECTIONS, PartContent, STRIP_KEYS, Section, SectionSound, Song, TimeSignature, changeTimeSignature, contentOf,
@@ -12,7 +12,7 @@ export const findSection = (song: FullSong, id: string): Section => song.section
 
 /** A part with its content for one section filled in (an empty melody / pattern when the section has none). */
 function fill(p: Part, c: PartContent | undefined): Part {
-    if (p.kind === 'melody') return c?.notes ? { ...p, notes: c.notes } : p.notes.length ? { ...p, notes: [] } : p;
+    if (hasNotes(p)) return c?.notes ? { ...p, notes: c.notes } : p.notes.length ? { ...p, notes: [] } : p;
     if (p.kind === 'drums') return c?.drums ? { ...p, drums: c.drums } : p;
     return p;
 }
@@ -400,7 +400,7 @@ export type PartState = 'plays' | 'muted' | 'silent';
 export function partStateIn(song: FullSong, sec: Section, part: Part): PartState {
     const audible = audibleParts(song.parts).includes(part);
     const c = sec.content[part.id];
-    const has = part.kind === 'melody' ? !!c?.notes?.length
+    const has = hasNotes(part) && (part.kind === 'melody' || part.sings === 'notes') ? !!c?.notes?.length
         : part.kind === 'drums' ? !!c?.drums && !isEmptyPattern(c.drums)
             : sec.chords.some(isChordClip);
     // a mute (in this section, or for the whole song) shows even where the part has nothing to play

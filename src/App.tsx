@@ -9,7 +9,7 @@ import HelpDialog from './components/HelpDialog';
 import DrumEditor from './components/DrumEditor';
 import IntroScreen, { IntroPhase } from './components/IntroScreen';
 import MelodyEditor from './components/MelodyEditor';
-import PartsView, { MASTER, instrumentLabel } from './components/PartsView';
+import PartsView, { MASTER, subLabel } from './components/PartsView';
 import SettingsSheet, { CreditsDialog } from './components/SettingsSheet';
 import LearnPanel, { HearEvent, UseHow } from './components/LearnPanel';
 import { LearnTab, Progression as LearnProgression, chordMood, fitProgression, insertProgression, progressionClips } from './learn';
@@ -42,8 +42,8 @@ import SongView from './components/SongView';
 import SectionSwitcher from './components/SectionSwitcher';
 import { Clip, clipAt, fitTo, isChordClip, place, remove, setLength, split } from './progression';
 import {
-    Accidental, ChordPart, Harmony, MAX_PARTS, MelodyPart, Note, Part, PartFx, PartKind, PartTone, noFx,
-    fitNotes, pasteNotes, notesIn, replaceRange, hasInstrument, melodyMidi, newPart, noteAt, noteMidi, partNotes, placeNote, removeNote, resolveClip, withAcc,
+    Accidental, ChordPart, Harmony, MAX_PARTS, Note, Part, PartFx, PartKind, PartTone, noFx,
+    fitNotes, pasteNotes, notesIn, replaceRange, hasInstrument, hasNotes, melodyMidi, voiceSettings, writesNotes, noteWriter, NotesPart, newPart, noteAt, noteMidi, partNotes, placeNote, removeNote, resolveClip, withAcc,
 } from './parts';
 import { SeqEvent, SeqOptions, SequencerPlayer, ticksToSeconds } from './audio/sequencer';
 import { SyncOut, loadSync, saveSync, windowPulses } from './sync';
@@ -84,7 +84,7 @@ const MAX_INVERSION = 3;
  */
 function syncParts(engine: ReturnType<typeof getEngine>, strips: { id: string; part: Part }[]) {
     strips.forEach(({ id, part: p }) => (hasInstrument(p)
-        ? engine.setTrack(id, { instrument: p.instrument, volume: p.volume, fx: p.fx, tone: p.tone, shape: p.shape })
+        ? engine.setTrack(id, { instrument: p.instrument, volume: p.volume, fx: p.fx, tone: p.tone, shape: p.shape, voice: p.kind === 'voice' ? voiceSettings(p) : undefined })
         : engine.setDrumTrack(id, { volume: p.volume, fx: p.fx })));
 }
 
@@ -293,8 +293,8 @@ const App: React.FC = () => {
     // Notes mode: the pads play single scale notes on a melody part and record into it
     const [padModeSetting, setPadMode] = useState<PadMode>('chords');
     const [melodyPartId, setMelodyPartId] = useState('');
-    const melodyParts = parts.filter((p): p is MelodyPart => p.kind === 'melody');
-    const padMelody: MelodyPart | null = (selPart?.kind === 'melody' ? selPart : undefined)
+    const melodyParts = parts.map(noteWriter).filter((p): p is NotesPart => p !== null);
+    const padMelody: NotesPart | null = noteWriter(selPart)
         ?? melodyParts.find(p => p.id === melodyPartId)
         ?? melodyParts[0]
         ?? null;
@@ -310,7 +310,7 @@ const App: React.FC = () => {
         const kind = parts.find(p => p.id === lane)?.kind;
         if (kind) setPartsSel(lane);
         // the pads follow what you're editing: notes for a melody, chords for the chord row or a chord part
-        if (kind === 'melody') {
+        if (writesNotes(parts.find(p => p.id === lane))) {
             setMelodyPartId(lane);
             setPadMode('notes');
         } else if (kind === 'chords' || lane === CHORD_LANE) {
@@ -319,7 +319,7 @@ const App: React.FC = () => {
     };
     const updatePart = (id: string, patch: PartPatch | Partial<Part>) =>
         // dragging a volume slider is one undo step, not one per pixel
-        setParts(ps => ps.map(p => (p.id === id ? { ...p, ...patch } as Part : p)), 'volume' in patch ? `vol:${id}` : undefined);
+        setParts(ps => ps.map(p => (p.id === id ? { ...p, ...patch } as Part : p)), 'volume' in patch ? `vol:${id}` : 'vibrato' in patch || 'breath' in patch ? `voice:${id}:${Object.keys(patch)[0]}` : undefined);
     // turning one tone knob is one undo step
     const setTone = (id: string, key: keyof PartTone, value: number) =>
         setParts(ps => ps.map(p => (p.id === id && hasInstrument(p) ? { ...p, tone: { ...p.tone, [key]: value } } : p)), `tone:${id}:${key}`);
@@ -483,7 +483,7 @@ const App: React.FC = () => {
         const len = Math.min(len16, total16 - start16);
         if (len <= 0) return;
         const note = withAcc({ start: start16 * TICKS_PER_SIXTEENTH, len: len * TICKS_PER_SIXTEENTH, step } as Note, acc);
-        setParts(ps => ps.map(p => (p.id === partId && p.kind === 'melody' ? { ...p, notes: placeNote(p.notes, note) } : p)));
+        setParts(ps => ps.map(p => (p.id === partId && hasNotes(p) ? { ...p, notes: placeNote(p.notes, note) } : p)));
     };
 
     const pressPad = (id: string, degree: number) => {
@@ -993,13 +993,13 @@ const App: React.FC = () => {
     };
 
     // ---- melody editing (the selected melody part) --------------------------------------------
-    const melodyPart = selPart?.kind === 'melody' ? selPart : null;
+    const melodyPart = noteWriter(selPart);
     /** The selected note, while it's still there (undo, a delete or another lane clear it). */
     const selNote: Note | null = melodyPart && selNoteKey?.part === melodyPart.id
         ? melodyPart.notes.find(n => n.start === selNoteKey.start) ?? null
         : null;
     /** Hear a melody note while stopped (when it's placed or picked). */
-    const auditionNote = (part: MelodyPart, n: Note) => {
+    const auditionNote = (part: NotesPart, n: Note) => {
         if (!playing) getEngine().playChord([noteMidi(part, harmony, n)], { duration: Math.min(0.4, ticksToSeconds(n.len)), track: trackOf(part.id) });
     };
     const melodyActions = {
@@ -1067,7 +1067,7 @@ const App: React.FC = () => {
                 const end = notes.reduce((m, n) => Math.max(m, n.start + n.len), 0);
                 const row = stepsPerRow(sg.timeSignature);
                 const steps = Math.min(MAX_SECTION_STEPS, Math.max(sg.steps, Math.ceil(end / T / row) * row));
-                return { ...sg, steps, parts: sg.parts.map(p => (p.id === id && p.kind === 'melody' ? { ...p, notes } : p)) };
+                return { ...sg, steps, parts: sg.parts.map(p => (p.id === id && hasNotes(p) ? { ...p, notes } : p)) };
             });
             setSelNoteKey(null);
             // the one thing worth saying: some notes didn't fit this part's range
@@ -1119,7 +1119,7 @@ const App: React.FC = () => {
                 ...sg,
                 steps: next,
                 chords: fitTo(sg.chords, next * T),
-                parts: sg.parts.map(p => (p.kind === 'melody' ? { ...p, notes: fitNotes(p.notes, next * T) } : p)),
+                parts: sg.parts.map(p => (hasNotes(p) ? { ...p, notes: fitNotes(p.notes, next * T) } : p)),
             }));
             setSelected(Math.min(selected, next - 1));
             setPlayhead(Math.min(playhead, next - 1));
@@ -1470,7 +1470,7 @@ const App: React.FC = () => {
         : { idle: true, live: false, symbol: '', long: '', numeral: '', typeLabel: '', tags: [], flag: recFlag };
 
     // The Play strip's "Pads →" picker: chord parts in Chords mode, melody parts (to play and record into) in Notes mode
-    const target = (p: Part): PadTarget => ({ id: p.id, name: p.name, color: p.color, instrument: hasInstrument(p) ? instrumentLabel(p.instrument) : '' });
+    const target = (p: Part): PadTarget => ({ id: p.id, name: p.name, color: p.color, instrument: hasInstrument(p) ? subLabel(p) : '' });
     const padTargets = notesOn ? melodyParts.map(target) : chordParts.map(target);
     const padTargetNow = target(notesOn ? padMelody! : padPart);
     const pickPadTarget = (id: string) => {
@@ -1538,9 +1538,9 @@ const App: React.FC = () => {
                 canPaste={laneClip?.kind === 'drums'}
                 onAudition={auditionDrum}
             />
-        ) : selPart.kind === 'melody' ? (
+        ) : melodyPart ? (
             <MelodyEditor
-                part={selPart}
+                part={melodyPart}
                 harmony={harmony}
                 totalSteps={total}
                 stepsPerRow={rowSteps}
@@ -1566,7 +1566,7 @@ const App: React.FC = () => {
                     <span className="sel-label">
                         <span className="track-dot" style={{ background: selPart.color }} />
                         {selPart.name}
-                        <span className="section-note"> · {selPart.kind === 'bass' ? 'follows the roots of the chord row' : 'plays every chord in the chord row'}</span>
+                        <span className="section-note"> · {selPart.kind === 'bass' ? 'follows the roots of the chord row' : selPart.kind === 'voice' ? 'sings every chord in the chord row (set it to sing notes in Parts to write its own)' : 'plays every chord in the chord row'}</span>
                     </span>
                     <button className="chip-button" onClick={() => { setPartsSel(selPart.id); setMode('parts'); }}>How it plays: Parts →</button>
                 </div>

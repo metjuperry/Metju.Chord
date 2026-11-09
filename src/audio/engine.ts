@@ -3,7 +3,7 @@ import { ArpPattern, arpOrder } from '../theory';
 import { Instrument, InstrumentId, createInstrument } from './instruments';
 import { DrumKit } from './drumkit';
 import type { DrumVoice } from '../drums';
-import { PartFx, PartTone, glideSeconds, glides, neutralTone, noFx, shapePan } from '../parts';
+import { PartFx, PartTone, VoiceSettings, glideSeconds, glides, neutralTone, noFx, shapePan } from '../parts';
 import { PartShape, ShapeOverrides, driveCurve, driveMakeupDb, effectiveShape, filterEnvelope, lfoRange, resonanceQ } from '../sound';
 import type { Space } from '../song';
 import { PULSE_SECONDS, SyncOut, defaultSync, pulseTime } from '../sync';
@@ -282,7 +282,7 @@ export class Engine {
     // ---- instruments -------------------------------------------------------
 
     /** Create or update a part's strip. Changing its instrument swaps the synth with a short fade. */
-    setTrack(id: string, opts: { instrument: InstrumentId; volume: number; fx?: PartFx; tone?: PartTone; shape?: ShapeOverrides }) {
+    setTrack(id: string, opts: { instrument: InstrumentId; volume: number; fx?: PartFx; tone?: PartTone; shape?: ShapeOverrides; voice?: VoiceSettings }) {
         let strip = this.strips.get(id);
         if (!strip) {
             const voice = createInstrument(opts.instrument);
@@ -307,6 +307,7 @@ export class Engine {
         this.applyTone(strip, opts.tone ?? strip.shaped);
         // a new voice starts with its own envelope, so the part's changes always go on again
         this.applyShape(strip, opts.shape ?? strip.over);
+        if (opts.voice) strip.voice.sing?.(opts.voice);
     }
 
     /** Fade a voice out over 50 ms (still through its channel) and dispose it, so swapping instruments mid-note doesn't click. */

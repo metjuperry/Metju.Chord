@@ -125,7 +125,8 @@ async function driven(id: InstrumentId, driveType: DriveType, drive: number) {
 (window as any).runLevels = async (base: string) => {
     setSampleBase(base);
     const rows: any[] = [];
-    for (const { id, sampled } of INSTRUMENTS) {
+    // the Voice part's singers aren't in the instrument list, but are matched like the rest
+    for (const { id, sampled } of [...INSTRUMENTS, { id: 'voice' as InstrumentId, sampled: false }]) {
         if (sampled) await loadBank(id as any);
         rows.push({ id, triad: await dry(id, TRIAD, false), ninth: await dry(id, NINTH, false), fx: await withFx(id) });
         // a sampled instrument's stand-in synth plays until its samples load, so it is matched too
