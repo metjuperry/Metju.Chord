@@ -5,7 +5,7 @@ import { Clip, clipAt, clipEnd } from '../progression';
 import { TIME_SIGNATURES, TimeSignature, isCompound, tsLabel } from '../song';
 import { InstrumentId } from '../audio/instruments';
 import { DrumPattern, DrumVoice, hasHit } from '../drums';
-import { Part, outsideRests, playsThroughRest, restSpans } from '../parts';
+import { Part, outsideRests, playsThroughRest, restSpans, writesNotes } from '../parts';
 
 /** Which drums show on which line of a drum lane's miniature: cymbals, the backbeat, the kick. */
 const MINI_LINES: DrumVoice[][] = [['hat', 'openhat', 'rim'], ['snare', 'clap', 'tomhi', 'tomlo'], ['kick']];
@@ -259,7 +259,7 @@ const Progression: React.FC<ProgressionProps> = props => {
                         />
                     );
                 })}
-                {notes.length === 0 && part.kind === 'melody' && rowStart === 0 && <span className="note-mini-empty">Tap to write a melody</span>}
+                {notes.length === 0 && writesNotes(part) && rowStart === 0 && <span className="note-mini-empty">{part.kind === 'voice' ? 'Tap to write what the voice sings' : 'Tap to write a melody'}</span>}
             </button>
         );
     };

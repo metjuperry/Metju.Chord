@@ -16,7 +16,7 @@ export interface TimedEvent {
 }
 
 /** How much of each note's length it actually sounds, so repeated notes are struck rather than smeared. */
-export const LEGATO: { [k in Exclude<PartKind, 'drums'>]: number } = { chords: 0.98, bass: 0.85, melody: 0.95 };
+export const LEGATO: { [k in Exclude<PartKind, 'drums'>]: number } = { chords: 0.98, bass: 0.85, melody: 0.95, voice: 0.97 };
 
 /**
  * Every kick hit of the song's drum parts, in song ticks up to `end`, for a bass that follows the

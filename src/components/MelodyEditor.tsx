@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { MenuAnchor, PopMenu } from './PopMenu';
 import './PartEditors.css';
 import { TICKS_PER_SIXTEENTH } from '../drums';
-import { Harmony, MELODY_STEPS, MelodyPart, chordAt, melodyMidi, resolveClip } from '../parts';
+import { Harmony, MELODY_STEPS, NotesPart, chordAt, melodyMidi, resolveClip } from '../parts';
 import { noteNames, spellNoteOctave } from '../theory';
 import { labelShade } from '../shades';
 
@@ -15,7 +15,7 @@ const LENGTHS: { sixteenths: number; label: string }[] = [
 ];
 
 interface MelodyEditorProps {
-    part: MelodyPart;
+    part: NotesPart;
     harmony: Harmony;
     /** Song length and layout, in sequencer steps (beats). */
     totalSteps: number;

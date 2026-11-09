@@ -7,7 +7,7 @@ import type { DrumPattern } from './drums';
 
 // ---- parts: everything that plays the song's one chord row, each in its own way -----------------
 
-export type PartKind = 'chords' | 'bass' | 'melody' | 'drums';
+export type PartKind = 'chords' | 'bass' | 'melody' | 'voice' | 'drums';
 export type PlayMode = 'Chord' | 'Strum' | 'Arp';
 
 export { STRUM_SPREADS } from './strum';
@@ -146,27 +146,84 @@ export interface MelodyPart extends PartBase {
     notes: Note[];
 }
 
+// ---- voice: singers -------------------------------------------------------------------------------
+
+/** The vowel the singers sing. */
+export type Vowel = 'a' | 'e' | 'i' | 'o' | 'u';
+export const VOWELS: { id: Vowel; label: string; hint: string }[] = [
+    { id: 'a', label: 'A', hint: 'aah, as in "father"' },
+    { id: 'e', label: 'E', hint: 'eh, as in "bed"' },
+    { id: 'i', label: 'I', hint: 'ee, as in "see"' },
+    { id: 'o', label: 'O', hint: 'oh, as in "go"' },
+    { id: 'u', label: 'U', hint: 'ooh, as in "moon"' },
+];
+/** One singer, or a few singing together. */
+export type Singers = 'solo' | 'choir';
+/** Men's voices or women's. */
+export type VoiceRange = 'low' | 'high';
+/** What the voice sings: its own notes (played from the keys or written), or the chord row, like a chord part. */
+export type Sings = 'notes' | 'chords';
+
+/** How a voice sings, besides its shape: what the engine needs to build the singers. */
+export interface VoiceSettings {
+    singers: Singers;
+    range: VoiceRange;
+    vowel: Vowel;
+    /** Vibrato depth, 0..1. */
+    vibrato: number;
+    /** Breath noise, 0..1. */
+    breath: number;
+}
+
+/** Singers: a solo voice or a choir, singing its own notes or the chords, on a vowel. */
+export interface VoicePart extends PartBase, VoiceSettings {
+    kind: 'voice';
+    /** Always 'voice': the singers' own instrument (their shape's defaults come from it). */
+    instrument: 'voice';
+    tone: PartTone;
+    shape: ShapeOverrides;
+    sings: Sings;
+    octave: number;
+    notes: Note[];
+}
+
+export const voiceSettings = (p: VoicePart): VoiceSettings =>
+    ({ singers: p.singers, range: p.range, vowel: p.vowel, vibrato: p.vibrato, breath: p.breath });
+
+/** The octave a voice range sings in by default. */
+export const RANGE_OCTAVE: { [r in VoiceRange]: number } = { low: 3, high: 4 };
+
 /** A drum pattern that loops under the song. */
 export interface DrumPart extends PartBase {
     kind: 'drums';
     drums: DrumPattern;
 }
 
-export type Part = ChordPart | BassPart | MelodyPart | DrumPart;
-export type InstrumentPart = ChordPart | BassPart | MelodyPart;
+export type Part = ChordPart | BassPart | MelodyPart | VoicePart | DrumPart;
+export type InstrumentPart = ChordPart | BassPart | MelodyPart | VoicePart;
 export const hasInstrument = (p: Part): p is InstrumentPart => p.kind !== 'drums';
+/** Parts with notes of their own, played from the keys in Notes mode and written in the note grid: melodies and voices. */
+export type NotesPart = MelodyPart | VoicePart;
+export const hasNotes = (p: Part | undefined): p is NotesPart => p?.kind === 'melody' || p?.kind === 'voice';
+/** Parts that play their own notes now: a melody, or a voice singing notes (one singing the chords follows the chord row). */
+export const writesNotes = (p: Part | undefined): boolean => p?.kind === 'melody' || (p?.kind === 'voice' && p.sings === 'notes');
+/** `p` as a part with notes to write, or null (see `writesNotes`). */
+export const noteWriter = (p: Part | undefined): NotesPart | null => (hasNotes(p) && writesNotes(p) ? p : null);
+/** Parts whose instrument is picked from the instrument list (a voice's is its singers). */
+export type PickedPart = ChordPart | BassPart | MelodyPart;
+export const picksInstrument = (p: Part): p is PickedPart => hasInstrument(p) && p.kind !== 'voice';
 
 /** Part colours. Yellow is left out: it belongs to the chord row and to whatever is active. */
 export const PART_COLORS = ['#4fd1c5', '#ff7aa8', '#7fb4ff', '#d38cff', '#c8e06e', '#e8b98a'];
 export const MAX_PARTS = PART_COLORS.length;
 
-export const PART_LABELS: { [k in PartKind]: string } = { chords: 'Chords', bass: 'Bass', melody: 'Melody', drums: 'Drums' };
+export const PART_LABELS: { [k in PartKind]: string } = { chords: 'Chords', bass: 'Bass', melody: 'Melody', voice: 'Voice', drums: 'Drums' };
 
 /** The next free id, so parts loaded from a saved song never collide with new ones. */
 const nextId = (existing: Part[]) =>
     `p${existing.reduce((m, p) => Math.max(m, parseInt(p.id.replace(/\D/g, ''), 10) || 0), 0) + 1}`;
 
-const DEFAULT_NAMES: { [k in PartKind]: string } = { chords: 'Keys', bass: 'Bass', melody: 'Melody', drums: 'Drums' };
+const DEFAULT_NAMES: { [k in PartKind]: string } = { chords: 'Keys', bass: 'Bass', melody: 'Melody', voice: 'Voice', drums: 'Drums' };
 
 /** A new part of `kind`, named and coloured so it doesn't clash with `existing`. */
 export function newPart(kind: PartKind, existing: Part[], drums?: DrumPattern): Part {
@@ -188,6 +245,12 @@ export function newPart(kind: PartKind, existing: Part[], drums?: DrumPattern): 
             return { ...base, kind, instrument: 'bass', tone: neutralTone(), shape: {}, style: 'pulse', octave: 2 };
         case 'melody':
             return { ...base, kind, instrument: 'lead', tone: neutralTone(), shape: {}, octave: 4, notes: [] };
+        case 'voice':
+            // a choir on "ooh", singing the chords: something to hear straight away
+            return {
+                ...base, kind, instrument: 'voice', tone: neutralTone(), shape: {}, fx: { ...noFx(), reverb: 0.35 },
+                singers: 'choir', range: 'low', vowel: 'u', vibrato: 0.35, breath: 0.15, sings: 'chords', octave: RANGE_OCTAVE.low, notes: [],
+            };
         case 'drums':
             return { ...base, kind, drums: drums ?? { bars: 1, hits: {} } };
     }
@@ -202,9 +265,12 @@ export function audibleParts(parts: Part[]): Part[] {
 // ---- rests: each rest on the chord row says which parts it silences -----------------------------
 
 /** What a rest does to a part it doesn't mention: the parts that follow the chords stop, melody and drums play on. */
-export const REST_PLAYS: { [k in PartKind]: boolean } = { chords: false, bass: false, melody: true, drums: true };
+export const REST_PLAYS: { [k in PartKind]: boolean } = { chords: false, bass: false, melody: true, voice: true, drums: true };
 
-export const playsThroughRest = (rest: RestClip, part: Part) => rest.plays?.[part.id] ?? REST_PLAYS[part.kind];
+/** A voice singing the chords stops at rests like a chord part; singing its own notes, it goes on like a melody. */
+const restPlaysByDefault = (part: Part) => (part.kind === 'voice' ? part.sings === 'notes' : REST_PLAYS[part.kind]);
+
+export const playsThroughRest = (rest: RestClip, part: Part) => rest.plays?.[part.id] ?? restPlaysByDefault(part);
 
 export type Span = [start: number, end: number];
 
@@ -449,7 +515,7 @@ export function melodyMidi(part: { octave: number }, h: { key: MusicalKey; scale
 export const noteMidi = (part: { octave: number }, h: { key: MusicalKey; scale: ScaleId }, n: Pick<Note, 'step' | 'acc'>) =>
     melodyMidi(part, h, n.step, n.acc ?? 0);
 
-export const melodyNotes = (part: MelodyPart, h: Harmony): NoteEvent[] =>
+export const melodyNotes = (part: NotesPart, h: Harmony): NoteEvent[] =>
     silence(part.notes, restSpans(h.chords, part)).map(n => ({ start: n.start, len: n.len, midi: [noteMidi(part, h, n)] }));
 
 /** Everything an instrument part plays, in song ticks. */
@@ -458,7 +524,15 @@ export function partNotes(part: InstrumentPart, h: Harmony, groove: Groove): Not
         case 'chords': return chordPartNotes(part, h, groove.barTicks ?? 4 * groove.beatTicks);
         case 'bass': return bassNotes(part, h, groove);
         case 'melody': return melodyNotes(part, h);
+        case 'voice': return part.sings === 'chords' ? voiceChordNotes(part, h) : melodyNotes(part, h);
     }
+}
+
+/** The chord row's chords as a voice sings them: block chords, moved by octaves into the voice's range. */
+export function voiceChordNotes(part: VoicePart, h: Harmony): NoteEvent[] {
+    // chords resolve around C4; a choir in octave 3 sings them an octave lower
+    const shift = 12 * (part.octave - 4);
+    return chordsFor(part, h.chords).map(clip => ({ start: clip.start, len: clip.len, midi: resolveClip(h, clip).midi.map(m => m + shift) }));
 }
 
 // ---- melody editing: one note at a time, like a voice ------------------------------------------
@@ -525,7 +599,7 @@ export function pasteNotes(notes: Note[], from: number, to: number, total: numbe
 
 /** Where a part's own material ends: a melody's last note, one pass of a drum pattern. */
 const partEnd = (p: Part, barTicks: number) =>
-    p.kind === 'melody' ? p.notes.reduce((m, n) => Math.max(m, n.start + n.len), 0)
+    hasNotes(p) ? p.notes.reduce((m, n) => Math.max(m, n.start + n.len), 0)
         : p.kind === 'drums' ? p.drums.bars * barTicks
             : 0;
 

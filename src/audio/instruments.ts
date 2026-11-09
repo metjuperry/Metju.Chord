@@ -1,6 +1,8 @@
 import * as Tone from 'tone';
 import SAMPLES from './samples.json';
 import { Adsr, InstrumentId, SAMPLE_ENVELOPES, SYNTH_ENVELOPES } from '../sound';
+import type { VoiceSettings, Vowel } from '../parts';
+import { VoiceInstrument } from './voice';
 
 export type { InstrumentId } from '../sound';
 
@@ -32,6 +34,8 @@ export const isSampled = (id: InstrumentId): id is SampledId & InstrumentId => i
 const VOLUMES: { [id in InstrumentId]: number } = {
     piano: 3.5, pad: -6, epiano: 3.5, organ: 3.5, pluck: -7, lead: -14,
     strings: -8, warmpad: 11, brass: -10, drawbar: -6, bells: 0, mallets: 0, chip: -12, bass: -4,
+    // the singers have their own level (voice.ts VOICE_VOLUME)
+    voice: 0,
 };
 
 /** Output level per sample set in dB, matched with `npm run levels`. */
@@ -59,6 +63,10 @@ export interface Voice {
     releaseAll(time: number): void;
     /** The part's envelope changes: any of attack, decay, sustain, release; the rest stays the instrument's own. */
     shape(over: Partial<Adsr>): void;
+    /** Singers only (voice.ts): how they sing. */
+    sing?(settings: VoiceSettings): void;
+    /** Singers only: move to `vowel`, arriving `glide` seconds after `time`. */
+    vowel?(vowel: Vowel, time: number, glide?: number): void;
 }
 
 export interface Instrument extends Voice {
@@ -503,8 +511,10 @@ class SampledInstrument implements Instrument {
 
 /** Builds an instrument. Sampled ones start loading their samples straight away. */
 export function createInstrument(id: InstrumentId): Instrument {
+    if (id === 'voice') return new VoiceInstrument();
     return isSampled(id) ? new SampledInstrument(id) : new SynthInstrument(id);
 }
 
 /** The bare synth preset of an instrument (also the stand-in of a sampled one), for the level check. */
-export const createSynth = (id: InstrumentId): Instrument => new SynthInstrument(isSampled(id) ? STAND_IN[id] : id);
+export const createSynth = (id: InstrumentId): Instrument =>
+    id === 'voice' ? new VoiceInstrument() : new SynthInstrument(isSampled(id) ? STAND_IN[id] : id);

@@ -22,7 +22,8 @@ export function previewSound(part: Part, key: MusicalKey, scale: ScaleId, chordO
     }
     const p = part as InstrumentPart;
     if (p.kind === 'bass') return { kind: 'notes', midi: [12 * (p.octave + 1) + keyPitchClass(key)] };
-    if (p.kind === 'melody') return { kind: 'notes', midi: [melodyMidi(p, { key, scale }, 0)] };
+    if (p.kind === 'melody' || (p.kind === 'voice' && p.sings === 'notes')) return { kind: 'notes', midi: [melodyMidi(p, { key, scale }, 0)] };
+    if (p.kind === 'voice') return { kind: 'notes', midi: resolveChord(key, { degree: 0, type: 'triad', inversion: 0, octave: p.octave, scale }).midi };
     const midi = resolveChord(key, { degree: 0, type: 'triad', inversion: 0, octave: chordOctave, scale }).midi;
     if (p.playMode === 'Strum') return { kind: 'notes', midi, strum: strumOffsets(midi, p.strumSpread, 'down') };
     if (p.playMode === 'Arp') return { kind: 'notes', midi, arp: true };
