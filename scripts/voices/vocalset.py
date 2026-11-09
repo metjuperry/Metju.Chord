@@ -21,19 +21,31 @@ four resonant filters at the vowel's formants; see src/audio/voice.ts):
   - a vowel whose measured formants can't be that vowel (a formant missed between the harmonics of
     a high note) takes the other range's, scaled; the output lists those under "fallbacks"
 
+Two stages, so a choice made in the second can be changed without fetching or analysing again:
+
+  analyse   every steady note of every recording (all three of each long tone), kept as numbers: its
+            pitch, length, formants, harmonics, source (harmonics with the vowel divided out), LPC,
+            harmonicity and vibrato, plus each file's pitch track. Bad files are recorded, not fatal.
+  make      the app's tables from that: which singers and notes to use, medians, fallbacks. Never
+            fails: what it couldn't do is listed under "warnings".
+
 Usage (Python 3.10+, numpy):
 
-  python3 scripts/voices/vocalset.py selftest          check the analysis on synthetic vowels
-  python3 scripts/voices/vocalset.py fetch DIR         the straight long tones (~84 MB) into DIR, read from
-                                                       Zenodo's archive by HTTP ranges (not the whole 2 GB)
-  python3 scripts/voices/vocalset.py make DIR OUT.json measure them into OUT.json (src/audio/vocalset.json)
+  python3 scripts/voices/vocalset.py selftest              check it all on synthetic singers (and broken files)
+  python3 scripts/voices/vocalset.py fetch DIR             the straight, vibrato and breathy long tones into DIR, read
+                                                           from Zenodo's archive by HTTP ranges (not the whole 2 GB),
+                                                           and an inventory of every long tone in it
+  python3 scripts/voices/vocalset.py analyse DIR OUT.json  the analysis (scripts/voices/analysis/vocalset-analysis.json)
+  python3 scripts/voices/vocalset.py make ANALYSIS OUT     the app's tables (src/audio/vocalset.json)
 
-The GitHub Action "Voice data" (.github/workflows/voice-data.yml) runs all three and opens a PR.
+The GitHub Action "Voice data" (.github/workflows/voice-data.yml) runs them and pushes a branch with both
+files; the analysis is what lets the tables be redone without running it again.
 """
 import io
 import json
 import re
 import sys
+import time
 import urllib.request
 import wave
 import zipfile
@@ -42,7 +54,10 @@ from pathlib import Path
 import numpy as np
 
 URL = "https://zenodo.org/api/records/1442513/files/VocalSet11.zip/content"
-LONG_TONE = re.compile(r"FULL/(?P<singer>(?:male|female)\d+)/long_tones/straight/[^/]*_(?P<vowel>[aeiou])\.wav$")
+LONG_TONE = re.compile(r"FULL/(?P<singer>(?:male|female)\d+)/long_tones/(?P<technique>[a-z_]+)/[^/]*_(?P<vowel>[aeiou])\.wav$")
+FILE_NAME = re.compile(r"(?P<singer>(?P<sex>male|female)\d+)_(?P<technique>[a-z_]+)_(?P<vowel>[aeiou])")
+# the long tones fetched: straight for the voice itself; vibrato and breathy to match the knobs to real singers
+TECHNIQUES = ("straight", "vibrato", "breathy")
 VOWELS = "aeiou"
 HARMONICS = 48
 SINGERS = 5
@@ -104,7 +119,8 @@ def pitch_track(x, rate, hop=0.02, size=0.05):
     y = resample(x, rate, pr)
     n, h = int(size * pr), int(hop * pr)
     lo, hi = pr // 1000, pr // 70
-    loud = np.sqrt(np.mean(y ** 2)) * 0.25
+    # a quarter of the file's level, and never silence
+    loud = max(np.sqrt(np.mean(y ** 2)) * 0.25, 1e-3)
     out = []
     for i in range(0, len(y) - n - hi, h):
         f = y[i:i + n + hi]
@@ -161,24 +177,6 @@ def notes_in(track, hop, min_seconds=0.4):
         if start is None and i < len(smooth) and f > 0:
             start = i
     return notes
-
-
-def lowest_note(x, rate, expect):
-    """The long tones hold three notes in a row; the lowest one's steady middle and its pitch.
-
-    Of the steady notes (`notes_in`), the lowest not more than 5 semitones under `expect` (an octave
-    slip of the pitch tracker would be), trimmed by a fifth at each end (onset and release).
-    Raises ValueError saying what was found when there's none.
-    """
-    track, hop = pitch_track(x, rate)
-    found = notes_in(track, hop)
-    usable = [n for n in found if 12 * np.log2(n[0] / expect) > -5]
-    if not usable:
-        heard = ", ".join(f"{f:.0f} Hz {(b - a) * hop:.1f} s" for f, a, b in found) or "nothing steady"
-        raise ValueError(f"no steady note near {expect:.0f} Hz ({heard})")
-    f0, a, b = min(usable)
-    trim = (b - a) // 5
-    return x[int((a + trim) * hop * rate): int((b - trim) * hop * rate)], f0
 
 
 # ---- measuring ----------------------------------------------------------------------------------
@@ -283,96 +281,178 @@ def source(amps, f0, x, rate):
     return amps / 10 ** (env / 20)
 
 
-# ---- the tables ---------------------------------------------------------------------------------
+# ---- analyse: every note of every recording, kept as numbers ------------------------------------
 
 def report(line):
-    """What happened to each recording, on stderr (the workflow log shows it)."""
-    print(line, file=sys.stderr)
+    """What happened, on stderr (the workflow log shows it)."""
+    print(line, file=sys.stderr, flush=True)
 
 
-def measure(files):
-    """files: {(range, singer, vowel): path} -> the JSON the app reads."""
-    out = {"credit": CREDIT, "low": {}, "high": {}}
+def r1(x, nd=1):
+    return round(float(x), nd)
+
+
+def vibrato(track, hop, a, b):
+    """Rate (Hz) and depth (cents, either way) of the pitch's wobble over frames [a, b)."""
+    p = np.array(track[a:b], dtype=float)
+    p = p[p > 0]
+    if len(p) < 16:
+        return None
+    cents = 1200 * np.log2(p / np.median(p))
+    cents = cents - np.polyval(np.polyfit(np.arange(len(cents)), cents, 1), np.arange(len(cents)))
+    spec = np.abs(np.fft.rfft(cents * np.hanning(len(cents)), 256))
+    hz = np.fft.rfftfreq(256, hop)
+    band = (hz >= 3) & (hz <= 9)
+    return {"rate": r1(hz[band][np.argmax(spec[band])], 2), "depth": r1(np.std(cents) * np.sqrt(2))}
+
+
+def analyse_note(x, rate, f0, a, b, hop, track):
+    """Everything worth keeping about one held note (its middle, trimmed by a fifth at each end)."""
+    trim = (b - a) // 5
+    mid = x[int((a + trim) * hop * rate): int((b - trim) * hop * rate)]
+    note = {"f0": r1(f0, 2), "start": r1(a * hop, 2), "seconds": r1((b - a) * hop, 2)}
+    try:
+        f0, amps = harmonics(mid, rate, f0)
+        note["f0"] = r1(f0, 2)
+        note["harmonicity"] = r1(harmonicity(mid, rate, f0), 3)
+        note["harmonics_db"] = [r1(20 * np.log10(v / (amps.max() + 1e-12) + 1e-9)) for v in amps]
+        src = source(amps, f0, mid, rate)
+        note["source_db"] = [r1(20 * np.log10(v / (src.max() + 1e-12) + 1e-9)) for v in src]
+        y = resample(mid, rate, SR)
+        note["lpc"] = [round(float(c), 5) for c in lpc(y * np.hamming(len(y)), LPC_ORDER)]
+    except Exception as e:      # noqa: BLE001 - one bad note mustn't stop the rest
+        note["error_harmonics"] = str(e)
+    try:
+        note["formants"] = formants(mid, rate)
+    except Exception as e:      # noqa: BLE001
+        note["error_formants"] = str(e)
+    v = vibrato(track, hop, a + trim, b - trim)
+    if v:
+        note["vibrato"] = v
+    return note
+
+
+def analyse(src_dir, out_path):
+    """Every recording in `src_dir` (from `fetch`) -> one JSON of numbers: per file its pitch track and
+    every steady note found, each with its formants, harmonics, source, LPC, harmonicity and vibrato.
+    Never stops on a bad file: it's recorded with its error."""
+    inventory = Path(src_dir) / "inventory.json"
+    dump = {
+        "version": 2, "credit": CREDIT, "analysis_rate": SR, "lpc_order": LPC_ORDER, "harmonics": HARMONICS,
+        "inventory": json.loads(inventory.read_text()) if inventory.exists() else None,
+        "recordings": [],
+    }
+    paths = sorted(Path(src_dir).glob("*.wav"))
+    for n, p in enumerate(paths, 1):
+        m = FILE_NAME.fullmatch(p.stem)
+        if not m:
+            continue
+        rec = {"file": p.name, "singer": m["singer"], "range": "low" if m["sex"] == "male" else "high",
+               "technique": m["technique"], "vowel": m["vowel"]}
+        try:
+            x, rate = read_wav(p)
+            rec["seconds"] = r1(len(x) / rate, 2)
+            rec["rate"] = rate
+            rec["peak_db"] = r1(20 * np.log10(np.abs(x).max() + 1e-12))
+            track, hop = pitch_track(x, rate)
+            rec["track"] = {"hop": hop, "hz": [int(round(f)) for f in track]}
+            rec["notes"] = [analyse_note(x, rate, f0, a, b, hop, track) for f0, a, b in notes_in(track, hop)]
+        except Exception as e:      # noqa: BLE001
+            rec["error"] = f"{type(e).__name__}: {e}"
+        dump["recordings"].append(rec)
+        found = ", ".join(f"{q['f0']:.0f} Hz {q['seconds']:.1f} s" for q in rec.get("notes", [])) or rec.get("error", "no steady note")
+        report(f"[{n}/{len(paths)}] {rec['singer']} {rec['technique']} {rec['vowel']}: {found}")
+    Path(out_path).write_text(json.dumps(dump, separators=(",", ":")) + "\n")
+    report(f"analysed {len(dump['recordings'])} recordings into {out_path}")
+
+
+# ---- make: the app's tables from the analysis ---------------------------------------------------
+
+def make(dump):
+    """The analysis -> the JSON the app reads. Never fails: what it couldn't do is listed in "warnings",
+    and a range with no usable singers is left out (the app keeps its stand-ins for it)."""
+    out = {"credit": CREDIT, "warnings": [], "fallbacks": []}
+    recs = [r for r in dump["recordings"] if r.get("technique") == "straight" and r.get("notes")]
     for rng in ("low", "high"):
-        singers = sorted({s for (r, s, _) in files if r == rng})
+        expect = NOTE[rng]
         rows = {}
-        for s in singers:
+        for s in sorted({r["singer"] for r in recs if r["range"] == rng}):
             per = {}
             for v in VOWELS:
-                p = files.get((rng, s, v))
-                if not p:
-                    report(f"{s} {v}: no recording")
-                    break
-                x, rate = read_wav(p)
-                try:
-                    mid, f0 = lowest_note(x, rate, NOTE[rng])
-                except ValueError as e:
-                    report(f"{s} {v}: {e}")
-                    break
-                off = 12 * np.log2(f0 / NOTE[rng])
-                if not -4 <= off <= 13:
-                    report(f"{s} {v}: lowest note {f0:.0f} Hz, too far from {NOTE[rng]:.0f} Hz")
-                    break
-                f0, amps = harmonics(mid, rate, f0)
-                per[v] = {
-                    # many singers skip or clip the lowest of the three notes on some vowels: their next
-                    # one (an octave up) still gives their colour, but formants only count from the low note
-                    "low": abs(off) <= 4,
-                    "formants": formants(mid, rate),
-                    "source": source(amps, f0, mid, rate),
-                    "clean": harmonicity(mid, rate, f0),
-                    "f0": f0,
-                }
-            if len(per) == len(VOWELS):
+                rec = next((r for r in recs if r["singer"] == s and r["vowel"] == v), None)
+                cands = [q for q in (rec or {}).get("notes", []) if "harmonics_db" in q and -4 <= 12 * np.log2(q["f0"] / expect) <= 13]
+                if not cands:
+                    report(f"{s} {v}: no usable note ({', '.join(f'{q['f0']:.0f} Hz' for q in (rec or {}).get('notes', [])) or 'none'})")
+                    continue
+                q = min(cands, key=lambda q: q["f0"])
+                per[v] = dict(q, low=abs(12 * np.log2(q["f0"] / expect)) <= 4)
+            if len(per) >= 3:
                 rows[s] = per
                 lows = sum(per[v]["low"] for v in per)
-                report(f"{s}: ok, " + ", ".join(f"{v} {per[v]['f0']:.0f} Hz" for v in VOWELS) +
-                       f", the low note on {lows} vowel{'s' if lows != 1 else ''}"
-                       f", harmonicity {np.mean([per[v]['clean'] for v in VOWELS]):.2f}")
-        # singers with the low note on at least two vowels; others only if there aren't enough of those
-        steady = {s: r for s, r in rows.items() if sum(r[v]["low"] for v in VOWELS) >= 2}
+                report(f"{s}: {len(per)} vowels, the low note on {lows}, harmonicity {np.mean([per[v]['harmonicity'] for v in per]):.2f}")
+            else:
+                report(f"{s}: left out, only {len(per)} vowels usable")
+        steady = {s: r for s, r in rows.items() if sum(r[v]["low"] for v in r) >= 2}
         if len(steady) >= MIN_SINGERS:
             rows = steady
-        # most vowels on the low note first, then the cleanest tone
-        best = sorted(rows, key=lambda s: (-sum(rows[s][v]["low"] for v in VOWELS), -np.mean([rows[s][v]["clean"] for v in VOWELS])))[:SINGERS]
-        report(f"{rng}: {len(rows)} usable singers of {len(singers)}; using {', '.join(best)}")
+        best = sorted(rows, key=lambda s: (-sum(rows[s][v]["low"] for v in rows[s]), -np.mean([rows[s][v]["harmonicity"] for v in rows[s]])))[:SINGERS]
+        report(f"{rng}: {len(rows)} usable singers; using {', '.join(best) or 'none'}")
+        if not best:
+            out["warnings"].append(f"{rng}: no usable singers, the app keeps its stand-ins")
+            continue
         if len(best) < MIN_SINGERS:
-            raise SystemExit(f"{rng}: only {len(best)} usable singers (need {MIN_SINGERS})")
-        # fewer than a choir's worth: the clearest sing twice (each choir voice is detuned its own way anyway)
-        best = [best[i % len(best)] for i in range(SINGERS)]
-        out[rng]["singers"] = []
-        for s in best:
-            # a singer's colour from the vowels sung on one note (harmonic k means the same thing in all of
-            # them): the low note's, or else the most common one's
-            low = [v for v in VOWELS if rows[s][v]["low"]]
+            out["warnings"].append(f"{rng}: only {len(best)} usable singers")
+        chosen = [best[i % len(best)] for i in range(SINGERS)]
+        singers = []
+        for s in chosen:
+            notes = list(rows[s].values())
+            low = [q for q in notes if q["low"]]
             if not low:
-                pitches = [round(12 * np.log2(rows[s][v]["f0"])) for v in VOWELS]
+                pitches = [round(12 * np.log2(q["f0"])) for q in notes]
                 common = max(set(pitches), key=pitches.count)
-                low = [v for v, p in zip(VOWELS, pitches) if p == common]
-            src = np.mean([rows[s][v]["source"] / (rows[s][v]["source"][0] + 1e-12) for v in low], axis=0)
+                low = [q for q, p in zip(notes, pitches) if p == common]
+            src = np.mean([10 ** (np.array(q["source_db"]) / 20) / 10 ** (q["source_db"][0] / 20) for q in low], axis=0)
             src = src / src.max()
-            out[rng]["singers"].append([round(float(a), 5) for a in src])
-        # each vowel's formants: the median over every usable singer who sang it on the low note
-        out[rng]["formants"] = {}
-        out[rng]["counted"] = {}
+            singers.append([round(float(a), 5) for a in src])
+        fmts, counted = {}, {}
         for v in VOWELS:
-            on_low = [rows[s][v]["formants"] for s in rows if rows[s][v]["low"]]
-            use = on_low or [rows[s][v]["formants"] for s in rows]
-            out[rng]["counted"][v] = len(on_low)
-            out[rng]["formants"][v] = [[round(float(c)) if i < 2 else round(float(c), 1) for i, c in enumerate(col)]
-                                       for col in np.median(use, axis=0)]
-        report(f"{rng}: formants from " + ", ".join(f"{v} {out[rng]['counted'][v]} singers" for v in VOWELS))
-        out[rng]["from"] = best
-    # a vowel whose first two formants land outside where that vowel can be (LPC misses a formant that
-    # falls between two widely spaced harmonics of a high note) takes the other range's, scaled by the
-    # usual ratio of women's to men's formants
-    out["fallbacks"] = []
+            on_low = [rows[s][v]["formants"] for s in rows if v in rows[s] and rows[s][v]["low"] and "formants" in rows[s][v]]
+            anyhow = [rows[s][v]["formants"] for s in rows if v in rows[s] and "formants" in rows[s][v]]
+            use = on_low or anyhow
+            counted[v] = len(on_low)
+            if use:
+                fmts[v] = [[round(float(c)) if i < 2 else round(float(c), 1) for i, c in enumerate(col)] for col in np.median(use, axis=0)]
+        report(f"{rng}: formants from " + ", ".join(f"{v} {counted[v]} singers" for v in VOWELS))
+        out[rng] = {"singers": singers, "formants": fmts, "counted": counted, "from": chosen}
     for rng, other, scale in (("high", "low", 1.15), ("low", "high", 1 / 1.15)):
+        if rng not in out or other not in out:
+            continue
         for v in VOWELS:
-            if plausible(v, out[rng]["formants"][v]) or not plausible(v, out[other]["formants"][v]):
+            mine, theirs = out[rng]["formants"].get(v), out[other]["formants"].get(v)
+            if mine and plausible(v, mine) or not theirs or not plausible(v, theirs):
                 continue
-            out[rng]["formants"][v] = [[round(hz * scale), bw, db] for hz, bw, db in out[other]["formants"][v]]
+            out[rng]["formants"][v] = [[round(hz * scale), bw, db] for hz, bw, db in theirs]
             out["fallbacks"].append(f"{rng}.{v}")
+    for rng in ("low", "high"):
+        missing = [v for v in VOWELS if rng in out and v not in out[rng]["formants"]]
+        if missing:
+            out["warnings"].append(f"{rng}: no formants for {', '.join(missing)} (the app keeps its stand-ins for them)")
+    # the vibrato and breathy long tones, for the Vibrato and Breath knobs to match real singers
+    extra = {}
+    for tech in ("vibrato", "breathy"):
+        notes = [q for r in dump["recordings"] if r.get("technique") == tech for q in r.get("notes", [])]
+        if not notes:
+            continue
+        e = {"notes": len(notes), "harmonicity": r1(np.median([q["harmonicity"] for q in notes if "harmonicity" in q] or [0]), 3)}
+        vib = [q["vibrato"] for q in notes if "vibrato" in q]
+        if vib:
+            e["vibrato_rate"] = r1(np.median([w["rate"] for w in vib]), 2)
+            e["vibrato_depth"] = r1(np.median([w["depth"] for w in vib]))
+        extra[tech] = e
+    straight = [q for r in recs for q in r["notes"] if "harmonicity" in q]
+    if straight:
+        extra["straight"] = {"notes": len(straight), "harmonicity": r1(np.median([q["harmonicity"] for q in straight]), 3)}
+    out["techniques"] = extra
     return out
 
 
@@ -386,7 +466,7 @@ def plausible(v, fmts):
     return lo1 <= fmts[0][0] <= hi1 and lo2 <= fmts[1][0] <= hi2
 
 
-# ---- fetch: the archive's straight long tones, by HTTP ranges -----------------------------------
+# ---- fetch: the long tones, by HTTP ranges ------------------------------------------------------
 
 class RangeFile(io.RawIOBase):
     """A remote file read by HTTP Range requests, so the zip's directory and a few members are all that come down."""
@@ -413,36 +493,45 @@ class RangeFile(io.RawIOBase):
         n = min(len(buf), self.size - self.pos)
         if n <= 0:
             return 0
-        req = urllib.request.Request(self.url, headers={"Range": f"bytes={self.pos}-{self.pos + n - 1}"})
-        with urllib.request.urlopen(req, timeout=120) as r:
-            data = r.read()
+        for attempt in range(4):
+            try:
+                req = urllib.request.Request(self.url, headers={"Range": f"bytes={self.pos}-{self.pos + n - 1}"})
+                with urllib.request.urlopen(req, timeout=120) as r:
+                    data = r.read()
+                break
+            except OSError:
+                if attempt == 3:
+                    raise
+                time.sleep(5 * (attempt + 1))
         buf[:len(data)] = data
         self.pos += len(data)
         return len(data)
 
 
 def fetch(dest):
+    """The long tones of the techniques in TECHNIQUES into `dest` (named singer_technique_vowel.wav),
+    and `inventory.json`: every long tone in the archive with its size, for whatever comes next."""
     dest.mkdir(parents=True, exist_ok=True)
     z = zipfile.ZipFile(io.BufferedReader(RangeFile(URL), buffer_size=1 << 20))
-    count = 0
+    inventory, count = [], 0
     for info in z.infolist():
         m = LONG_TONE.search(info.filename)
         if not m:
             continue
-        out = dest / f"{m['singer']}_{m['vowel']}.wav"
+        inventory.append({"path": info.filename, "bytes": info.file_size})
+        if m["technique"] not in TECHNIQUES:
+            continue
+        out = dest / f"{m['singer']}_{m['technique']}_{m['vowel']}.wav"
         if not (out.exists() and out.stat().st_size == info.file_size):
-            out.write_bytes(z.read(info))
+            try:
+                out.write_bytes(z.read(info))
+            except Exception as e:      # noqa: BLE001 - one bad member mustn't stop the rest
+                report(f"{info.filename}: {e}")
+                continue
         count += 1
-    print(f"{count} long tones in {dest}")
-
-
-def files_in(src):
-    files = {}
-    for p in sorted(Path(src).glob("*.wav")):
-        m = re.fullmatch(r"(?P<singer>(?P<sex>male|female)\d+)_(?P<vowel>[aeiou])", p.stem)
-        if m:
-            files[("low" if m["sex"] == "male" else "high", m["singer"], m["vowel"])] = p
-    return files
+    (dest / "inventory.json").write_text(json.dumps(inventory, indent=0) + "\n")
+    techs = sorted({LONG_TONE.search(i["path"])["technique"] for i in inventory})
+    print(f"{count} long tones in {dest} (the archive's long tones: {len(inventory)}, techniques {', '.join(techs)})")
 
 
 # ---- selftest: synthetic vowels with known formants ---------------------------------------------
@@ -461,6 +550,14 @@ def synth_vowel(f0, fmts, rate=44100, seconds=1.5, tilt=1.2, seed=0):
     return x / np.abs(x).max() * 0.5 + rng.normal(0, 1e-4, len(t))
 
 
+def write_wav(path, x, rate=44100):
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes((np.clip(x, -1, 1) * 32767).astype("<i2").tobytes())
+
+
 def selftest():
     import tempfile
     truth = {"a": [(768, 90), (1333, 100), (2522, 160), (3400, 200)],
@@ -471,9 +568,9 @@ def selftest():
         for (hz, _), (ghz, _, _) in zip(fmts[:3], got[:3]):
             # harmonics are 110 Hz apart: a formant can only be told to within about one
             assert abs(ghz - hz) < 120, (v, fmts, got)
-    # the pipeline end to end on synthetic singers: tables of the right shape
+    # the pipeline end to end on synthetic singers
     with tempfile.TemporaryDirectory() as d:
-        for rng_, f0, sex in (("low", 130.81, "male"), ("high", 261.63, "female")):
+        for f0, sex in ((130.81, "male"), (261.63, "female")):
             for s in range(1, 7):
                 for v in VOWELS:
                     fm = truth.get(v, truth["a"])
@@ -484,13 +581,18 @@ def selftest():
                              synth_vowel(base * 2 ** (17 / 12), fm, tilt=1.0 + 0.1 * s, seed=s), gap,
                              synth_vowel(base, fm, tilt=1.0 + 0.1 * s, seed=s)]
                     # as many real singers do on some vowel: singer 6 skips the low note on E
-                    x = np.concatenate(notes[:3] if (s, v) == (6, "e") else notes)
-                    with wave.open(f"{d}/{sex}{s}_{v}.wav", "wb") as w:
-                        w.setnchannels(1)
-                        w.setsampwidth(2)
-                        w.setframerate(44100)
-                        w.writeframes((x * 32767).astype("<i2").tobytes())
-        out = measure(files_in(d))
+                    write_wav(f"{d}/{sex}{s}_straight_{v}.wav", np.concatenate(notes[:3] if (s, v) == (6, "e") else notes))
+            # a vibrato tone: 5.5 Hz, ±50 cents
+            t = np.arange(int(2 * 44100)) / 44100
+            ph = 2 * np.pi * np.cumsum(f0 * 2 ** (0.5 / 12 * np.sin(2 * np.pi * 5.5 * t))) / 44100
+            write_wav(f"{d}/{sex}1_vibrato_a.wav", 0.4 * (np.sin(ph) + 0.5 * np.sin(2 * ph) + 0.25 * np.sin(3 * ph)))
+        # broken files must not stop anything
+        Path(f"{d}/male9_straight_a.wav").write_bytes(b"not a wav")
+        write_wav(f"{d}/male9_straight_e.wav", np.zeros(44100))
+        analyse(d, f"{d}/analysis.json")
+        dump = json.loads(Path(f"{d}/analysis.json").read_text())
+        out = make(dump)
+    assert any("error" in r for r in dump["recordings"]), "a broken file is recorded with its error"
     for rng_ in ("low", "high"):
         assert len(out[rng_]["singers"]) == SINGERS and all(len(s) == HARMONICS for s in out[rng_]["singers"])
         assert set(out[rng_]["formants"]) == set(VOWELS)
@@ -500,6 +602,11 @@ def selftest():
         assert all(0 <= a <= 1 for s in out[rng_]["singers"] for a in s)
         # the fundamental and every harmonic near it are there: no note measured an octave off
         assert all(min(s[:6]) > 0.05 for s in out[rng_]["singers"]), out[rng_]["singers"]
+    vib = out["techniques"]["vibrato"]
+    assert abs(vib["vibrato_rate"] - 5.5) < 0.6 and 25 < vib["vibrato_depth"] < 80, vib
+    # an analysis with nothing usable still makes a file, with warnings
+    empty = make({"recordings": []})
+    assert empty["warnings"] and "low" not in empty
     print("selftest ok")
 
 
@@ -509,10 +616,14 @@ if __name__ == "__main__":
         selftest()
     elif cmd == "fetch" and len(sys.argv) == 3:
         fetch(Path(sys.argv[2]))
+    elif cmd == "analyse" and len(sys.argv) == 4:
+        analyse(sys.argv[2], sys.argv[3])
     elif cmd == "make" and len(sys.argv) == 4:
-        data = measure(files_in(sys.argv[2]))
+        data = make(json.loads(Path(sys.argv[2]).read_text()))
         Path(sys.argv[3]).write_text(json.dumps(data, indent=1) + "\n")
-        print(f"wrote {sys.argv[3]}: {', '.join(data['low']['from'] + data['high']['from'])}")
+        print(f"wrote {sys.argv[3]}: " + "; ".join(f"{r}: {', '.join(data[r]['from'])}" for r in ("low", "high") if r in data))
+        for w in data["warnings"]:
+            print(f"warning: {w}")
         if data["fallbacks"]:
             print(f"formants taken from the other range for: {', '.join(data['fallbacks'])}")
     else:

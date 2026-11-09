@@ -25,7 +25,7 @@ Node **22.12+** (Vitest 5 requires it; CI uses Node 22).
 | `node scripts/version.cjs` | prints the version the build will show |
 | `node scripts/icons.cjs` | re-renders `public/icons/` from the favicon design (needs Chromium) |
 | `python3 scripts/samples/prepare.py …` | rebuilds `public/samples/` and `src/audio/samples.json` from the original sample libraries (see its docstring) |
-| `python3 scripts/voices/vocalset.py selftest \| fetch DIR \| make DIR OUT` | measures the Voice part's singers and vowel formants from VocalSet (CC BY 4.0) into `src/audio/vocalset.json`; run it through the **Voice data** GitHub Action (Actions → Voice data → Run workflow), which fetches only the long tones and opens a PR |
+| `python3 scripts/voices/vocalset.py selftest \| fetch DIR \| analyse DIR OUT \| make ANALYSIS OUT` | the Voice part's singers and vowel formants from VocalSet (CC BY 4.0), in two stages: `analyse` keeps every note of every long tone as numbers (`scripts/voices/analysis/vocalset-analysis.json`), `make` turns that into `src/audio/vocalset.json` and never fails (it lists warnings). Run through the **Voice data** GitHub Action (Actions → Voice data → Run workflow), which pushes a branch with both; redo `make` locally from the analysis instead of running the Action again |
 
 CI: `.github/workflows/ci.yml` runs tests and build on every pull request; `.github/workflows/deploy.yml` runs tests, builds and publishes on every push to `master`.
 
