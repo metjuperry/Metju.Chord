@@ -8,8 +8,9 @@
 What it measures (the app's voice is a source, each singer's own sound, sung through a "mouth" of
 four resonant filters at the vowel's formants; see src/audio/voice.ts):
 
-  - the straight long tones (each singer holds a note on each vowel without vibrato), the lowest
-    note of each: men C3, women C4, where the vowels are sung most clearly
+  - the straight long tones (each singer holds three notes in a row on each vowel, without vibrato):
+    the lowest of the three, found by tracking the pitch (men C3, women C4), where the vowels are sung
+    most clearly
   - from the steady middle of each, the vocal tract's resonances by linear prediction (LPC):
     the first four formants (Hz), their bandwidths and levels
   - each vowel's formants: the median over the chosen singers
@@ -91,6 +92,69 @@ def steady_middle(x, rate, seconds=0.6):
     return x[max(0, mid - n // 2): mid + n // 2]
 
 
+def pitch_track(x, rate, hop=0.02, size=0.05):
+    """The pitch (Hz, 0 where unvoiced) every `hop` seconds, by YIN (de Cheveigné & Kawahara, 2002), 70 Hz - 1 kHz.
+
+    YIN takes the first period whose (cumulative mean normalised) difference dips under a threshold,
+    rather than the best-correlating one, so a note isn't heard an octave low (a period two cycles
+    long fits just as well); parabolic interpolation places it between samples.
+    """
+    pr = 22050
+    y = resample(x, rate, pr)
+    n, h = int(size * pr), int(hop * pr)
+    lo, hi = pr // 1000, pr // 70
+    loud = np.sqrt(np.mean(y ** 2)) * 0.25
+    out = []
+    for i in range(0, len(y) - n - hi, h):
+        f = y[i:i + n + hi]
+        if np.sqrt(np.mean(f[:n] ** 2)) < loud:
+            out.append(0.0)
+            continue
+        # difference function d(tau) = sum (x_j - x_{j+tau})^2 for tau < hi, via FFT
+        w = f[:n]
+        spec = np.fft.rfft(f, 2 * len(f))
+        corr = np.fft.irfft(np.fft.rfft(w[::-1], 2 * len(f)) * spec)[n - 1:n - 1 + hi]
+        energy = np.cumsum(f ** 2)
+        e_tau = energy[np.arange(hi) + n - 1] - np.concatenate([[0], energy[:hi - 1]])
+        d = np.sum(w ** 2) + e_tau - 2 * corr
+        d[0] = 0
+        cm = d[1:] * np.arange(1, hi) / np.maximum(np.cumsum(d[1:]), 1e-12)
+        cm = np.concatenate([[1], cm])
+        below = np.where(cm[lo:] < 0.15)[0]
+        if not len(below):
+            out.append(0.0)
+            continue
+        t = lo + below[0]
+        while t + 1 < hi and cm[t + 1] < cm[t]:
+            t += 1
+        a, b, c = cm[t - 1], cm[t], cm[t + 1] if t + 1 < hi else cm[t]
+        shift = 0.5 * (a - c) / (a - 2 * b + c) if (a - 2 * b + c) else 0
+        out.append(pr / (t + shift))
+    return np.array(out), hop
+
+
+def lowest_note(x, rate, min_seconds=0.6):
+    """The long tones hold three notes in a row; the lowest one's steady middle and its pitch.
+
+    The pitch track is cut into stretches that stay within half a semitone; of those at least
+    `min_seconds` long, the lowest, trimmed by a fifth at each end (onset and release).
+    """
+    track, hop = pitch_track(x, rate)
+    notes, start = [], None
+    for i, f in enumerate(list(track) + [0.0]):
+        if start is not None and (f == 0 or abs(12 * np.log2(f / np.median(track[start:i]))) > 0.5):
+            if (i - start) * hop >= min_seconds:
+                notes.append((float(np.median(track[start:i])), start, i))
+            start = None
+        if start is None and f > 0:
+            start = i
+    if not notes:
+        raise ValueError("no steady note found")
+    f0, a, b = min(notes)
+    trim = (b - a) // 5
+    return x[int((a + trim) * hop * rate): int((b - trim) * hop * rate)], f0
+
+
 # ---- measuring ----------------------------------------------------------------------------------
 
 def lpc(x, order):
@@ -161,8 +225,8 @@ def harmonics(x, rate, f0_guess):
     n = 1 << int(np.ceil(np.log2(len(x))))
     spec = np.abs(np.fft.rfft(x * np.hanning(len(x)), n))
     hz = np.fft.rfftfreq(n, 1 / rate)
-    # refine f0: the strongest peak within a semitone of the guess, checked on the 2nd and 3rd harmonics too
-    near = (hz > f0_guess * 0.94) & (hz < f0_guess * 1.06)
+    # refine f0: the strongest peak within a third of a semitone of the guess (the pitch track's)
+    near = (hz > f0_guess * 0.98) & (hz < f0_guess * 1.02)
     f0 = float(hz[near][np.argmax(spec[near])])
     amps = []
     for k in range(1, HARMONICS + 1):
@@ -208,10 +272,13 @@ def measure(files):
                 if not p:
                     break
                 x, rate = read_wav(p)
-                mid = steady_middle(x, rate)
-                f0, amps = harmonics(mid, rate, NOTE[rng])
-                if abs(12 * np.log2(f0 / NOTE[rng])) > 1:
+                try:
+                    mid, f0 = lowest_note(x, rate)
+                except ValueError:
+                    break
+                if abs(12 * np.log2(f0 / NOTE[rng])) > 2:
                     break       # not the note we expect: leave the singer out
+                f0, amps = harmonics(mid, rate, f0)
                 per[v] = {
                     "formants": formants(mid, rate),
                     "source": source(amps, f0, mid, rate),
@@ -347,7 +414,12 @@ def selftest():
             for s in range(1, 7):
                 for v in VOWELS:
                     fm = truth.get(v, truth["a"])
-                    x = synth_vowel(f0 * 2 ** (np.random.default_rng(s).uniform(-0.2, 0.2) / 12), fm, tilt=1.0 + 0.1 * s, seed=s)
+                    # three notes in a row, as VocalSet's long tones are: the octave, the fourth above it, then the lowest
+                    base = f0 * 2 ** (np.random.default_rng(s).uniform(-0.2, 0.2) / 12)
+                    gap = np.zeros(int(0.15 * 44100))
+                    x = np.concatenate([synth_vowel(base * 2, fm, tilt=1.0 + 0.1 * s, seed=s), gap,
+                                        synth_vowel(base * 2 ** (17 / 12), fm, tilt=1.0 + 0.1 * s, seed=s), gap,
+                                        synth_vowel(base, fm, tilt=1.0 + 0.1 * s, seed=s)])
                     with wave.open(f"{d}/{sex}{s}_{v}.wav", "wb") as w:
                         w.setnchannels(1)
                         w.setsampwidth(2)
@@ -359,7 +431,8 @@ def selftest():
         assert set(out[rng_]["formants"]) == set(VOWELS)
         assert all(len(f) == 4 for f in out[rng_]["formants"].values())
         assert all(0 <= a <= 1 for s in out[rng_]["singers"] for a in s)
-        assert all(s[0] > 0.05 for s in out[rng_]["singers"])
+        # the fundamental and every harmonic near it are there: no note measured an octave off
+        assert all(min(s[:6]) > 0.05 for s in out[rng_]["singers"]), out[rng_]["singers"]
     print("selftest ok")
 
 
