@@ -141,8 +141,11 @@ export class SequencerPlayer<T> {
         // A queued jump inside this window: play up to it, switch, then the rest of the window from the target
         const jump = this.jump;
         if (jump) {
-            const at = opts.loop ? Math.min(jump.at, opts.loopEnd) : jump.at;
-            if (at >= from && at < to) {
+            // a jump at or past the loop end is due in the window that reaches the end (windows are
+            // [from, to), and the loop end is never inside one: the next pass starts again at 0)
+            const atEnd = opts.loop && jump.at >= opts.loopEnd;
+            const at = atEnd ? opts.loopEnd : jump.at;
+            if (at >= from && (at < to || (atEnd && to >= opts.loopEnd))) {
                 this.jump = null;
                 fire(from, at, 0);
                 jump.run(time + ticksToSeconds(at - from));
