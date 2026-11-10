@@ -198,13 +198,25 @@ export class VoiceInstrument implements Instrument {
 
     private end(n: Sung, time: number, release = this.env.release) {
         const at = Math.max(time, n.start);
-        const fade = (p: AudioParam) => {
-            p.cancelScheduledValues(at);
-            p.setValueAtTime(p.value, at);
+        const attackEnd = n.start + Math.max(0.005, this.env.attack);
+        /**
+         * Fade from wherever the envelope is at `at`. The sequencer calls this ahead of time, right
+         * after `attack`, so the param's current value says nothing about its value then.
+         */
+        const fade = (p: AudioParam, peak: number) => {
+            if (typeof p.cancelAndHoldAtTime === 'function') {
+                p.cancelAndHoldAtTime(at);
+            } else if (at < attackEnd) {
+                // no hold (Firefox): end the attack ramp where it would have been
+                p.cancelScheduledValues(n.start);
+                p.setValueAtTime(0, n.start);
+                p.linearRampToValueAtTime(peak * Math.max(0, (at - n.start) / (attackEnd - n.start)), at);
+            }
+            // (past the attack nothing needs cancelling: the fade takes over from the decay)
             p.setTargetAtTime(0, at, Math.max(0.01, release) / 4);
         };
-        n.gains.forEach(g => fade(g.gain));
-        if (n.breath) fade(n.breath.gain);
+        n.gains.forEach(g => fade(g.gain, n.peak));
+        if (n.breath) fade(n.breath.gain, n.peak * this.settings.breath * 0.9);
         n.released = true;
         const stop = at + Math.max(0.01, release) * 1.6 + 0.05;
         n.oscs.forEach(o => o.stop(stop));
