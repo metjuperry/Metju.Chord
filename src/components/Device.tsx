@@ -411,6 +411,12 @@ const Pad: React.FC<{ pad: PadView; onDown: (d: number) => void; onUp: (d: numbe
             onPointerUp={up}
             onPointerCancel={up}
             onLostPointerCapture={up}
+            // Enter or Space on a focused pad (and a screen reader's activate): a short press
+            onClick={e => {
+                if (e.detail !== 0 || holding.current) return;
+                onDown(pad.degree);
+                window.setTimeout(() => onUp(pad.degree), 400);
+            }}
             onContextMenu={e => e.preventDefault()}
         >
             <span className="pad-number">{pad.degree + 1}</span>

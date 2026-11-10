@@ -293,6 +293,8 @@ const App: React.FC = () => {
     const partsShown = partsSel === MASTER || parts.some(p => p.id === partsSel) ? partsSel : padPart.id;
     /** The engine strip a part plays through live (pads, previews): the open section's while it's open, the song's otherwise. */
     const trackOf = (partId: string) => (soundScope === 'section' ? stripId(findSection(full, openKey), partId) : partId);
+    const trackOfRef = useRef(trackOf);
+    trackOfRef.current = trackOf;
     // Notes mode: the pads play single scale notes on a melody part and record into it
     const [padModeSetting, setPadMode] = useState<PadMode>('chords');
     const [melodyPartId, setMelodyPartId] = useState('');
@@ -446,7 +448,8 @@ const App: React.FC = () => {
             const midi = melodyMidi(s.padMelody, h, step, acc);
             // spelled on the scale note's letter: F + ♯ is F♯, G + ♭ is G♭
             const name = spellNoteOctave(noteNames(s.selectedKey, s.scale), melodyMidi(s.padMelody, h, step), acc);
-            const stop = getEngine().attack([midi], undefined, s.padMelody.id);
+            // through the open section's strip when it sounds its own way there, like the note grid
+            const stop = getEngine().attack([midi], undefined, trackOfRef.current(s.padMelody.id));
             setShown({
                 chord: { midi: [midi], rootPc: midi % 12, notes: [name], name: { symbol: name, long: `Note ${name}` } },
                 degree, scale: s.scale, dir: s.stickDir, inversion: 0, note: true, acc,
@@ -976,7 +979,7 @@ const App: React.FC = () => {
     const auditionDrum = async (voice: DrumVoice) => {
         if (!drumPart) return;
         await startAudio();
-        getEngine().playDrum(drumPart.id, voice);
+        getEngine().playDrum(trackOf(drumPart.id), voice);
     };
     const drumActions = {
         toggle: (voice: DrumVoice, i: number) => {
@@ -1396,8 +1399,14 @@ const App: React.FC = () => {
             t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement
             || (t instanceof HTMLElement && t.getAttribute('role') === 'slider');
 
+        /** The focus was last moved with Tab (not by a click or tap). */
+        let tabbed = false;
+        const pointed = () => {
+            tabbed = false;
+        };
         const down = (e: KeyboardEvent) => {
             const a = keyActions.current;
+            if (e.code === 'Tab') tabbed = true;
             // Undo / redo: Ctrl or Cmd + Z, Shift + Ctrl/Cmd + Z, Ctrl + Y
             if ((e.ctrlKey || e.metaKey) && !e.altKey && !a.helpOpen && (e.code === 'KeyZ' || e.code === 'KeyY')) {
                 e.preventDefault();
@@ -1425,6 +1434,9 @@ const App: React.FC = () => {
                 return;
             }
             const handled = () => e.preventDefault();
+            // Space belongs to a button reached with the keyboard (Tab): it presses that button. A button
+            // that only has the focus because it was clicked or tapped doesn't take it: Space plays and pauses.
+            if (e.code === 'Space' && tabbed && e.target instanceof Element && e.target.matches('button, a[href]')) return;
             // with a melody note selected, Shift+↑ / Shift+↓ sharpen or flatten it
             if (e.shiftKey && (e.code === 'ArrowUp' || e.code === 'ArrowDown')) {
                 if (a.melody.nudge(e.code === 'ArrowUp' ? 1 : -1)) {
@@ -1460,7 +1472,9 @@ const App: React.FC = () => {
         window.addEventListener('keydown', down);
         window.addEventListener('keyup', up);
         window.addEventListener('blur', blur);
+        window.addEventListener('pointerdown', pointed, true);
         return () => {
+            window.removeEventListener('pointerdown', pointed, true);
             window.removeEventListener('keydown', down);
             window.removeEventListener('keyup', up);
             window.removeEventListener('blur', blur);
