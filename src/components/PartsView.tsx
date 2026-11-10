@@ -257,42 +257,33 @@ const VolumeBar: React.FC<{ value: number; color: string; name: string; onChange
     );
 };
 
-/** "+ Part": a short menu of part kinds. */
+/**
+ * "+ Part": a short menu of part kinds. A PopMenu, so it stays in the window (inside the parts list
+ * it was cut off on a phone).
+ */
 const AddPartMenu: React.FC<{ full: boolean; onAdd: (kind: PartKind) => void }> = ({ full, onAdd }) => {
-    const [open, setOpen] = useState(false);
-    const root = useRef<HTMLDivElement>(null);
-    useEffect(() => {
-        if (!open) return;
-        const close = (e: PointerEvent | KeyboardEvent) => {
-            if (e instanceof KeyboardEvent ? e.key === 'Escape' : !root.current?.contains(e.target as Node)) setOpen(false);
-        };
-        document.addEventListener('pointerdown', close);
-        document.addEventListener('keydown', close);
-        return () => {
-            document.removeEventListener('pointerdown', close);
-            document.removeEventListener('keydown', close);
-        };
-    }, [open]);
+    const [anchor, setAnchor] = useState<MenuAnchor | null>(null);
     return (
-        <div className="add-part" ref={root}>
+        <div className="add-part">
             <button
                 className="chip-button small-chip"
                 aria-haspopup="menu"
-                aria-expanded={open}
+                aria-expanded={!!anchor}
                 disabled={full}
                 title={full ? `Up to ${MAX_PARTS} parts` : 'Add a part'}
-                onClick={() => setOpen(o => !o)}
+                // while open, a press here only closes it (the menu's outside-press would close it and the click reopen it)
+                onPointerDown={e => anchor && e.stopPropagation()}
+                onClick={e => setAnchor(anchor ? null : { rect: e.currentTarget.getBoundingClientRect() })}
             >
                 + Part
             </button>
-            {open && (
-                <div className="song-popover add-part-popover panel" role="menu">
-                    {(['chords', 'bass', 'melody', 'voice', 'drums'] as PartKind[]).map(k => (
-                        <button key={k} role="menuitem" onClick={() => { setOpen(false); onAdd(k); }}>
-                            {PART_LABELS[k]} <span className="add-part-hint">{KIND_HINT[k]}</span>
-                        </button>
-                    ))}
-                </div>
+            {anchor && (
+                <PopMenu
+                    anchor={anchor}
+                    label="Add a part"
+                    onClose={() => setAnchor(null)}
+                    items={(['chords', 'bass', 'melody', 'voice', 'drums'] as PartKind[]).map(k => ({ label: PART_LABELS[k], note: KIND_HINT[k], onSelect: () => onAdd(k) }))}
+                />
             )}
         </div>
     );
