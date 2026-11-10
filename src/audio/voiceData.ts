@@ -40,8 +40,8 @@ const TEXTBOOK: { [r in VoiceRange]: { [v in Vowel]: Formant[] } } = {
  * sets the overall level. Refit whenever the formants, the singers or the mouth change.
  */
 export const VOWEL_TRIM: { [r in VoiceRange]: { [v in Vowel]: number } } = {
-    low: { a: 1.0, e: 3.2, i: 4.8, o: 3.1, u: 6.8 },
-    high: { a: -8.4, e: -4.2, i: -0.6, o: -5.5, u: -0.3 },
+    low: { a: 1.4, e: 1.4, i: 5.4, o: 5.6, u: 11.4 },
+    high: { a: -11.7, e: -8.0, i: 0.5, o: -6.2, u: 0.3 },
 };
 
 /** Harmonics in a singer's wave. */
@@ -86,7 +86,7 @@ function oneVoice(all: { [v in Vowel]: Formant[] }): { [v in Vowel]: Formant[] }
     const f4 = Math.max(f3 + 400, median(VOWEL_IDS.map(v => all[v][3][0])));
     return Object.fromEntries(VOWEL_IDS.map(v => {
         const [[f1, b1], [f2, b2]] = all[v];
-        return [v, [[f1, clampTo(b1, 60, 110), 0], [f2, clampTo(b2, 70, 130), 0], [f3, 160, 0], [f4, 200, 0]]];
+        return [v, [[f1, clampTo(b1, 60, 110), 0], [f2, clampTo(b2, 70, 130), 0], [f3, 240, 0], [f4, 300, 0]]];
     })) as { [v in Vowel]: Formant[] };
 }
 
