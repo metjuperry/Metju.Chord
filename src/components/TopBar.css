@@ -277,6 +277,27 @@
     background: var(--accent);
 }
 
+/* Undo and redo, after the transport: the bar's own button look */
+.top-bar .undo-redo {
+    gap: 3px;
+}
+
+.top-bar .undo-redo .icon-button {
+    width: 36px;
+    height: 32px;
+    border-radius: 6px;
+}
+
+.top-bar.compact .undo-redo {
+    gap: 4px;
+}
+
+.top-bar.compact .undo-redo .icon-button {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+}
+
 /* ---- compact: one fixed row ----------------------------------------------------------------
    The bar runs edge to edge and stays at the top while the page scrolls under it, so Play, Stop,
    Record and undo are always in reach. It keeps clear of the notch and the status bar itself.

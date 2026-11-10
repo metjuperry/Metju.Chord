@@ -3,6 +3,7 @@ import './TopBar.css';
 import { KEYS, MusicalKey, SCALES, ScaleId } from '../theory';
 import { addTap, tapBpm } from '../tempo';
 import { useDialog } from './useDialog';
+import { UndoRedo } from './SongMenu';
 
 export const OCTAVE_MIN = 2;
 export const OCTAVE_MAX = 6;
@@ -49,6 +50,11 @@ interface TopBarProps {
     /** 📖 Learn: open (yellow edge while it's showing) or closed. */
     learnOpen: boolean;
     onToggleLearn: () => void;
+    /** Undo and redo of every song edit: here, so they are in reach on every screen. */
+    canUndo: boolean;
+    canRedo: boolean;
+    onUndo: () => void;
+    onRedo: () => void;
     /** Compact: the key, scale and tempo sheet behind the chip (App owns it, so shortcuts rest while it's open). */
     keyOpen?: boolean;
     onKeyOpen?: (open: boolean) => void;
@@ -300,6 +306,8 @@ const TopBar: React.FC<TopBarProps> = p => (<>
                 <span className="rec-dot" />
             </button>
         </div>
+
+        <UndoRedo canUndo={p.canUndo} canRedo={p.canRedo} onUndo={p.onUndo} onRedo={p.onRedo} />
 
         {(!p.modes || p.modes.length > 0) && (
             <nav className="tb-modes segmented" aria-label="Mode">

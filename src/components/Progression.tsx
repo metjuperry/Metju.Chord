@@ -82,8 +82,6 @@ interface ProgressionProps {
     onSectionMute?: (partId: string, muted: boolean) => void;
     /** Shown in the chord toolbar when the section is in the chain more than once. */
     repeatNote?: string;
-    /** Undo and redo, shown with the cursor buttons. */
-    undoRedo?: React.ReactNode;
 }
 
 const steps = (n: number) => (n === 1 ? '1 step' : `${n} steps`);
@@ -348,7 +346,6 @@ const Progression: React.FC<ProgressionProps> = props => {
                     <button className="icon-button" aria-label="Next chord" onClick={props.onNext}>{Icon.next}</button>
                     <button className="icon-button" aria-label="Loop" title="Loop: play to the end of the music and start again" aria-pressed={loop} onClick={props.onToggleLoop}>{Icon.loop}</button>
                 </div>
-                {props.undoRedo}
                 {recording && (
                     <span className="rec-note" role="status">
                         ● {props.recordInto
