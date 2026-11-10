@@ -10,6 +10,8 @@ interface SongMenuProps {
     /** Clear all: a clean slate (asks first, undoable). */
     onClearAll: () => void;
     canClearAll: boolean;
+    /** The song from before a share link was opened is kept aside: go back to it. */
+    onRestoreOwn?: () => void;
 }
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -28,7 +30,7 @@ export const UndoRedo: React.FC<{ canUndo: boolean; canRedo: boolean; onUndo: ()
 );
 
 /** The Song menu: new, open, save, share link, Paste from Hooktheory, Clear all. */
-const SongMenu: React.FC<SongMenuProps> = ({ onNew, onOpenFile, onSaveFile, onShare, onHooktheory, onClearAll, canClearAll }) => {
+const SongMenu: React.FC<SongMenuProps> = ({ onNew, onOpenFile, onSaveFile, onShare, onHooktheory, onClearAll, canClearAll, onRestoreOwn }) => {
     const [open, setOpen] = useState(false);
     const root = useRef<HTMLDivElement>(null);
     const fileInput = useRef<HTMLInputElement>(null);
@@ -59,6 +61,7 @@ const SongMenu: React.FC<SongMenuProps> = ({ onNew, onOpenFile, onSaveFile, onSh
             </button>
             {open && (
                 <div className="song-popover panel" role="menu">
+                    {onRestoreOwn && <button role="menuitem" onClick={run(onRestoreOwn)}>Back to my song <span className="kbd">from before the link</span></button>}
                     <button role="menuitem" onClick={run(onNew)}>New song <span className="kbd">undoable</span></button>
                     <button role="menuitem" onClick={run(() => fileInput.current?.click())}>Open file…</button>
                     <button role="menuitem" onClick={run(onSaveFile)}>Save to file</button>

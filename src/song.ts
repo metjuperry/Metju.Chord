@@ -207,6 +207,8 @@ export const SAVE_VERSION = 3;
 export const STORAGE_KEY = 'metju.chord.v3';
 /** Where version 2 kept the song; read once if there's nothing under `STORAGE_KEY` yet (and left alone). */
 export const LEGACY_STORAGE_KEY = 'metju.chord.v2';
+/** The song this browser had when a share link was opened over it, kept until it's taken back (Song menu). */
+export const BEFORE_SHARE_KEY = 'metju.chord.v3.before-share';
 
 /** A new song: Keys, Bass and an empty Melody, all following an empty chord row. */
 export function newSong(): Song {

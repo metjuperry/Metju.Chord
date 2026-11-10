@@ -26,7 +26,7 @@ import ConfirmDialog from './components/ConfirmDialog';
 import HooktheoryDialog from './components/HooktheoryDialog';
 import { HtClip, ImportOptions, ImportSummary, importHooktheory } from './hooktheory';
 import {
-    FullSong, LEGACY_STORAGE_KEY, PlaybackMode, STORAGE_KEY, SAVE_VERSION, SavedState, Song, ThemeSetting, decodeShare, defaultSettings, encodeShare,
+    BEFORE_SHARE_KEY, FullSong, LEGACY_STORAGE_KEY, PlaybackMode, STORAGE_KEY, SAVE_VERSION, SavedState, Song, ThemeSetting, decodeShare, defaultSettings, encodeShare,
     isCompound, newFullSong, readSaved, stepsPerRow, ticksPerBar, ticksPerStep, transportBpm,
 } from './song';
 import {
@@ -1156,11 +1156,12 @@ const App: React.FC = () => {
     // ---- saving, files, share links -----------------------------------------------------
 
     const flash = (text: string) => setNotice(text);
+    // a notice set before the first tap (a share link opening) waits for the app to be on screen
     useEffect(() => {
-        if (!notice) return;
-        const t = setTimeout(() => setNotice(null), 2600);
+        if (!notice || !audioReady) return;
+        const t = setTimeout(() => setNotice(null), notice.length > 60 ? 5000 : 2600);
         return () => clearTimeout(t);
-    }, [notice]);
+    }, [notice, audioReady]);
 
     const snapshot = (): SavedState => ({
         version: SAVE_VERSION,
@@ -1204,6 +1205,48 @@ const App: React.FC = () => {
         flash(message);
     };
 
+    /** The song that was here before a share link opened over it is kept aside (see `keepOwnSong`). */
+    const [ownSongKept, setOwnSongKept] = useState(() => {
+        try {
+            return localStorage.getItem(BEFORE_SHARE_KEY) !== null;
+        } catch {
+            return false;
+        }
+    });
+    /**
+     * A share link is about to replace the song saved in this browser: keep that one aside first, since
+     * autosave will overwrite it and undo doesn't survive a reload. One already kept aside stays (it's
+     * the user's own; a second link mustn't replace it with the first link's song).
+     */
+    const keepOwnSong = (): boolean => {
+        try {
+            // nothing was saved here before this visit: there's no song of the user's to keep
+            if (!saved) return false;
+            if (localStorage.getItem(BEFORE_SHARE_KEY) !== null) return true;
+            const own = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
+            if (own === null) return false;
+            localStorage.setItem(BEFORE_SHARE_KEY, own);
+            setOwnSongKept(true);
+            return true;
+        } catch {
+            return false;
+        }
+    };
+    /** Song menu → Back to my song: open the song kept aside by `keepOwnSong` (undoable), and let go of the copy. */
+    const restoreOwnSong = () => {
+        let state: SavedState | null = null;
+        try {
+            const raw = localStorage.getItem(BEFORE_SHARE_KEY);
+            state = raw ? readSaved(JSON.parse(raw)) : null;
+            localStorage.removeItem(BEFORE_SHARE_KEY);
+        } catch {
+            // unreadable or storage blocked: nothing to go back to
+        }
+        setOwnSongKept(false);
+        if (state) loadState(state, 'Back to your song. Undo to return to the shared one.');
+        else flash('Your earlier song couldn’t be read.');
+    };
+
     // Open a song shared as a link (#song=...), then tidy the address bar
     useEffect(() => {
         const match = window.location.hash.match(/^#song=([zp][A-Za-z0-9_-]+)$/);
@@ -1211,8 +1254,9 @@ const App: React.FC = () => {
         decodeShare(match[1])
             .then(data => {
                 const state = readSaved(data);
-                if (state) loadState(state, 'Opened the shared song. Undo to go back to yours.');
-                else flash('That link doesn’t contain a song this version can open.');
+                if (!state) flash('That link doesn’t contain a song this version can open.');
+                else if (keepOwnSong()) loadState(state, 'Opened the shared song. Yours is kept: Song menu → Back to my song.');
+                else loadState(state, 'Opened the shared song.');
             })
             .catch(() => flash('That link is damaged and couldn’t be opened.'))
             .finally(() => window.history.replaceState(null, '', window.location.pathname + window.location.search));
@@ -1683,6 +1727,7 @@ const App: React.FC = () => {
             onShare={songActions.share}
             onHooktheory={() => setHtOpen(true)}
             onClearAll={edit.clearAll}
+            onRestoreOwn={ownSongKept ? restoreOwnSong : undefined}
             canClearAll={!isCleanSlate(full)}
         />
     );
