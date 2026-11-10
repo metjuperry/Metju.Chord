@@ -306,6 +306,11 @@ const num = (v: unknown, min: number, max: number, fallback: number) =>
 const int = (v: unknown, min: number, max: number, fallback: number) => Math.round(num(v, min, max, fallback));
 const oneOf = <T>(v: unknown, options: readonly T[], fallback: T): T => (options.includes(v as T) ? (v as T) : fallback);
 const bool = (v: unknown, fallback: boolean) => (typeof v === 'boolean' ? v : fallback);
+/**
+ * An id from a save: short, and only letters, digits, - and _. Ids are keys of plain records (content,
+ * mutes, sound) and part of engine strip names (`part@section`), so "__proto__" or "p1@s1" aren't ids.
+ */
+const isId = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9_-]{1,24}$/.test(v) && !(v in Object.prototype);
 
 function readClip(v: unknown, maxTick: number): Clip | null {
     if (!isObj(v)) return null;
@@ -414,7 +419,7 @@ function readPart(v: unknown, index: number, existing: Part[], maxTick: number, 
     const kind = v.kind as PartKind;
     const base = newPart(kind, existing);
     const common = {
-        id: typeof v.id === 'string' && v.id && !existing.some(p => p.id === v.id) ? v.id : base.id,
+        id: isId(v.id) && !existing.some(p => p.id === v.id) ? v.id : base.id,
         name: typeof v.name === 'string' && v.name.trim() ? v.name.trim().slice(0, 24) : base.name,
         color: oneOf(v.color, PART_COLORS, PART_COLORS[index % PART_COLORS.length]),
         volume: int(v.volume, -24, 6, 0),
@@ -544,7 +549,8 @@ function readSectionSound(v: unknown, parts: Part[], barLen: number): Section['s
     parts.forEach((p, i) => {
         const raw = v[p.id];
         if (!isObj(raw)) return;
-        const own = Object.fromEntries(Object.entries(raw).filter(([k]) => isSoundKey(k)));
+        // an instrument that isn't one is no change (not a switch to the kind's default instrument)
+        const own = Object.fromEntries(Object.entries(raw).filter(([k, val]) => isSoundKey(k) && (k !== 'instrument' || INSTRUMENT_IDS.includes(val as string))));
         const read = readPart({ ...p, ...own }, i, [], 0, barLen);
         if (!read || read.kind !== p.kind) return;
         const keep: SectionSound = {};
@@ -579,7 +585,7 @@ export function readFullSong(v: unknown): FullSong | null {
     const sections: Section[] = [];
     v.sections.slice(0, MAX_SECTIONS).forEach((raw, i) => {
         if (!isObj(raw)) return;
-        const id = typeof raw.id === 'string' && raw.id && raw.id.length <= 24 && !sections.some(x => x.id === raw.id) ? raw.id : `s${i + 1}${sections.some(x => x.id === `s${i + 1}`) ? 'b' : ''}`;
+        const id = isId(raw.id) && !sections.some(x => x.id === raw.id) ? raw.id : `s${i + 1}${sections.some(x => x.id === `s${i + 1}`) ? 'b' : ''}`;
         const name = cleanName(raw.name, String.fromCharCode(65 + (i % 26)));
         const letter = typeof raw.letter === 'string' && raw.letter.trim() ? raw.letter.trim().slice(0, 2).toUpperCase() : letterFor(name);
         const steps = int(raw.steps, 1, 512, STEPS_PER_ROW);
@@ -595,7 +601,9 @@ export function readFullSong(v: unknown): FullSong | null {
                 const vowels = p.kind === 'voice' ? readVowels(c.vowels, maxTick) : [];
                 if (notes.length || vowels.length) content[p.id] = { ...(notes.length ? { notes } : {}), ...(vowels.length ? { vowels } : {}) };
             } else if (p.kind === 'drums' && isObj(c.drums)) {
-                content[p.id] = { drums: readPattern(c.drums, barLen) };
+                // an empty one-bar pattern is what a section without one has anyway (`contentOf` leaves it out too)
+                const drums = readPattern(c.drums, barLen);
+                if (!(isEmptyPattern(drums) && drums.bars === 1)) content[p.id] = { drums };
             }
         }
         const mutes: Section['mutes'] = {};
@@ -650,9 +658,32 @@ const fromBase64Url = (text: string) => {
     return Uint8Array.from(bin, ch => ch.charCodeAt(0));
 };
 
-async function pipe(bytes: Uint8Array, stream: CompressionStream | DecompressionStream): Promise<Uint8Array> {
-    const out = new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(stream));
-    return new Uint8Array(await out.arrayBuffer());
+/** The most a share link may hold, as text in the link and once unpacked: far more than any song the app can make. */
+export const MAX_SHARE_CHARS = 400_000;
+export const MAX_SHARE_BYTES = 4_000_000;
+
+/** `bytes` through `stream`. Stops with an error past `limit` bytes of output (a few bytes can unpack into gigabytes). */
+async function pipe(bytes: Uint8Array, stream: CompressionStream | DecompressionStream, limit = Infinity): Promise<Uint8Array> {
+    const reader = new Blob([bytes as BlobPart]).stream().pipeThrough(stream).getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.length;
+        if (size > limit) {
+            await reader.cancel();
+            throw new Error('too large');
+        }
+        chunks.push(value);
+    }
+    const out = new Uint8Array(size);
+    let at = 0;
+    for (const c of chunks) {
+        out.set(c, at);
+        at += c.length;
+    }
+    return out;
 }
 
 /** `#song=<data>`; deflated when the browser can, plain otherwise (prefix `z` / `p`). */
@@ -665,7 +696,8 @@ export async function encodeShare(state: SavedState): Promise<string> {
 }
 
 export async function decodeShare(data: string): Promise<unknown> {
+    if (data.length > MAX_SHARE_CHARS) throw new Error('too large');
     const bytes = fromBase64Url(data.slice(1));
-    const raw = data[0] === 'z' ? await pipe(bytes, new DecompressionStream('deflate-raw')) : bytes;
+    const raw = data[0] === 'z' ? await pipe(bytes, new DecompressionStream('deflate-raw'), MAX_SHARE_BYTES) : bytes;
     return JSON.parse(new TextDecoder().decode(raw));
 }
