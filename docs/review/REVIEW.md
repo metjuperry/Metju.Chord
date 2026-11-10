@@ -2,7 +2,7 @@
 
 Reviewed at `f3b3804` (v1.50.0), 10 November 2026. Nothing in the app was changed; this folder is the only addition.
 
-**How it was checked.** `npm ci`, `npm test` (308 tests pass, 2.4 s), `npm run build` (17.6 s, one warning: the bundle is 857 KiB against the 781 KiB limit set in `webpack.config.js`), `npm run levels` (green: RMS spread 5.3 dB, 31 s). The built app was driven with Playwright at 1440×900, 1280×720, 1024×768, 390×844 and 844×390, in both themes, with touch on the phone and tablet sizes. The save readers were fuzzed with 20,000 mutated saves. **I could not hear anything**: every statement about sound is based on what the app schedules on the audio graph (recorded by wrapping `AudioParam` methods) and on `npm run levels`. Real-phone feel, iOS behaviour and speakers were not checked.
+**How it was checked.** `npm ci`, `npm test` (308 tests pass, 2.4 s), `npm run build` (17.6 s, one warning: the bundle is 857 KiB against the 781 KiB limit set in `webpack.config.js`), `npm run levels` (green: RMS spread 5.3 dB, 31 s). The built app was driven with Playwright at 1440×900, 1280×720, 1024×768, 390×844 and 844×390, in both themes, with touch on the phone and tablet sizes. **The phone layout is landscape only** (the owner's correction after the first pass), so the 390×844 findings have been removed and every phone finding below is for 844×390. The save readers were fuzzed with 20,000 mutated saves. **I could not hear anything**: every statement about sound is based on what the app schedules on the audio graph (recorded by wrapping `AudioParam` methods) and on `npm run levels`. Real-phone feel, iOS behaviour and speakers were not checked.
 
 Effort: **S** up to half a day, **M** one to three days, **L** a week or more. Confidence is stated where it is not high.
 
@@ -12,7 +12,7 @@ Effort: **S** up to half a day, **M** one to three days, **L** a week or more. C
 
 **The product.** This is a well-made, coherent instrument. The pads-and-stick idea is clear within seconds, the visual language is consistent across every screen and both themes, there was not a single console error or horizontal overflow at any of the five sizes, and text contrast passes WCAG AA almost everywhere. Learn is the best on-ramp in the app: one tap on "Use in song" gives a four-bar loop that plays. The save readers are robust: no mutated save made them throw.
 
-The weak side is the phone, which is the stated priority. The layout is a desktop layout made narrower rather than one designed for a thumb: almost every control outside the pads is 22 to 36 px, the melody grid's cells are 24×18 px, the top bar (the only transport) scrolls away, and the melody grid starts below the first screen in portrait. The second weakness is the "Song vs Parts, section vs whole song" model: on a phone nothing tells you whether Parts is editing one section or the whole song, and undo exists on only one of the four screens although every notice says "Undo to…".
+The weak side is the phone, which is the stated priority. The layout is a desktop layout made narrower rather than one designed for a thumb: almost every control outside the pads is 22 to 36 px, the melody grid's cells are 24×18 px, the top bar (the only transport) scrolls away, and a section with an editor open is more than two screens tall (842 to 883 px in a 390 px window), so editing means scrolling a page inside which other things scroll. Section 3.12 compares this with similar apps. The second weakness is the "Song vs Parts, section vs whole song" model: on a phone nothing tells you whether Parts is editing one section or the whole song, and undo exists on only one of the four screens although every notice says "Undo to…".
 
 **The code.** The pure modules (`theory`, `parts`, `sections`, `song`, `playback`, `strum`, `learn`) are clean, documented and well tested. The cost is concentrated in three places: `App.tsx` (2,016 lines, 54 `useState`, 22 refs, 20 effects) which re-renders the whole tree on every 1/16 of playback with no memoised component anywhere; the content handling for notes, drums and vowels, which is spread over about ten functions and has already drifted; and the audio engine, which keeps every strip's effects running whether used or not and has two scheduling bugs. There are no tests above the pure layer, and the two worst bugs found here (the section switch that never lands, the share link that overwrites your song) both live there.
 
@@ -20,8 +20,8 @@ The weak side is the phone, which is the stated priority. The layout is a deskto
 
 1. **Fix the queued section switch in Loop mode** (bug 1). With a one-bar loop, which is what recording four chords gives you, switching section while playing never happens.
 2. **Stop a share link from overwriting the saved song** (bug 2), and show its notice after the intro.
-3. **A sticky top bar on phones, with undo/redo in it.** Transport and undo are then reachable from every screen and scroll position.
-4. **Touch sizes on the phone**: a melody grid you can hit (zoomed, fewer rows at a time), 44 px for the top bar, M/S, octave and chip buttons.
+3. **No page scroll on the phone.** A fixed one-row top bar with undo/redo in it, and a lane's editor that opens full height instead of under the lane list (3.12).
+4. **Touch sizes and chord entry**: a melody grid you can hit (one octave at about 36 px a row), 44 px for the top bar, M/S, octave and chip buttons, and chords placed from Song by tapping one of the key's seven (one bar long).
 5. **Say where Parts edits go on a phone** ("Editing: Chorus only" / "Whole song", with a way back to the song's sound), and cut the live pads' built-in 100 ms delay (bug 5).
 
 ### The 5 changes that would help the codebase most
@@ -89,7 +89,7 @@ Cause: `applySectionEdit` always returns a new object (`src/sections.ts:179-188`
 `applySectionEdit(f, id, sectionView(f, id))` keeps `parts` for melody and drums but not for a voice with content.
 Cause: `shallowEqual(old, next, ['notes', 'drums'])` in `src/sections.ts:147` leaves out `'vowels'`. This is the content drift described in 5.2. Effort S.
 
-**11. "Vowel glide" overflows its knob tile.** Low, visual. See `shots/parts-portrait.png` and `shots/parts-tablet.png`: the label is wider than the tile and runs into its neighbours. Shorten to "Glide" under a "Vowel" heading, or let the tile grow. Effort S.
+**11. "Vowel glide" overflows its knob tile.** Low, visual. See `shots/parts-voice-landscape.png` and `shots/parts-tablet.png`: the label is wider than the tile and runs into its neighbours. Shorten to "Glide" under a "Vowel" heading, or let the tile grow. Effort S.
 
 ### Suspected (read, not run)
 
@@ -115,24 +115,21 @@ Good: the intro is a real moment, the first pad plays at once, the chord info an
 | P1 | Recording gives one chord per beat. C–G–Am–F becomes a one-bar loop at 100 BPM. Lengthening a chord with `+` overwrites the next one (`setLength` → `place`, by reading). | The most common loop is one chord per bar. A new user's first loop sounds rushed and can't be stretched without re-recording. | A "Chord length" choice next to REC: **1 beat · 2 beats · 1 bar** (default 1 bar), remembered. Separately, make `+` on a chord push the following chords along when there is room. | S + M |
 | P2 | Nothing on the Play screen says how to make a loop. The prompt is "Hold a pad · push the stick"; the red dot is unlabeled. | The step from "instrument" to "song" is the app's main idea and it is a guess. | When the chord row is empty, after the first few pad presses show one line under the chord info: "● Record, then play pads to write a loop". Remove it once a chord exists. | S |
 | P3 | Tapping **Song** on a first visit shows one tile "A · no chords yet" and a chain of one. The chord row is a tap further in. | An extra tap and a moment of "where do I put chords?" on the first try. | With one section, open it directly; show the overview once there are two. Or put "+ Record chords" on the empty tile. | S |
-| P4 | Portrait Play leaves about 165 px empty under the pads, and the pads are 135 px tall with the lower pads half covered. | The largest free space on the main screen is unused while the main control is small. | Let the pads take the remaining height in portrait. | S |
 | P5 | Play is always yellow, also when stopped. | "Yellow means active" is the app's rule; Play reads as on. | Neutral when stopped, yellow while playing. | S |
-
-![Play in portrait: free space under the pads](shots/play-portrait.png)
 
 ### 3.2 Building a song: bass, drums, melody, recording
 
 Good: bass and melody are there from the start, + Part → Drums gives a beat that plays at once, the lane miniatures are readable, and the melody grid's chord shading is a real help.
 
-![A section in portrait](shots/section-portrait.png) ![The melody editor in portrait, first screen](shots/melody-portrait.png)
+![A section in landscape: the chord row and one lane fit](shots/section-landscape.png)
 
 | # | What I saw | Why it matters | Suggestion | Effort |
 | --- | --- | --- | --- | --- |
-| P6 | **Melody cells are 24×18 px** on a phone (480 of them per 8 steps); drum cells 43×28. | Below any touch guideline; a thumb covers six cells. Writing a melody by touch is guesswork. | On compact: show one octave (8 rows) at 36 px or more with an octave switch, and 1/8 columns by default with a 1/16 zoom. Or a pinch/zoom toggle that doubles the cell size. Keep the full grid on desktop. | M |
-| P7 | In portrait the melody grid begins at y ≈ 830 of an 844 px screen. Selecting the Melody lane changes nothing you can see. | The user taps a lane and nothing appears to happen. | On compact, selecting a note lane scrolls its editor into view, or the editor replaces the lane list (a "‹ Lanes" back row). | S to M |
+| P6 | **Melody cells are 24×18 px** on a phone (480 of them per 8 steps); drum cells 43×28. The grid is 15 rows, taller than the space left, and the note dock covers its bottom 50 px. | Below any touch guideline; a thumb covers six cells, and reaching low notes means scrolling the page. | On compact: one octave (8 rows) at about 36 px with an octave switch, and 1/8 columns by default with a 1/16 zoom. Keep the full grid on desktop. | M |
+| P7 | **A section is a page scroll.** With Drums selected the page is 842 px tall, with Melody 883 px, in a 390 px window: lanes first, the editor under them, and each row of lanes also scrolls sideways inside it. | Two and a quarter screens of scrolling to edit one part, with the transport gone and the chords you are writing against out of sight. | On compact, picking a note or drum lane opens its editor full height in place of the lane list, with the chord strip pinned above it and a "‹ Lanes" back button (3.12, item 3). | M |
 | P8 | **The top bar is not sticky** on phones. Scrolled to the melody or drum grid, Play, Stop and Record are off screen. | "Transport only in the top bar" plus a bar that scrolls away means scrolling to hear every change. | `position: sticky; top: 0` for `.top-bar.compact`, slimmed to one row in landscape (see P21). | S |
 | P9 | In landscape a section shows the chord row and one lane. 190 px of 390 go to the top bar and two header rows; the second row holds "2 bars · 4/4 · + Row · Song menu". | The least-used controls take a fifth of the screen. | Move time signature, ± Row and Song menu into one "⋯" menu on compact; one header row. | S |
-| P10 | In portrait eight steps don't fit: each row scrolls sideways (3.3 steps visible). | You can't see a bar's worth of chords next to the parts. | Four steps per row on narrow portrait (rows already wrap). | M |
+| P10 | **Recording a chord into a chosen step crosses modes**: pick the step in Song, turn on Record, switch to Play for the pads, switch back to see it. | Four mode changes for one chord. Chordbot-style apps place a chord with one tap. | With a chord cell selected, the dock offers the key's seven chords; a tap places one, a bar long, with the stick's types behind a second tap. Record stays for playing live. | M |
 | P11 | A new section has no drum beat, although adding a Drums part writes the beat into every existing section (`App.tsx:930-934`). | The same part behaves differently depending on the order you did things in. | New sections copy the drum pattern of the section they were created from (or the last open one). | S |
 | P12 | Two "M" buttons that look alike: on a lane it mutes the part in this section; in Parts it mutes it in the whole song. | Same glyph, different scope. | Lane button: "M" with the section's badge letter, or the tooltip text as a label on first use; at least a different shape. | S |
 
@@ -155,12 +152,11 @@ Good: instrument tiles, strum pattern tiles with their strokes drawn, standard s
 
 Good: tiles with chord chips and part bars, the chain as proportional blocks, "bar 1 / 2 · Verse · next Chorus", PLAYING and NEXT tags, rename and duplicate in two taps, the "×3 in the chain: edits change all of them" warning.
 
-![Chain playing](shots/chain-playing.png) ![Song view in portrait, light theme](shots/song-portrait-light.png)
+![Chain playing](shots/chain-playing.png) ![Song view with three sections: it fits](shots/song-landscape.png)
 
 | # | What I saw | Why it matters | Suggestion | Effort |
 | --- | --- | --- | --- | --- |
-| P17 | In portrait with three sections, the third tile and **"+ New" are off screen** in a sideways-scrolling row with no hint; the lower half of the screen is empty. | "How do I add a section?" has no visible answer. | Wrap tiles into a two-column grid on portrait; keep "+ New" last and visible. | S |
-| P18 | Chain blocks are as wide as they are long, so short sections read "Chor…" at 56 px. Move, Duplicate and Remove are long-press only. | Names are the content of the chain; long-press is undiscoverable (the hint text is hidden on portrait). | A minimum width that fits about 8 characters; a "⋯" on the selected block, as tiles have. | S |
+| P18 | Chain blocks are as wide as they are long, so short sections read "Chor…" at 56 px. Move, Duplicate and Remove are long-press only. | Names are the content of the chain; long-press is easy to miss. | A minimum width that fits about 8 characters; a "⋯" on the selected block, as tiles have. | S |
 | P19 | Pressing Record in Chain mode switches to Loop with a notice. | It works, but it is a mode change the user didn't ask for (already an open question in CONTRIBUTING). | Keep the switch, but return to Chain when Record is turned off. | S |
 | P20 | While the chain plays, an open section's sequencer only shows a playhead when that section is the one playing. | Looking at the Chorus while the Verse plays shows nothing moving. | A "follows playback" toggle in the section header, off by default. Low priority. | M |
 
@@ -189,7 +185,7 @@ Good: a choir on "ooh" that sings the chord row the moment it is added; one clea
 
 Good: twelve progressions in the song's key with feel, where and why; ▶ Hear; "Use in song" with an Undo on the card; the fit check that offers a scale switch.
 
-![Learn in portrait](shots/learn-portrait.png)
+![Learn on a phone](shots/learn-landscape.png)
 
 | # | What I saw | Why it matters | Suggestion | Effort |
 | --- | --- | --- | --- | --- |
@@ -245,6 +241,38 @@ Playback, 8 s at 4×, phone landscape:
 | Section, melody editor, 32 steps | 2,874 | 3.0 s | **246** | **74 ms** |
 
 Reading: pad response is not a React problem; the 100 ms look-ahead is (bug 5). Playback is smooth except with a note editor open, where half the frames are dropped because all of `App` and all 1,920 melody cells re-render every 1/16 (5.6). With five parts including a choir and a strummed piano, long tasks of 50 to 270 ms appeared every half second at 4×. The start tap takes 2.6 s at 4×; the 1.9 s intro animation covers most of it.
+
+### 3.12 Compared with similar apps, and the scrolling
+
+The comparison is from my knowledge of these apps, not from using them during this review. The Metju.Chord numbers are measured at 844×390.
+
+| Area | Metju.Chord | Comparable apps | Verdict |
+| --- | --- | --- | --- |
+| Playing chords | Seven pads and a one-thumb stick, the chord named live, "Often next" | GarageBand's chord strips, Chordbot's pickers, Scaler's pad grid | Ahead. Closer to hardware (HiChord, Orchid) than to any app. |
+| Getting a loop down | Record on, play pads, one chord per beat | Chordbot, ChordChord, Hookpad: tap a chord and it lands in the row, one bar long | Behind. The biggest gap for a new user (P1, P10). |
+| Editing notes and drums | The editor sits under the lane list in one long page | Auxy, Koala, Korg Gadget, GarageBand: one track's editor fills the screen, transport stays put | Behind. This is where it feels cumbersome (P6 to P9). |
+| Shaping sound | One long page: instrument, style, graphs, knobs, tone, effects | Figure, Auxy: a few controls per track on one screen | Deeper, but slower to use (P15). |
+| Structure | Section tiles and a chain, per-section sound | Chordbot's section list, GarageBand's song sections | On par or ahead; per-section sound is unusual, but invisible on a phone (P13). |
+| Housekeeping | One song, undo on one screen, tempo ±1 | A song list, undo always visible, tap or drag tempo | Behind on all three (P25, P26, 3.8). |
+
+**Where the scrolling hurts**
+
+- A section is a page scroll: 57 px of top bar and about 110 px of header rows leave room for the chord row and one lane (P7, P9).
+- The transport scrolls away with the page (P8).
+- The melody grid does not fit the space left and its cells are too small to hit (P6).
+- Parts is a scroll inside a scroll: the instrument row scrolls sideways (14 tiles) inside a panel that scrolls down about three screens; the two graphs fill Shape's first screen and the knobs start below it (P15).
+- Placing a chord at a chosen step crosses modes (P10).
+
+**The rule that would fix most of it: every mode is one fixed screen.** The top bar stays put, the content fills the rest, and a pane scrolls in one direction only.
+
+1. One-row top bar at 44 px. Key, scale and tempo fold into one chip ("C maj · 100") that opens a sheet with tap tempo; the freed width goes to undo/redo and larger transport buttons.
+2. The section header becomes one row; time signature, ± Row and the Song menu go under "⋯".
+3. A lane's editor opens full height in place of the lane list, the chord strip pinned on top, "‹ Lanes" to go back. The melody grid shows one octave at about 36 px a row.
+4. Chords go in from Song: with a chord cell selected, the dock shows the key's seven chords.
+5. Parts splits into Sound · Shape · Effects, each one screen. Graphs only in Advanced on a phone; the instrument picker becomes a grid.
+6. Parts shows its scope: "Chorus only" or "Whole song", switchable in place.
+
+Items 1 to 3 remove most of the scrolling; item 4 closes the gap with Chordbot-style apps.
 
 ---
 
@@ -374,7 +402,7 @@ No `any` in the source (only in tests). The casts that matter:
 3. Chain of two sections with different lengths and one section-only instrument; each slot plays its own notes through its own strip.
 4. Open a share link over an existing song: the old song is still recoverable after a reload. (Bug 2.)
 5. Keyboard: Space on a focused button presses it; 1 to 7 play; Ctrl+Z undoes. (Bug 4.)
-6. Phone 844×390 and 390×844: Play fits without scrolling; no horizontal overflow on any screen; every menu stays inside the window. (Bug 7; today's manual rule in CONTRIBUTING.)
+6. Phone 844×390, 667×375 and 932×430: Play fits without scrolling; no horizontal overflow on any screen; every menu stays inside the window. (Bug 7; today's manual rule in CONTRIBUTING.)
 
 **Brittle**: `effects.test.ts` enforces a React rule by regex over source text; an ESLint rule does this properly.
 
@@ -383,6 +411,7 @@ No `any` in the source (only in tests). The casts that matter:
 **Docs that no longer match the code**
 - CONTRIBUTING, "Data model": `Part = ChordPart | BassPart | MelodyPart | DrumPart` omits `VoicePart`; `content: { notes? } | { drums? }` omits `vowels`; the opening line lists "parts for chords / bass / melody / drums".
 - CONTRIBUTING, "Map of the code": `FxMatrix, Knob` are listed as one entry describing `SpaceControls`; `VowelLane`, `ConfirmDialog`, `ShapeGraphs` usage and `voiceData.ts` are partly missing or out of place.
+- CONTRIBUTING, "UI conventions", still lists 390×844 among the sizes Play mode must fit; the phone layout is landscape only. Say so there and in the README, and consider `"orientation": "landscape"` in `manifest.webmanifest` (now `"any"`) for the installed app.
 - README says the tabs read "Song: Chorus · Parts: Chorus"; that is desktop only (P13).
 - README "Everything has a keyboard shortcut": the melody and drum grids and the pads' Enter do not (3.9).
 - `TopBar`'s `recordBlocked` prop and `Engine.meter`, `Engine.setInstrument` (level script only), `SequencerPlayer.jumpPending` are unused by the app.
@@ -416,31 +445,32 @@ Product and code changes are kept apart. Each is reviewable alone and based on `
 10. ESLint + Prettier + `tsc --noEmit` + levels in CI (no code style churn beyond the formatter's first run, in its own commit).
 
 **Third: the phone (product)**
-11. Sticky compact top bar with undo/redo; Undo button in notices.
+11. Fixed one-row compact top bar with undo/redo (key, scale and tempo behind one chip with tap tempo); Undo button in notices.
 12. Live pads use `Tone.immediate()`. Needs a real-phone check.
 13. Touch sizes: top bar, docks, M/S, chips, knobs to 44 px hit areas on compact.
 14. Section header on compact: one row, the rest under "⋯".
 15. Parts scope chip ("Editing: Chorus only / Whole song"), override marks, "Use the song's sound".
-16. Song view in portrait: wrapped tiles, "+ New" visible, chain block minimum width and "⋯".
-17. Melody editor on compact: larger cells, one octave at a time, scrolls into view when its lane is picked.
-18. Record: chord length choice. Tempo: type, tap, hold.
-19. Play portrait: pads fill the height. Play button neutral when stopped.
+16. Lane editors open full height on compact, chord strip pinned, "‹ Lanes" back; no page scroll in a section.
+17. Melody editor on compact: one octave at a time at about 36 px a row, 1/8 columns with a 1/16 zoom.
+18. Chords from Song: the key's seven chords in the dock when a chord cell is selected. Record: chord length choice.
+19. Parts on compact: Sound · Shape · Effects sub-tabs, instrument picker as a grid, graphs only in Advanced.
+20. Chain block minimum width and "⋯". Play button neutral when stopped. Manifest and docs say landscape.
 
 **Fourth: performance (code)**
-20. Transport store for the playhead; `React.memo` on the editors.
-21. `syncParts` only for changed strips; per-section event cache.
-22. Lazy chunks: Learn, Hooktheory, Help, Credits. Self-hosted fonts; service-worker navigation timeout.
-23. Engine: chorus and tremolo created on demand; section strips built on first use.
+21. Transport store for the playhead; `React.memo` on the editors.
+22. `syncParts` only for changed strips; per-section event cache.
+23. Lazy chunks: Learn, Hooktheory, Help, Credits. Self-hosted fonts; service-worker navigation timeout.
+24. Engine: chorus and tremolo created on demand; section strips built on first use.
 
 **Fifth: structure (code, no behaviour change)**
-24. `CONTENT` table for notes, drums, vowels.
-25. `PartsView` split into files; four popovers onto `PopMenu`.
-26. `App.tsx` hooks, one per PR: `useSettings`, `useMetronome`, `useSoundPreview`, `useLearnHear`, `useShortcuts`, `useTransport`, `usePads`, `useSongDocument`; then `laneEdits.ts` with tests.
-27. Typed `SectionSound`; branded ids.
-28. Docs brought in line (CONTRIBUTING data model and code map, README notes).
+25. `CONTENT` table for notes, drums, vowels.
+26. `PartsView` split into files; four popovers onto `PopMenu`.
+27. `App.tsx` hooks, one per PR: `useSettings`, `useMetronome`, `useSoundPreview`, `useLearnHear`, `useShortcuts`, `useTransport`, `usePads`, `useSongDocument`; then `laneEdits.ts` with tests.
+28. Typed `SectionSound`; branded ids.
+29. Docs brought in line (CONTRIBUTING data model and code map, README notes).
 
 **Sixth: features (product)**
-29. MIDI export. 30. Song list with names. 31. Swing. 32. Learn: Replace / Add after, starter songs, "?" links from controls. 33. Chord sheet. 34. Audio export.
+30. MIDI export. 31. Song list with names. 32. Swing. 33. Learn: Replace / Add after, starter songs, "?" links from controls. 34. Chord sheet. 35. Audio export.
 
 ---
 
@@ -460,6 +490,6 @@ Product and code changes are kept apart. Each is reviewable alone and based on `
 
 ## Appendix: more screenshots
 
-Not referenced above, kept for comparison: [Play, landscape](shots/play-landscape.png) · [Song, empty, landscape](shots/song-empty-landscape.png) · [Section, landscape (first screen)](shots/section-landscape.png) · [Section with drums, landscape (full page)](shots/drums-landscape-full.png) · [Section, desktop, light](shots/section-desktop-light.png) · [Melody, laptop](shots/melody-laptop.png) · [Learn docked, laptop](shots/learn-laptop.png) · [Shape, Advanced, landscape](shots/shape-advanced-landscape.png) · [Settings, portrait](shots/settings-portrait.png)
+Not referenced above, kept for comparison: [Play, landscape](shots/play-landscape.png) · [Song, empty, landscape](shots/song-empty-landscape.png) · [Section, landscape (first screen)](shots/section-landscape.png) · [Section with drums, landscape (full page)](shots/drums-landscape-full.png) · [Section, desktop, light](shots/section-desktop-light.png) · [Melody, laptop](shots/melody-laptop.png) · [Learn docked, laptop](shots/learn-laptop.png) · [Shape, Advanced, landscape](shots/shape-advanced-landscape.png) · [Settings, landscape](shots/settings-landscape.png) · [Parts, landscape](shots/parts-landscape.png)
 
 The Playwright scripts and the reader fuzz used for this review were throwaway and are not in the repository; the six tests in 5.7 are the ones worth keeping.
