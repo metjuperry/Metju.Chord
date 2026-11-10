@@ -67,6 +67,8 @@ export interface Voice {
     sing?(settings: VoiceSettings): void;
     /** Singers only: move to `vowel`, arriving `glide` seconds after `time`. */
     vowel?(vowel: Vowel, time: number, glide?: number): void;
+    /** Singers only: back to their own vowel (after playback moved them). */
+    restVowel?(): void;
 }
 
 export interface Instrument extends Voice {

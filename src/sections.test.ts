@@ -346,11 +346,11 @@ describe('melody accidentals in saves and links', () => {
         const song = fromSingleSection(withAccs());
         const view = sectionView(song, 's1');
         const mel = melodyId(song);
-        const midi = sectionEvents(view, song.sections[0], 16 * S, 0, false).filter(e => e.data.part === mel).map(e => (e.data.drum ? -1 : e.data.midi[0]));
+        const midi = sectionEvents(view, song.sections[0], 16 * S, 0, false).filter(e => e.data.part === mel).map(e => (e.data.midi ? e.data.midi[0] : -1));
         // A minor from A4 (part octave 4): step 2 = C5, step 5 + ♯ = F♯5, step 1 + ♭ = B♭4
         expect(midi).toEqual([72, 78, 70]);
         // and in the whole chain
-        expect(chainEvents(song).events.filter(e => e.data.part === mel).map(e => (e.data.drum ? -1 : e.data.midi[0]))).toEqual([72, 78, 70]);
+        expect(chainEvents(song).events.filter(e => e.data.part === mel).map(e => (e.data.midi ? e.data.midi[0] : -1))).toEqual([72, 78, 70]);
     });
 });
 
