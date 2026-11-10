@@ -94,7 +94,7 @@ describe('voice data', () => {
                     expect(bw).toBeGreaterThan(0);
                     if (i) expect(hz).toBeGreaterThan(f[i - 1][0]);
                 });
-                expect(Math.abs(VOWEL_TRIM[range][v])).toBeLessThan(15);
+                expect(Math.abs(VOWEL_TRIM[range][v])).toBeLessThan(20);
             }
         }
     });

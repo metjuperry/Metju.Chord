@@ -170,6 +170,13 @@ export const CreditsDialog: React.FC<{ open: boolean; onClose: () => void }> = (
                     </tbody>
                 </table>
                 <p className="section-note">The synths and the 808/909-style drum kit are made in the app with Tone.js.</p>
+                <p className="section-note">
+                    The Voice part's singers are measured (not sampled) from the long tones of{' '}
+                    <a href="https://doi.org/10.5281/zenodo.1442513" target="_blank" rel="noreferrer">VocalSet: A Singing Voice Dataset</a>{' '}
+                    by Julia Wilkins, Prem Seetharaman, Alison Wahl and Bryan Pardo (Northwestern University, 2018),{' '}
+                    <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>:
+                    each singer's voice colour and where each vowel's resonances sit. No recording is included.
+                </p>
             </div>
         </div>
     );
