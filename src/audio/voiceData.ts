@@ -1,19 +1,22 @@
 import type { VoiceRange, Vowel } from '../parts';
 
+import MEASURED from './vocalset.json';
+
 /**
  * What the singers are made of (audio/voice.ts): each singer's voice colour (the strengths of its
  * harmonics, as a wave) and, per range, where each vowel's resonances (formants) sit.
  *
- * These are stand-ins until the VocalSet measurements land (scripts/voices, PR "Voice data"):
- * the formants are textbook averages of adult speakers (Hillenbrand et al., JASA 97, 1995: men for
- * low, women for high; the 4th is the singer's "ring" around 3 kHz), and the colours a glottal-like
- * slope with a little difference per singer. The tables keep their shape when the real data arrives.
+ * Measured from real singers: VocalSet (Wilkins, Seetharaman, Wahl, Pardo, Northwestern University,
+ * 2018, https://doi.org/10.5281/zenodo.1442513, CC BY 4.0), by scripts/voices/vocalset.py into
+ * vocalset.json (see its "from" and "counted" for who and how many). Where the measurement has
+ * nothing (a range or vowel), the stand-ins below fill in: textbook formants of adult speakers
+ * (Hillenbrand et al., JASA 97, 1995: men for low, women for high) and a glottal-like slope.
  */
 
 /** A resonance: its centre (Hz), bandwidth (Hz) and level (dB, 0 = loudest). */
 export type Formant = [freq: number, bandwidth: number, gainDb: number];
 
-export const FORMANTS: { [r in VoiceRange]: { [v in Vowel]: Formant[] } } = {
+const TEXTBOOK: { [r in VoiceRange]: { [v in Vowel]: Formant[] } } = {
     low: {
         a: [[768, 90, 0], [1333, 100, -6], [2522, 160, -16], [3100, 200, -20]],
         e: [[580, 70, 0], [1799, 100, -3], [2605, 170, -10], [3100, 200, -18]],
@@ -32,12 +35,12 @@ export const FORMANTS: { [r in VoiceRange]: { [v in Vowel]: Formant[] } } = {
 
 /**
  * Each vowel made as loud as the others (dB), so changing vowel doesn't jump in level: a solo voice's
- * RMS on each vowel, at three pitches across the range, measured against -38 dB. (A high I or U puts
- * its first resonance right on the sung notes, which rings much louder.)
+ * RMS on each vowel, at three pitches across the range, made equal (centred on 0 dB; VOICE_VOLUME sets the overall level). Refit whenever the
+ * formants or singers change (the closed vowels, I and U, pass the least).
  */
 export const VOWEL_TRIM: { [r in VoiceRange]: { [v in Vowel]: number } } = {
-    low: { a: 4.9, e: 2.5, i: 0.7, o: 1.1, u: 0.8 },
-    high: { a: 0, e: 2.3, i: -11.2, o: -3.5, u: -9.8 },
+    low: { a: 5.5, e: 3.4, i: -0.2, o: 1.3, u: 0.8 },
+    high: { a: 3.0, e: 0.2, i: -7.3, o: -1.4, u: -5.4 },
 };
 
 /** Harmonics in a singer's wave. */
@@ -57,7 +60,22 @@ function standIn(seed: number, tilt: number): number[] {
 }
 
 /** Each range's singers: the first is the solo voice, the choir uses them all. */
-export const SINGERS: { [r in VoiceRange]: number[][] } = {
+const STAND_INS: { [r in VoiceRange]: number[][] } = {
     low: [standIn(3, 1.55), standIn(7, 1.7), standIn(11, 1.45), standIn(19, 1.65), standIn(23, 1.6)],
     high: [standIn(5, 1.75), standIn(13, 1.9), standIn(17, 1.65), standIn(29, 1.85), standIn(31, 1.8)],
+};
+
+type Measured = { [r in VoiceRange]?: { singers: number[][]; formants: { [v in Vowel]?: Formant[] } } };
+const measured = MEASURED as unknown as Measured;
+
+/** Where each vowel's resonances sit, per range: measured, or the textbook's where there's no measurement. */
+export const FORMANTS: { [r in VoiceRange]: { [v in Vowel]: Formant[] } } = {
+    low: { ...TEXTBOOK.low, ...measured.low?.formants },
+    high: { ...TEXTBOOK.high, ...measured.high?.formants },
+};
+
+/** Each range's singers (the first is the solo voice, the choir uses all five): measured, or the stand-ins. */
+export const SINGERS: { [r in VoiceRange]: number[][] } = {
+    low: measured.low?.singers.length ? measured.low.singers : STAND_INS.low,
+    high: measured.high?.singers.length ? measured.high.singers : STAND_INS.high,
 };
