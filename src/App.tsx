@@ -200,6 +200,8 @@ const App: React.FC = () => {
     const [inversion, setInversion] = useState(initial.inversion);
     const [nextHint, setNextHint] = useState(initial.nextHint);
     const [notice, setNotice] = useState<string | null>(null);
+    /** Compact: the key, scale and tempo sheet behind the top bar's chip. */
+    const [keyOpen, setKeyOpen] = useState(false);
     const [helpOpen, setHelpOpen] = useState(false);
     const [htOpen, setHtOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1390,7 +1392,7 @@ const App: React.FC = () => {
     // ---- keyboard -----------------------------------------------------------------------
 
     // while a dialog is open the instrument's keys are off (typing or tabbing in it mustn't play pads)
-    const modalOpen = helpOpen || htOpen || settingsOpen || creditsOpen || confirmClear || (learnOpen && compact);
+    const modalOpen = helpOpen || htOpen || settingsOpen || creditsOpen || confirmClear || (learnOpen && compact) || (keyOpen && compact);
     const keyActions = useRef({ pressPad, releasePad, releaseAll, togglePlay, stopAndRewind, toggleRecord, edit, melody: melodyActions, helpOpen: modalOpen, undo: history.undo, redo: history.redo });
     keyActions.current = { pressPad, releasePad, releaseAll, togglePlay, stopAndRewind, toggleRecord, edit, melody: melodyActions, helpOpen: modalOpen, undo: history.undo, redo: history.redo };
 
@@ -1967,6 +1969,8 @@ const App: React.FC = () => {
                 onKeyChange={setSelectedKey}
                 onScaleChange={setScale}
                 onBpmChange={b => setBpm(Math.max(BPM_MIN, Math.min(BPM_MAX, b)))}
+                keyOpen={keyOpen}
+                onKeyOpen={setKeyOpen}
                 onTogglePlay={togglePlay}
                 onStop={stopAndRewind}
                 onToggleRecord={toggleRecord}

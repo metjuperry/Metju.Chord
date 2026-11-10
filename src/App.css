@@ -153,8 +153,9 @@
    clear of the notch, the rounded corners, the status bar and the home indicator itself. */
 .app.compact {
     max-width: none;
+    /* no top padding: the top bar is the top edge (TopBar.css) and takes the status-bar inset itself */
     padding:
-        max(8px, env(safe-area-inset-top))
+        0
         max(8px, env(safe-area-inset-right))
         max(8px, env(safe-area-inset-bottom))
         max(8px, env(safe-area-inset-left));
