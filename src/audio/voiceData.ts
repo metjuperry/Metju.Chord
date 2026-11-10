@@ -35,12 +35,12 @@ const TEXTBOOK: { [r in VoiceRange]: { [v in Vowel]: Formant[] } } = {
 
 /**
  * Each vowel made as loud as the others (dB), so changing vowel doesn't jump in level: a solo voice's
- * RMS on each vowel, at three pitches across the range, measured against -38 dB. Refit whenever the
+ * RMS on each vowel, at three pitches across the range, made equal (centred on 0 dB; VOICE_VOLUME sets the overall level). Refit whenever the
  * formants or singers change (the closed vowels, I and U, pass the least).
  */
 export const VOWEL_TRIM: { [r in VoiceRange]: { [v in Vowel]: number } } = {
-    low: { a: 7.4, e: 8.0, i: 8.0, o: 7.9, u: 9.2 },
-    high: { a: 7.3, e: 7.6, i: 16.4, o: 14.3, u: 15.5 },
+    low: { a: 5.5, e: 3.4, i: -0.2, o: 1.3, u: 0.8 },
+    high: { a: 3.0, e: 0.2, i: -7.3, o: -1.4, u: -5.4 },
 };
 
 /** Harmonics in a singer's wave. */

@@ -15,7 +15,7 @@ import { FORMANTS, SINGERS, VOWEL_TRIM } from './voiceData';
  */
 
 /** Output level in dB, matched with `npm run levels`. */
-export const VOICE_VOLUME = 9;
+export const VOICE_VOLUME = 1;
 
 const CHOIR = 5;
 /** Where each singer stands (pan) and how far off pitch they sing (cents); the first is the solo voice. */

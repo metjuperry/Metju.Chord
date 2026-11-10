@@ -411,7 +411,8 @@ def make(dump):
                 pitches = [round(12 * np.log2(q["f0"])) for q in notes]
                 common = max(set(pitches), key=pitches.count)
                 low = [q for q, p in zip(notes, pitches) if p == common]
-            src = np.mean([10 ** (np.array(q["source_db"]) / 20) / 10 ** (q["source_db"][0] / 20) for q in low], axis=0)
+            # in dB, so one loud vowel doesn't outweigh the rest
+            src = 10 ** (np.mean([colour_db(q) for q in low if "formants" in q] or [colour_db(q) for q in low], axis=0) / 20)
             src = src / src.max()
             singers.append([round(float(a), 5) for a in src])
         fmts, counted = {}, {}
@@ -454,6 +455,32 @@ def make(dump):
         extra["straight"] = {"notes": len(straight), "harmonicity": r1(np.median([q["harmonicity"] for q in straight]), 3)}
     out["techniques"] = extra
     return out
+
+
+def mouth(f, fmts):
+    """The app's mouth (audio/voice.ts): four parallel band-pass filters at the formants, each with the
+    level it's given there, as a magnitude at frequencies `f` (phases ignored)."""
+    out = np.zeros_like(f, dtype=float)
+    for hz, bw, db in fmts:
+        q = hz / bw
+        out += 10 ** (db / 20) * np.sqrt(hz / bw) * 0.6 / np.sqrt(1 + q * q * (f / hz - hz / f) ** 2)
+    return out
+
+
+def colour_db(q):
+    """A singer's colour from one note (dB per harmonic, 0 at the loudest): its harmonics with just this
+    vowel's four formants divided out, the way the app puts them back. The voice's natural slope (its
+    harmonics falling ~10 dB an octave) stays; dividing by the whole LPC envelope (`source_db`) would take
+    that out too and leave a flat, buzzy wave. Where no formant reaches, the division is limited to 30 dB."""
+    h = np.array(q["harmonics_db"])
+    if "formants" not in q:
+        return h - h.max()
+    k = np.arange(1, len(h) + 1) * q["f0"]
+    m = mouth(k, q["formants"])
+    m = np.maximum(m, m.max() * 10 ** (-30 / 20))
+    c = h - 20 * np.log10(m)
+    c[h <= -150] = -150
+    return c - c.max()
 
 
 # where each vowel's F1 and F2 can be (Hz), for men and women alike: broad, only to catch a missed formant
@@ -601,7 +628,11 @@ def selftest():
         assert all(len(f) == 4 for f in out[rng_]["formants"].values())
         assert all(0 <= a <= 1 for s in out[rng_]["singers"] for a in s)
         # the fundamental and every harmonic near it are there: no note measured an octave off
-        assert all(min(s[:6]) > 0.05 for s in out[rng_]["singers"]), out[rng_]["singers"]
+        assert all(min(s[:3]) > 0.03 for s in out[rng_]["singers"]), out[rng_]["singers"]
+        # and the voice keeps its natural slope (falling, as the synthetic singers' harmonics do), not flattened
+        for sg in out[rng_]["singers"]:
+            k = np.arange(1, 25)
+            assert np.polyfit(np.log2(k), 20 * np.log10(np.array(sg[:24]) + 1e-6), 1)[0] < -4, sg[:24]
     vib = out["techniques"]["vibrato"]
     assert abs(vib["vibrato_rate"] - 5.5) < 0.6 and 25 < vib["vibrato_depth"] < 80, vib
     # an analysis with nothing usable still makes a file, with warnings
