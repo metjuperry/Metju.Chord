@@ -6,6 +6,8 @@ Reviewed at `f3b3804` (v1.50.0), 10 November 2026. Nothing in the app was change
 
 Effort: **S** up to half a day, **M** one to three days, **L** a week or more. Confidence is stated where it is not high.
 
+**Status.** The first block of the plan (section 6, items 1 to 8) is done on this branch: bugs 1, 2, 3, 4, 6, 7, 8, 9, 10 and 11 are fixed, as are suspected 14 and 17, and the pads now play on Enter (3.9). Bug 5 (the 100 ms look-ahead) and suspected 12, 13, 15 and 16 are open. The text below describes the app as reviewed.
+
 ---
 
 ## 1. Summary
