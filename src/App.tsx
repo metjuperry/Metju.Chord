@@ -22,6 +22,7 @@ import { getEngine } from './audio/engine';
 import { useHistory } from './useHistory';
 import { keepScreenOn } from './pwa';
 import SongMenu from './components/SongMenu';
+import { MenuItem } from './components/PopMenu';
 import ConfirmDialog from './components/ConfirmDialog';
 import HooktheoryDialog from './components/HooktheoryDialog';
 import { HtClip, ImportOptions, ImportSummary, importHooktheory } from './hooktheory';
@@ -204,6 +205,7 @@ const App: React.FC = () => {
     const [noticeHeld, setNoticeHeld] = useState(false);
     /** Compact: the key, scale and tempo sheet behind the top bar's chip. */
     const [keyOpen, setKeyOpen] = useState(false);
+    const songFile = useRef<HTMLInputElement>(null);
     const [helpOpen, setHelpOpen] = useState(false);
     const [htOpen, setHtOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1755,8 +1757,19 @@ const App: React.FC = () => {
             canClearAll={!isCleanSlate(full)}
         />
     );
+    // Phones: the same entries inside a section's "⋯" menu (the header there is one row)
+    const songItems: MenuItem[] = [
+        { label: 'New song', hint: 'undoable', onSelect: songActions.new },
+        { label: 'Open file…', onSelect: () => songFile.current?.click() },
+        { label: 'Save to file', onSelect: songActions.save },
+        { label: 'Copy share link', onSelect: songActions.share },
+        { label: 'Paste from Hooktheory…', onSelect: () => setHtOpen(true) },
+        { label: 'Clear all', hint: 'undoable', danger: true, disabled: isCleanSlate(full), onSelect: edit.clearAll },
+    ];
     const progressionEl = (
         <Progression
+            compact={compact}
+            songItems={songItems}
             total={total}
             stepsPerRow={rowSteps}
             timeSignature={ts}
@@ -2057,6 +2070,18 @@ const App: React.FC = () => {
                 onCredits={() => setCreditsOpen(true)}
             />
             {compact && learnEl(false)}
+            {/* "Open file…" from a section's ⋯ menu: the menu is gone by the time a file is picked, so the input lives here */}
+            <input
+                ref={songFile}
+                type="file"
+                accept=".json,application/json"
+                hidden
+                onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) songActions.open(file);
+                    e.target.value = '';
+                }}
+            />
             <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
             <ConfirmDialog
                 open={confirmClear}

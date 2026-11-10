@@ -759,3 +759,80 @@
     font-size: 16px;
     line-height: 1;
 }
+
+/* ---- phones: the section header is one row ------------------------------------------------------
+   ‹ Song, the section switcher, the cursor buttons and "⋯" (length, time signature, the song menu). */
+.prog-more {
+    margin-left: auto;
+    font-size: 18px;
+    line-height: 1;
+}
+
+.prog-more[aria-expanded='true'] {
+    border-color: var(--accent);
+}
+
+.more-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 4px 8px 10px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--line);
+}
+
+.more-row .section-note {
+    white-space: nowrap;
+}
+
+.more-space {
+    flex: 1 1 8px;
+}
+
+.song-popover .more-row .chip-button {
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.more-row .ts-select {
+    height: 44px;
+    padding: 0 8px;
+}
+
+@media (max-width: 1023px), (max-height: 560px) {
+    .prog-head {
+        flex-wrap: nowrap;
+        gap: 10px;
+    }
+
+    .prog-head .section-switcher {
+        min-width: 0;
+    }
+
+    /* while recording, the note about where the pads write takes its own line under the row */
+    .prog-head:has(.rec-note) {
+        flex-wrap: wrap;
+    }
+
+    .prog-head .rec-note {
+        order: 9;
+        flex: 1 0 100%;
+    }
+}
+
+@media (max-width: 760px) {
+    .prog-head .seq-title {
+        display: none;
+    }
+}
+
+/* narrower than a landscape phone: the header may wrap again */
+@media (max-width: 600px) {
+    .prog-head {
+        flex-wrap: wrap;
+    }
+}
