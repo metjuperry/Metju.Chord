@@ -40,10 +40,11 @@ import type { ShapeOverrides } from './sound';
 import { Scheduled, chainEvents, kickTicks, sectionEvents, sectionLoopLength, sectionMusicEnd } from './playback';
 import SongView from './components/SongView';
 import SectionSwitcher from './components/SectionSwitcher';
+import VowelLane from './components/VowelLane';
 import { Clip, clipAt, fitTo, isChordClip, place, remove, setLength, split } from './progression';
 import {
     Accidental, ChordPart, Harmony, MAX_PARTS, Note, Part, PartFx, PartKind, PartTone, noFx,
-    fitNotes, pasteNotes, notesIn, replaceRange, hasInstrument, hasNotes, melodyMidi, voiceSettings, writesNotes, noteWriter, NotesPart, newPart, noteAt, noteMidi, partNotes, placeNote, removeNote, resolveClip, withAcc,
+    fitNotes, pasteNotes, notesIn, replaceRange, hasInstrument, hasNotes, fitVowels, melodyMidi, voiceSettings, writesNotes, noteWriter, NotesPart, newPart, noteAt, noteMidi, partNotes, placeNote, removeNote, resolveClip, withAcc,
 } from './parts';
 import { SeqEvent, SeqOptions, SequencerPlayer, ticksToSeconds } from './audio/sequencer';
 import { SyncOut, loadSync, saveSync, windowPulses } from './sync';
@@ -184,6 +185,8 @@ function noteScaleTags(pcs: number[], names: string[], playedPc: number, degree:
 const App: React.FC = () => {
     // ---- settings ---------------------------------------------------------------
     const [audioReady, setAudioReady] = useState(false);
+    const audioReadyRef = useRef(false);
+    audioReadyRef.current = audioReady;
     const [intro, setIntro] = useState<IntroPhase>('idle');
     const [introName, setIntroName] = useState('');
     const [saved] = useState(loadSaved);
@@ -319,7 +322,7 @@ const App: React.FC = () => {
     };
     const updatePart = (id: string, patch: PartPatch | Partial<Part>) =>
         // dragging a volume slider is one undo step, not one per pixel
-        setParts(ps => ps.map(p => (p.id === id ? { ...p, ...patch } as Part : p)), 'volume' in patch ? `vol:${id}` : 'vibrato' in patch || 'breath' in patch ? `voice:${id}:${Object.keys(patch)[0]}` : undefined);
+        setParts(ps => ps.map(p => (p.id === id ? { ...p, ...patch } as Part : p)), 'volume' in patch ? `vol:${id}` : 'vibrato' in patch || 'breath' in patch || 'vowelGlide' in patch ? `voice:${id}:${Object.keys(patch)[0]}` : undefined);
     // turning one tone knob is one undo step
     const setTone = (id: string, key: keyof PartTone, value: number) =>
         setParts(ps => ps.map(p => (p.id === id && hasInstrument(p) ? { ...p, tone: { ...p.tone, [key]: value } } : p)), `tone:${id}:${key}`);
@@ -604,6 +607,11 @@ const App: React.FC = () => {
             engine.playDrum(data.part, data.drum, time);
             return;
         }
+        if (!data.midi) {
+            engine.setVowel(data.part, data.vowel, time, data.glide);
+            return;
+        }
+        if (data.vowel) engine.setVowel(data.part, data.vowel, time, data.glide);
         const seconds = ticksToSeconds(event.duration);
         const duration = data.gate !== undefined ? Math.min(data.gate, seconds) : seconds * data.legato;
         engine.playChord(data.midi, { duration, time, track: data.part, strum: data.strum, velocity: data.velocity });
@@ -616,6 +624,8 @@ const App: React.FC = () => {
 
     const stopPlayback = useCallback(() => {
         player.current?.stop();
+        // the singers go back to their own vowel for playing live
+        if (audioReadyRef.current) getEngine().resetVowels();
         setPlaying(false);
         setQueued(null);
         setChainPos(null);
@@ -1119,7 +1129,7 @@ const App: React.FC = () => {
                 ...sg,
                 steps: next,
                 chords: fitTo(sg.chords, next * T),
-                parts: sg.parts.map(p => (hasNotes(p) ? { ...p, notes: fitNotes(p.notes, next * T) } : p)),
+                parts: sg.parts.map(p => (p.kind === 'voice' ? { ...p, notes: fitNotes(p.notes, next * T), vowels: fitVowels(p.vowels, next * T) } : hasNotes(p) ? { ...p, notes: fitNotes(p.notes, next * T) } : p)),
             }));
             setSelected(Math.min(selected, next - 1));
             setPlayhead(Math.min(playhead, next - 1));
@@ -1692,7 +1702,21 @@ const App: React.FC = () => {
             sixteenthsPerBar={sixteenthsPerBar(ts)}
             loopSteps={loop ? sectionLoopLength(song) / T : total}
             recordInto={notesOn ? padMelody!.name : undefined}
-            partEditor={partEditor}
+            partEditor={selPart?.kind === 'voice' ? (
+                <>
+                    {partEditor}
+                    <VowelLane
+                        part={selPart}
+                        chords={chords}
+                        totalSteps={total}
+                        stepsPerRow={rowSteps}
+                        stepTicks={T}
+                        beatsPerBar={ts.beats}
+                        playStep={playSixteenth >= 0 ? Math.floor(playSixteenth / sixteenthsPerStep(ts)) : -1}
+                        onChange={vowels => setParts(ps => ps.map(p => (p.id === selPart.id && p.kind === 'voice' ? { ...p, vowels } : p)))}
+                    />
+                </>
+            ) : partEditor}
             partDock={noteDock}
             selected={selected}
             playhead={playhead}

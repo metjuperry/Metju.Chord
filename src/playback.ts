@@ -1,12 +1,14 @@
 import { DrumVoice, TICKS_PER_SIXTEENTH, expandPattern } from './drums';
-import { Harmony, Part, PartKind, audibleParts, musicEnd, musicLoopEnd, outsideRests, partNotes, restSpans } from './parts';
+import { Harmony, Part, PartKind, Vowel, audibleParts, musicEnd, musicLoopEnd, outsideRests, partNotes, restSpans, vowelAt, vowelGlideSeconds } from './parts';
 import { ChainSlot, chainLayout, chainTicks, sectionView, stripId } from './sections';
 import { FullSong, Section, Song, TimeSignature, ticksPerBar, ticksPerStep } from './song';
 
 /** What the sequencer schedules: some notes or a drum hit, and the engine strip that plays them (`stripId`). */
 export type Scheduled =
-    | { midi: number[]; gate?: number; strum?: number[]; velocity?: number; legato: number; part: string; drum?: undefined }
-    | { drum: DrumVoice; part: string };
+    | { midi: number[]; gate?: number; strum?: number[]; velocity?: number; legato: number; part: string; drum?: undefined; vowel?: Vowel; glide?: number }
+    | { drum: DrumVoice; part: string; midi?: undefined }
+    /** A Voice part's singers move to another vowel, taking `glide` seconds. */
+    | { vowel: Vowel; glide: number; part: string; midi?: undefined; drum?: undefined };
 
 /** An event at `tick` lasting `duration` ticks (the shape `SequencerPlayer` takes). */
 export interface TimedEvent {
@@ -44,13 +46,33 @@ export function sectionEvents(view: Song, sec: Section, length: number, offset =
         ? expandPattern(p.drums, view.timeSignature, length)
             .filter(hit => outsideRests(restSpans(view.chords, p), hit.tick))
             .map(hit => ({ tick: hit.tick + offset, duration: TICKS_PER_SIXTEENTH, data: { drum: hit.voice, part: stripId(sec, p.id) } }))
-        : partNotes(p, h, { beatTicks, barTicks: ticksPerBar(view.timeSignature), kicks })
-            .filter(n => n.start < length)
-            .map(n => ({
-                tick: n.start + offset,
-                duration: cut ? Math.min(n.len, length - n.start) : n.len,
-                data: { midi: n.midi, gate: n.gate, strum: n.strum, velocity: n.velocity, legato: LEGATO[p.kind], part: stripId(sec, p.id) },
-            }))));
+        : [
+            ...partNotes(p, h, { beatTicks, barTicks: ticksPerBar(view.timeSignature), kicks })
+                .filter(n => n.start < length)
+                .map((n): TimedEvent => ({
+                    tick: n.start + offset,
+                    duration: cut ? Math.min(n.len, length - n.start) : n.len,
+                    data: {
+                        midi: n.midi, gate: n.gate, strum: n.strum, velocity: n.velocity, legato: LEGATO[p.kind], part: stripId(sec, p.id),
+                        // a voice's note starts on the vowel sung there (so playback started midway is right at once)
+                        ...(p.kind === 'voice' ? { vowel: vowelAt(p, n.start), glide: 0.02 } : {}),
+                    },
+                })),
+            ...(p.kind === 'voice' ? vowelEvents(p, length, offset, stripId(sec, p.id)) : []),
+        ]));
+}
+
+/** A Voice part's vowel changes inside the section: where each stretch of the lane starts, and where it ends back on the part's own vowel. */
+function vowelEvents(p: Extract<Part, { kind: 'voice' }>, length: number, offset: number, part: string): TimedEvent[] {
+    const glide = vowelGlideSeconds(p.vowelGlide);
+    const changes = new Map<number, Vowel>();
+    for (const c of p.vowels) {
+        if (c.start >= length) continue;
+        changes.set(c.start, c.vowel);
+        const end = c.start + c.len;
+        if (end < length && !p.vowels.some(o => o.start === end)) changes.set(end, p.vowel);
+    }
+    return [...changes].sort((a, b) => a[0] - b[0]).map(([tick, vowel]) => ({ tick: tick + offset, duration: 1, data: { vowel, glide, part } }));
 }
 
 /** Where a section loops on its own (Loop mode): the end of its music rounded up to a bar, within its length. */

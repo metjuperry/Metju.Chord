@@ -175,6 +175,13 @@ export interface VoiceSettings {
     breath: number;
 }
 
+/** A stretch of the section sung on one vowel (the vowel lane); outside every stretch the part's own vowel. */
+export interface VowelClip {
+    start: number;
+    len: number;
+    vowel: Vowel;
+}
+
 /** Singers: a solo voice or a choir, singing its own notes or the chords, on a vowel. */
 export interface VoicePart extends PartBase, VoiceSettings {
     kind: 'voice';
@@ -185,6 +192,49 @@ export interface VoicePart extends PartBase, VoiceSettings {
     sings: Sings;
     octave: number;
     notes: Note[];
+    /** The vowel lane: where the singers sing another vowel than `vowel` (section content, like `notes`). */
+    vowels: VowelClip[];
+    /** How quickly they move from one vowel to the next, 0..1 (see `vowelGlideSeconds`). */
+    vowelGlide: number;
+}
+
+/** Vowel glide in seconds: 0 snaps (20 ms), 1 is a slow morph (0.8 s). */
+export const vowelGlideSeconds = (g: number) => 0.02 + 0.78 * g * g;
+
+/** The vowel sung at `tick`: the lane's, or the part's own. */
+export const vowelAt = (p: VoicePart, tick: number): Vowel =>
+    p.vowels.find(c => tick >= c.start && tick < c.start + c.len)?.vowel ?? p.vowel;
+
+/**
+ * The vowel lane from one vowel per step (null where the part's own vowel is sung): neighbouring steps
+ * with the same vowel make one stretch. What the lane editor paints.
+ */
+export function vowelClipsFromSteps(steps: (Vowel | null)[], stepTicks: number): VowelClip[] {
+    const out: VowelClip[] = [];
+    steps.forEach((v, i) => {
+        if (!v) return;
+        const last = out[out.length - 1];
+        if (last && last.vowel === v && last.start + last.len === i * stepTicks) last.len += stepTicks;
+        else out.push({ start: i * stepTicks, len: stepTicks, vowel: v });
+    });
+    return out;
+}
+
+/** The vowel lane as one vowel per step (null where the part's own vowel is sung): the step's vowel is the one at its start. */
+export const vowelSteps = (clips: VowelClip[], steps: number, stepTicks: number): (Vowel | null)[] =>
+    Array.from({ length: steps }, (_, i) => clips.find(c => i * stepTicks >= c.start && i * stepTicks < c.start + c.len)?.vowel ?? null);
+
+/** Clips that start before `total`, cut off at it (the section got shorter). */
+export const fitVowels = (clips: VowelClip[], total: number): VowelClip[] =>
+    clips.filter(c => c.start < total).map(c => (c.start + c.len > total ? { ...c, len: total - c.start } : c));
+
+/** The order "one vowel per chord" goes through: open, round, close, front, then again. */
+const PER_CHORD: Vowel[] = ['a', 'o', 'u', 'e', 'i'];
+
+/** One vowel per chord clip of the chord row (rests left to the part's own vowel), going round `PER_CHORD`. */
+export function vowelPerChord(chords: { start: number; len: number; rest?: boolean }[]): VowelClip[] {
+    let n = 0;
+    return chords.filter(c => !c.rest).sort((a, b) => a.start - b.start).map(c => ({ start: c.start, len: c.len, vowel: PER_CHORD[n++ % PER_CHORD.length] }));
 }
 
 export const voiceSettings = (p: VoicePart): VoiceSettings =>
@@ -250,6 +300,7 @@ export function newPart(kind: PartKind, existing: Part[], drums?: DrumPattern): 
             return {
                 ...base, kind, instrument: 'voice', tone: neutralTone(), shape: {}, fx: { ...noFx(), reverb: 0.35 },
                 singers: 'choir', range: 'low', vowel: 'u', vibrato: 0.35, breath: 0.15, sings: 'chords', octave: RANGE_OCTAVE.low, notes: [],
+                vowels: [], vowelGlide: 0.3,
             };
         case 'drums':
             return { ...base, kind, drums: drums ?? { bars: 1, hits: {} } };

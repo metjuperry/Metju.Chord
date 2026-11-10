@@ -3,7 +3,7 @@ import { ArpPattern, arpOrder } from '../theory';
 import { Instrument, InstrumentId, createInstrument } from './instruments';
 import { DrumKit } from './drumkit';
 import type { DrumVoice } from '../drums';
-import { PartFx, PartTone, VoiceSettings, glideSeconds, glides, neutralTone, noFx, shapePan } from '../parts';
+import { PartFx, PartTone, VoiceSettings, Vowel, glideSeconds, glides, neutralTone, noFx, shapePan } from '../parts';
 import { PartShape, ShapeOverrides, driveCurve, driveMakeupDb, effectiveShape, filterEnvelope, lfoRange, resonanceQ } from '../sound';
 import type { Space } from '../song';
 import { PULSE_SECONDS, SyncOut, defaultSync, pulseTime } from '../sync';
@@ -339,6 +339,16 @@ export class Engine {
     }
 
     /** Play one drum hit on a drum part at an audio-clock `time`. */
+    /** A Voice part's singers move to `vowel` at `time`, taking `glide` seconds (the vowel lane). */
+    setVowel(track: string, vowel: Vowel, time?: number, glide?: number) {
+        this.strips.get(track)?.voice.vowel?.(vowel, time ?? Tone.now(), glide);
+    }
+
+    /** Every Voice part's singers back to their own vowel. */
+    resetVowels() {
+        this.strips.forEach(s => s.voice.restVowel?.());
+    }
+
     playDrum(track: string, voice: DrumVoice, time?: number, velocity = 1) {
         const ch = this.kits.get(track);
         if (!ch) return;

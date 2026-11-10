@@ -10,7 +10,7 @@ import { ArpRate } from '../audio/engine';
 import { INSTRUMENTS, InstrumentId } from '../audio/instruments';
 import {
     BASS_STYLES, BassPart, BassStyle, FX_KEYS, Harmony, InstrumentPart, MAX_PARTS, PART_LABELS, Part, PartFx, PartKind, PartTone, PlayMode,
-    RANGE_OCTAVE, STRUM_DIRECTIONS, STRUM_SPREADS, TONE_KEYS, VOWELS, VoicePart, bassNotes, fxAvailable, hasInstrument, shapePan,
+    RANGE_OCTAVE, vowelGlideSeconds, STRUM_DIRECTIONS, STRUM_SPREADS, TONE_KEYS, VOWELS, VoicePart, bassNotes, fxAvailable, hasInstrument, shapePan,
 } from '../parts';
 import { PPQ } from '../progression';
 import { ShapeView, Space } from '../song';
@@ -411,6 +411,17 @@ const VoiceBlock: React.FC<{ part: VoicePart; onUpdate: (patch: Partial<VoicePar
                     on={part.breath > 0}
                     resetTo={0.15}
                     onChange={v => onUpdate({ breath: v })}
+                />
+                <KnobCell
+                    label="Vowel glide"
+                    aria={`${part.name} Vowel glide`}
+                    title="how quickly the singers move to the next vowel in the vowel lane (in Song): from a snap to a slow morph"
+                    value={part.vowelGlide}
+                    display={`${Math.round(vowelGlideSeconds(part.vowelGlide) * 1000)} ms`}
+                    color={part.color}
+                    on
+                    resetTo={0.3}
+                    onChange={v => onUpdate({ vowelGlide: v })}
                 />
             </div>
             <p className="section-note pd-hint">

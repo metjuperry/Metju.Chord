@@ -120,6 +120,10 @@ export class VoiceInstrument implements Instrument {
         });
     }
 
+    restVowel() {
+        this.vowel(this.settings.vowel, Tone.now(), VOWEL_GLIDE);
+    }
+
     shape(over: Partial<Adsr>) {
         this.env = { ...this.preset, ...over };
     }
