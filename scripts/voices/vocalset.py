@@ -458,18 +458,18 @@ def make(dump):
 
 
 def mouth(f, fmts):
-    """The app's mouth (audio/voice.ts): four parallel band-pass filters at the formants, each with the
-    level it's given there, as a magnitude at frequencies `f` (phases ignored)."""
-    out = np.zeros_like(f, dtype=float)
-    for hz, bw, db in fmts:
+    """The app's mouth (audio/voice.ts): the four formants as resonances in a row (2-pole low-pass
+    resonators, Q = centre / bandwidth), as a magnitude at frequencies `f`."""
+    out = np.ones_like(f, dtype=float)
+    for hz, bw, _db in fmts:
         q = hz / bw
-        out += 10 ** (db / 20) * np.sqrt(hz / bw) * 0.6 / np.sqrt(1 + q * q * (f / hz - hz / f) ** 2)
+        out /= np.sqrt((1 - (f / hz) ** 2) ** 2 + (f / (hz * q)) ** 2)
     return out
 
 
 def colour_db(q):
     """A singer's colour from one note (dB per harmonic, 0 at the loudest): its harmonics with just this
-    vowel's four formants divided out, the way the app puts them back. The voice's natural slope (its
+    vowel's four formants divided out, the way the app puts them back (as a cascade). The voice's natural slope (its
     harmonics falling ~10 dB an octave) stays; dividing by the whole LPC envelope (`source_db`) would take
     that out too and leave a flat, buzzy wave. Where no formant reaches, the division is limited to 30 dB."""
     h = np.array(q["harmonics_db"])
@@ -629,10 +629,12 @@ def selftest():
         assert all(0 <= a <= 1 for s in out[rng_]["singers"] for a in s)
         # the fundamental and every harmonic near it are there: no note measured an octave off
         assert all(min(s[:3]) > 0.03 for s in out[rng_]["singers"]), out[rng_]["singers"]
-        # and the voice keeps its natural slope (falling, as the synthetic singers' harmonics do), not flattened
+        # and a singer through the app's mouth keeps a voice's natural slope (falling, as the synthetic
+        # singers' harmonics do), not flattened: the colour times the mouth, on "a" at the expected note
+        k = np.arange(1, 25)
+        heard = lambda sg: np.array(sg[:24]) * mouth(k * NOTE[rng_], out[rng_]["formants"]["a"])
         for sg in out[rng_]["singers"]:
-            k = np.arange(1, 25)
-            assert np.polyfit(np.log2(k), 20 * np.log10(np.array(sg[:24]) + 1e-6), 1)[0] < -4, sg[:24]
+            assert np.polyfit(np.log2(k), 20 * np.log10(heard(sg) / heard(sg).max() + 1e-6), 1)[0] < -4, sg[:24]
     vib = out["techniques"]["vibrato"]
     assert abs(vib["vibrato_rate"] - 5.5) < 0.6 and 25 < vib["vibrato_depth"] < 80, vib
     # an analysis with nothing usable still makes a file, with warnings
