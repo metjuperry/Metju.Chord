@@ -5,7 +5,7 @@ const tseslint = require('typescript-eslint');
 const reactHooks = require('eslint-plugin-react-hooks');
 
 const nodeGlobals = { require: 'readonly', module: 'writable', __dirname: 'readonly', process: 'readonly', console: 'readonly', URL: 'readonly' };
-const workerGlobals = { self: 'readonly', caches: 'readonly', fetch: 'readonly', URL: 'readonly', Request: 'readonly', Response: 'readonly' };
+const workerGlobals = { self: 'readonly', caches: 'readonly', fetch: 'readonly', URL: 'readonly', Request: 'readonly', Response: 'readonly', setTimeout: 'readonly', clearTimeout: 'readonly', Promise: 'readonly', console: 'readonly' };
 
 module.exports = tseslint.config(
     { ignores: ['dist/**', '.levels/**', 'node_modules/**', 'playwright-report/**', 'test-results/**', 'public/**'] },
