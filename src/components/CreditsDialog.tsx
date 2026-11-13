@@ -36,6 +36,11 @@ const CreditsDialog: React.FC<{ open: boolean; onClose: () => void }> = ({ open,
                         </tr>
                     </tbody>
                 </table>
+                <p className="section-note">
+                    Typefaces: <a href="https://github.com/JetBrains/JetBrainsMono" target="_blank" rel="noreferrer">JetBrains Mono</a> and{' '}
+                    <a href="https://github.com/floriankarsten/space-grotesk" target="_blank" rel="noreferrer">Space Grotesk</a>,{' '}
+                    <a href="https://openfontlicense.org" target="_blank" rel="noreferrer">SIL Open Font License 1.1</a>.
+                </p>
                 <p className="section-note">The synths and the 808/909-style drum kit are made in the app with Tone.js.</p>
                 <p className="section-note">
                     The Voice part's singers are measured (not sampled) from the long tones of{' '}
