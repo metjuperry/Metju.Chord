@@ -17,7 +17,7 @@ vi.mock('./audio/engine', () => ({
     getEngine: () => ({ quantizedStart: () => 0, acquireTransport: () => undefined, releaseTransport: () => undefined }),
 }));
 
-import { SeqEvent, SeqOptions, SequencerPlayer } from './audio/sequencer';
+import { SeqEvent, SeqEvents, SeqOptions, SequencerPlayer } from './audio/sequencer';
 
 const WINDOW = 24;
 const BAR = 384;
@@ -26,7 +26,7 @@ const beats = (name: string, bars: number): SeqEvent<string>[] =>
     Array.from({ length: bars * 4 }, (_, i) => ({ tick: i * 96, duration: 96, data: `${name}${i}` }));
 
 /** A player looping `first`; `run(n)` runs n passes and returns what played. */
-function setup(first: { events: SeqEvent<string>[]; opts: SeqOptions }) {
+function setup(first: { events: SeqEvents<string>; opts: SeqOptions }) {
     const state = { now: first };
     const played: string[] = [];
     const player = new SequencerPlayer<string>(() => state.now, e => played.push(e.data), () => played.push('END'));
@@ -118,5 +118,16 @@ describe('SequencerPlayer', () => {
         const mid = recent[recent.length - 2];
         expect(player.position(mid.time + 0.25)).toBeCloseTo(mid.tick + 48, 6);
     });
-});
 
+    it('plays slots (a chain) like the same events in one list, over the loop end too', () => {
+        // a 1-bar section, then a 2-bar one, from tick 384: each slot's beats counted from its start
+        const slots = { slots: [{ start: 0, events: beats('a', 1) }, { start: BAR, events: beats('b', 2) }] };
+        const { run } = setup({ events: slots, opts: { loop: true, loopEnd: 3 * BAR, end: 3 * BAR } });
+        expect(run(64)).toEqual(['a0', 'a1', 'a2', 'a3', 'b0', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7', 'a0', 'a1', 'a2', 'a3']);
+    });
+
+    it('plays a list in any order', () => {
+        const { run } = setup({ events: [...beats('a', 1)].reverse(), opts: { loop: false, loopEnd: BAR, end: BAR } });
+        expect(run(16)).toEqual(['a0', 'a1', 'a2', 'a3']);
+    });
+});

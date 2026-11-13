@@ -2,6 +2,7 @@ import { DrumVoice, TICKS_PER_SIXTEENTH, expandPattern } from './drums';
 import { Harmony, Part, PartKind, Vowel, audibleParts, musicEnd, musicLoopEnd, outsideRests, partNotes, restSpans, vowelAt, vowelGlideSeconds } from './parts';
 import { ChainSlot, chainLayout, chainTicks, sectionView, stripId } from './sections';
 import { FullSong, Section, Song, TimeSignature, ticksPerBar, ticksPerStep } from './song';
+import type { MusicalKey, ScaleId } from './theory';
 
 /** What the sequencer schedules: some notes or a drum hit, and the engine strip that plays them (`stripId`). */
 export type Scheduled =
@@ -82,16 +83,62 @@ export const sectionLoopLength = (view: Song) =>
 /** Where a section's music ends, for playing it once. */
 export const sectionMusicEnd = (view: Song) => musicEnd(view.chords, view.parts, ticksPerBar(view.timeSignature));
 
-/** The whole chain as one timeline: each slot's section from its start, for its full length. */
+/** What a section's cached events were built from, besides the section itself. */
+interface SectionCache {
+    parts: Part[];
+    key: MusicalKey;
+    scale: ScaleId;
+    bpm: number;
+    ts: TimeSignature;
+    /** Per `${length}:${cut}`. */
+    events: Map<string, TimedEvent[]>;
+}
+const sectionCache = new WeakMap<Section, SectionCache>();
+const byTick = (a: TimedEvent, b: TimedEvent) => a.tick - b.tick;
+
+/**
+ * What section `sec` of `song` plays from its start for `length` ticks (`sectionEvents`, no offset), in
+ * tick order, cached on the section object: it's built again only when the section, the parts array,
+ * the key, scale, tempo or time signature is another one. An edit keeps the objects it doesn't change
+ * (`applySectionEdit`), so an edit in one section leaves every other section's events as they were.
+ */
+export function sectionEventsOf(song: FullSong, sec: Section, length: number, cut: boolean): TimedEvent[] {
+    let c = sectionCache.get(sec);
+    if (!c || c.parts !== song.parts || c.key !== song.key || c.scale !== song.scale || c.bpm !== song.bpm
+        || c.ts.beats !== song.timeSignature.beats || c.ts.unit !== song.timeSignature.unit) {
+        c = { parts: song.parts, key: song.key, scale: song.scale, bpm: song.bpm, ts: song.timeSignature, events: new Map() };
+        sectionCache.set(sec, c);
+    }
+    const k = `${length}:${cut}`;
+    let events = c.events.get(k);
+    if (!events) {
+        // a stable sort: events on the same tick keep the order sectionEvents gives them
+        events = sectionEvents(sectionView(song, sec.id), sec, length, 0, cut).sort(byTick);
+        c.events.set(k, events);
+    }
+    return events;
+}
+
+/** One chain slot's events for the sequencer: tick-sorted, in ticks from the slot's `start`. */
+export interface TimedSlot {
+    start: number;
+    events: TimedEvent[];
+}
+
+/**
+ * The whole chain as the sequencer plays it: one slot per chain slot, each its section's cached events
+ * (`sectionEventsOf`, cut at the slot's end) from the slot's start. Nothing is copied, so building it
+ * after an edit costs only the sections the edit changed.
+ */
+export function chainTimeline(song: FullSong, layout: ChainSlot[] = chainLayout(song)): { slots: TimedSlot[]; length: number } {
+    return {
+        slots: layout.map(slot => ({ start: slot.start, events: sectionEventsOf(song, slot.section, slot.len, true) })),
+        length: chainTicks(layout),
+    };
+}
+
+/** The whole chain as one list of events: each slot's section from its start, for its full length. */
 export function chainEvents(song: FullSong, layout: ChainSlot[] = chainLayout(song)): { events: TimedEvent[]; length: number } {
-    const views = new Map<string, Song>();
-    const events = layout.flatMap(slot => {
-        let view = views.get(slot.section.id);
-        if (!view) {
-            view = sectionView(song, slot.section.id);
-            views.set(slot.section.id, view);
-        }
-        return sectionEvents(view, slot.section, slot.len, slot.start);
-    });
-    return { events, length: chainTicks(layout) };
+    const { slots, length } = chainTimeline(song, layout);
+    return { events: slots.flatMap(s => s.events.map(e => ({ ...e, tick: e.tick + s.start }))), length };
 }

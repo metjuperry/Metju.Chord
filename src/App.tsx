@@ -38,7 +38,7 @@ import {
 import { PREVIEW_TAIL_BEATS, previewSound } from './preview';
 import { slideIn, useSegmentThumbs, zoomSection } from './motion';
 import type { ShapeOverrides } from './sound';
-import { Scheduled, chainEvents, kickTicks, sectionEvents, sectionLoopLength, sectionMusicEnd } from './playback';
+import { Scheduled, chainTimeline, kickTicks, sectionEventsOf, sectionLoopLength, sectionMusicEnd } from './playback';
 import SongView from './components/SongView';
 import SectionSwitcher from './components/SectionSwitcher';
 import VowelLane from './components/VowelLane';
@@ -47,7 +47,7 @@ import {
     Accidental, ChordPart, Harmony, MAX_PARTS, Note, Part, PartFx, PartKind, PartTone, noFx,
     fitNotes, pasteNotes, notesIn, replaceRange, hasInstrument, hasNotes, fitVowels, melodyMidi, voiceSettings, writesNotes, noteWriter, NotesPart, newPart, noteAt, noteMidi, partNotes, placeNote, removeNote, resolveClip, withAcc,
 } from './parts';
-import { SeqEvent, SeqOptions, SequencerPlayer, ticksToSeconds } from './audio/sequencer';
+import { SeqEvent, SeqEvents, SeqOptions, SequencerPlayer, ticksToSeconds } from './audio/sequencer';
 import { SyncOut, loadSync, saveSync, windowPulses } from './sync';
 import { liveStroke } from './strum';
 import {
@@ -662,10 +662,14 @@ const App: React.FC = () => {
     const [queued, setQueued] = useState<string | null>(null);
     /** Chain mode: the chain slot playing and the song tick, for the Song view. */
     const [chainPos, setChainPos] = useState<{ index: number; tick: number } | null>(null);
-    const scheduleCache = useRef<{ full: FullSong; mode: PlaybackMode; section: string; loop: boolean; result: { events: SeqEvent<Scheduled>[]; opts: SeqOptions } } | null>(null);
+    const scheduleCache = useRef<{ full: FullSong; mode: PlaybackMode; section: string; loop: boolean; result: { events: SeqEvents<Scheduled>; opts: SeqOptions } } | null>(null);
 
-    /** The music as timed events, and how it loops: the whole chain, or the section being looped. Cached per song edit. */
-    const schedule = (): { events: SeqEvent<Scheduled>[]; opts: SeqOptions } => {
+    /**
+     * The music as timed events, and how it loops: the whole chain, or the section being looped. Built
+     * again per song edit, from each section's cached events (`sectionEventsOf`), so only the sections
+     * an edit changed are worked out again.
+     */
+    const schedule = (): { events: SeqEvents<Scheduled>; opts: SeqOptions } => {
         const s = live.current;
         const t = transport.current;
         const c = scheduleCache.current;
@@ -673,13 +677,13 @@ const App: React.FC = () => {
         let result;
         if (t.mode === 'chain') {
             // each section from its start for its full length; drum patterns restart, notes are cut at its end
-            const { events, length } = chainEvents(s.full);
-            result = { events, opts: { loop: s.loop, loopEnd: length, end: length } };
+            const { slots, length } = chainTimeline(s.full);
+            result = { events: { slots }, opts: { loop: s.loop, loopEnd: length, end: length } };
         } else {
             const sec = findSection(s.full, t.section);
             const view = sectionView(s.full, sec.id);
             result = {
-                events: sectionEvents(view, sec, playLength(view, s.loop), 0, false),
+                events: sectionEventsOf(s.full, sec, playLength(view, s.loop), false),
                 opts: { loop: s.loop, loopEnd: sectionLoopLength(view), end: sectionMusicEnd(view) },
             };
         }
