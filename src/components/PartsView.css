@@ -14,6 +14,66 @@
     color: var(--muted);
 }
 
+/* ---- where edits go: the scope chip, and marks on what the open section sets its own way --------- */
+
+.scope-chip {
+    min-width: 0;
+    max-width: 150px;
+    display: inline-flex;
+    align-items: center;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+/* a section only: a yellow edge, like anything picked */
+.scope-chip.only {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.scope-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* a small dot in the control's own text colour (dark on a picked yellow button), top right */
+.own-dot {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    pointer-events: none;
+}
+
+:is(.segmented > button, .inst-tile, .bass-tile, .knob-tile, .pd-select > span):has(> .own-dot) {
+    position: relative;
+}
+
+.pd-select > span:has(> .own-dot) {
+    padding-right: 9px;
+}
+
+.pd-select .own-dot {
+    top: 0;
+    right: 0;
+}
+
+/* in the list: after the instrument's name */
+.pl-own {
+    position: static;
+    flex: 0 0 auto;
+    color: var(--text);
+}
+
+.pd-song-sound {
+    min-height: 30px;
+    font-weight: 700;
+}
+
 /* ---- the list ----------------------------------------------------------------------------------- */
 
 .parts-list {
@@ -32,6 +92,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 6px;
     min-height: 26px;
     padding: 0 2px;
 }
@@ -191,6 +252,13 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+}
+
+.pd-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
 }
 
 .pd-head {
@@ -540,6 +608,7 @@
     }
 
     .app.compact.mode-parts .parts-view {
+        grid-template-columns: 176px minmax(0, 1fr);
         flex: 1 1 auto;
         min-height: 0;
         align-items: stretch;
@@ -551,9 +620,90 @@
         min-height: 0;
     }
 
-    .part-detail {
+    .part-detail,
+    .pd-body {
         gap: 8px;
     }
+}
+
+/* phones: the part in sub-tabs (Sound · Shape · Effects) next to its name, one screen each */
+.app.compact .pd-tabs {
+    flex: 0 1 auto;
+}
+
+.app.compact .pd-tabs > button {
+    padding: 0 10px;
+}
+
+.app.compact .pd-song-sound {
+    padding: 0 10px;
+    white-space: nowrap;
+}
+
+.app.compact .part-detail.tabbed .pd-head {
+    flex-wrap: nowrap;
+}
+
+.app.compact .part-detail.tabbed .pd-name {
+    min-width: 0;
+    font-size: 17px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* the instruments as a wrapping grid: every one in sight, no sideways scroll */
+.app.compact .inst-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+    overflow: visible;
+    padding-bottom: 0;
+}
+
+.app.compact .inst-tile {
+    height: 44px;
+    gap: 3px;
+}
+
+/* Master on a phone: the three cards side by side, each name over its knobs, in one screen */
+.app.compact .master-detail .fx-space {
+    display: flex;
+    flex-wrap: wrap;
+}
+
+.app.compact .master-detail .fx-card {
+    flex: 1 1 150px;
+    align-items: flex-start;
+}
+
+.app.compact .master-detail .fx-card:nth-child(2) {
+    flex-basis: 210px;
+}
+
+.app.compact .master-detail .fx-card:nth-child(3) {
+    flex-basis: 90px;
+}
+
+.app.compact .master-detail .fx-card b {
+    flex: 1 0 100%;
+}
+
+.app.compact .master-detail :is(.fx-card-val, .master-note) {
+    display: none;
+}
+
+/* the list's head on a phone: the scope chip takes what "+ Part" leaves */
+.app.compact .pl-head .scope-chip {
+    flex: 1 1 auto;
+    max-width: none;
+    justify-content: center;
+    padding: 0 8px;
+}
+
+.app.compact .pl-head .add-part .chip-button {
+    width: 44px;
+    padding: 0;
+    font-size: 18px;
 }
 
 /* portrait phone: the list on top, the part under it */

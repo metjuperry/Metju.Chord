@@ -3,7 +3,7 @@ import {
     FullSong, SAVE_VERSION, SavedState, Song, defaultSettings, encodeShare, decodeShare, fromSingleSection, newFullSong, newSong, readFullSong, readSaved, stepsPerRow,
 } from './song';
 import {
-    addSection, appendToChain, applySectionEdit, chainLayout, playedTicks, changeSongTimeSignature, cleanSlate, deleteSection, duplicateEntry,
+    addSection, appendToChain, applySectionEdit, chainLayout, clearSectionSound, hasOwnSound, ownSoundKeys, playedTicks, changeSongTimeSignature, cleanSlate, deleteSection, duplicateEntry,
     duplicateSection, engineStrips, isCleanSlate, moveEntry, partStateIn, removeEntry, renameSection, sectionView, setSectionMute, slotAt, stripId,
 } from './sections';
 import { chainEvents, sectionEvents, sectionLoopLength } from './playback';
@@ -512,5 +512,42 @@ describe('Parts edits what Song has open: a section, or the whole song', () => {
         // volume clamps; an unknown instrument and a name don't stay; 8n is the song's own rate
         expect(back.sections[1].sound).toEqual({ [id]: { volume: 6 } });
         expect(readFullSong(JSON.parse(JSON.stringify(song)))!.sections[1].sound).toEqual(song.sections[1].sound);
+    });
+    it('lists what a section sets its own way, one entry per knob in effects, pan and shape', () => {
+        const base = twoSections();
+        const keys = keysIn(base, 's2');
+        const song = editKeys(base, 's2', 'section', {
+            instrument: 'pluck', playMode: 'Arp', fx: { ...keys.fx, reverb: 0.6 }, tone: { ...keys.tone, pan: 0.2 }, shape: { ...keys.shape, cutoff: 800 },
+        });
+        const id = keysId(song);
+        expect([...ownSoundKeys(song, 's2', id)].sort()).toEqual(['fx.reverb', 'instrument', 'playMode', 'shape.cutoff', 'tone.pan']);
+        expect(ownSoundKeys(song, 's1', id).size).toBe(0);
+        expect(ownSoundKeys(song, 'nope', id).size).toBe(0);
+        expect(ownSoundKeys(song, 's2', 'nope').size).toBe(0);
+        // a section that resets a shape knob the song has turned sets it too
+        let reset = editKeys(base, 's1', 'song', { shape: { attack: 0.3 } });
+        reset = editKeys(reset, 's2', 'section', { shape: {} });
+        expect([...ownSoundKeys(reset, 's2', id)]).toEqual(['shape.attack']);
+    });
+
+    it('"Use the song’s sound" takes back one part’s own sound in one section', () => {
+        let song = editKeys(twoSections(), 's2', 'section', { instrument: 'pluck', volume: -3 });
+        const id = keysId(song);
+        const bass = song.parts.find(p => p.kind === 'bass')!.id;
+        const view = sectionView(song, 's2');
+        song = applySectionEdit(song, 's2', { ...view, parts: view.parts.map(p => (p.id === bass ? { ...p, volume: -9 } : p)) });
+        expect(hasOwnSound(song.sections[1])).toBe(true);
+        const back = clearSectionSound(song, 's2', id);
+        expect(back.sections[1].sound).toEqual({ [bass]: { volume: -9 } });
+        expect(keysIn(back, 's2')).toEqual(keysIn(back, 's1'));
+        expect(back.sections[0]).toBe(song.sections[0]);
+        expect(back.parts).toBe(song.parts);
+        // the last part with its own sound: the section has none left, and the field goes
+        const none = clearSectionSound(back, 's2', bass);
+        expect('sound' in none.sections[1]).toBe(false);
+        expect(hasOwnSound(none.sections[1])).toBe(false);
+        // nothing to take back: the same song (not an undo step)
+        expect(clearSectionSound(none, 's2', id)).toBe(none);
+        expect(clearSectionSound(none, 'nope', id)).toBe(none);
     });
 });

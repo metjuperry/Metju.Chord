@@ -33,7 +33,7 @@ import {
 import {
     ChainSlot, addSection, appendToChain, applySectionEdit, chainCount, chainLayout, changeSongTimeSignature, cleanSlate, deleteSection,
     duplicateEntry, duplicateSection, engineStrips, findSection, isCleanSlate, moveEntry, removeEntry, renameSection, sectionView, setSectionMute, slotAt,
-    SoundScope, stripId,
+    SoundScope, clearSectionSound, ownSoundKeys, stripId,
 } from './sections';
 import { PREVIEW_TAIL_BEATS, previewSound } from './preview';
 import { slideIn, useSegmentThumbs, zoomSection } from './motion';
@@ -219,6 +219,7 @@ const App: React.FC = () => {
     const [chordMoodOn, setChordMoodOn] = useState(initial.chordMood);
     const [soundPreview, setSoundPreview] = useState(initial.soundPreview);
     const [shapeView, setShapeView] = useState(initial.shapeView);
+    const [partsTab, setPartsTab] = useState(initial.partsTab);
     /** Sync out for a Pocket Operator: this device's setting, not the song's (sync.ts). */
     const [syncOut, setSyncOutState] = useState<SyncOut>(loadSync);
     const setSyncOut = (patch: Partial<SyncOut>) => setSyncOutState(s => {
@@ -1183,7 +1184,7 @@ const App: React.FC = () => {
     const snapshot = (): SavedState => ({
         version: SAVE_VERSION,
         song: full,
-        settings: { voiceLeading, octave, inversion, loop, theme, nextHint, padPart: padPartId, clickAccent, openSection: openKey, playMode, learnTab, chordMood: chordMoodOn, soundPreview, shapeView },
+        settings: { voiceLeading, octave, inversion, loop, theme, nextHint, padPart: padPartId, clickAccent, openSection: openKey, playMode, learnTab, chordMood: chordMoodOn, soundPreview, shapeView, partsTab },
     });
 
     // Autosave a moment after any change
@@ -1197,7 +1198,7 @@ const App: React.FC = () => {
         }, 400);
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [full, voiceLeading, octave, inversion, loop, theme, nextHint, padPartId, clickAccent, openKey, playMode, learnTab, chordMoodOn, soundPreview, shapeView]);
+    }, [full, voiceLeading, octave, inversion, loop, theme, nextHint, padPartId, clickAccent, openKey, playMode, learnTab, chordMoodOn, soundPreview, shapeView, partsTab]);
 
     /** Replace the song (undoable) and take over its saved settings. */
     const loadState = (state: SavedState, message: string) => {
@@ -1916,6 +1917,9 @@ const App: React.FC = () => {
             }}
             shapeView={shapeView}
             onShapeView={setShapeView}
+            compact={compact}
+            tab={partsTab}
+            onTab={setPartsTab}
             scope={scopeOf}
             onShapeReset={id => {
                 shapeActions.reset(id);
@@ -1935,6 +1939,14 @@ const App: React.FC = () => {
             }}
             onRemove={partActions.remove}
             canRemove={partActions.canRemove}
+            scopeName={openSec.name}
+            sectionOnly={soundScope === 'section'}
+            onScope={() => setSongZoom(z => (z === 'section' ? 'song' : 'section'))}
+            own={soundScope === 'section' ? Object.fromEntries(full.parts.map(p => [p.id, ownSoundKeys(full, openKey, p.id)])) : null}
+            onUseSongSound={id => {
+                editFull(f => clearSectionSound(f, openKey, id));
+                hearPart(id);
+            }}
             onOpenBeat={id => {
                 pickLane(id);
                 setSongZoom('section');

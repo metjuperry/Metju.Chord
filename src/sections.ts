@@ -193,6 +193,47 @@ export function applySectionEdit(song: FullSong, id: string, view: Song, scope: 
     };
 }
 
+// ---- a section's own sound: what it sets differently, and taking it back ---------------------------
+
+/** Does section `sec` sound any part its own way? (The Song overview marks its tile.) */
+export const hasOwnSound = (sec: Section): boolean => !!sec.sound && Object.values(sec.sound).some(own => Object.keys(own).length > 0);
+
+/**
+ * What section `id` sets differently from the song for part `partId`, as keys: a plain setting by its
+ * name ('instrument', 'playMode', 'vowel'…), an entry of effects, pan or shape as 'fx.reverb',
+ * 'tone.pan', 'shape.cutoff'. Parts marks these while that section is open.
+ */
+export function ownSoundKeys(song: FullSong, id: string, partId: string): Set<string> {
+    const out = new Set<string>();
+    const own = song.sections.find(s => s.id === id)?.sound?.[partId];
+    const part = song.parts.find(p => p.id === partId);
+    if (!own || !part) return out;
+    for (const [k, mine] of Object.entries(own)) {
+        const theirs = rec(part)[k];
+        if (sameValue(mine, theirs)) continue;
+        if (mine !== null && typeof mine === 'object' && !Array.isArray(mine)) {
+            const a = mine as Rec;
+            const b = (theirs ?? {}) as Rec;
+            for (const e of new Set([...Object.keys(a), ...Object.keys(b)])) {
+                if (a[e] !== b[e]) out.add(`${k}.${e}`);
+            }
+        } else {
+            out.add(k);
+        }
+    }
+    return out;
+}
+
+/** "Use the song's sound": part `partId` sounds the song's way again in section `id` (its own sound there goes). */
+export function clearSectionSound(song: FullSong, id: string, partId: string): FullSong {
+    const sec = song.sections.find(s => s.id === id);
+    if (!sec?.sound || !(partId in sec.sound)) return song;
+    const { [partId]: _gone, ...rest } = sec.sound;
+    const { sound: _old, ...bare } = sec;
+    const next: Section = Object.keys(rest).length ? { ...bare, sound: rest } : bare;
+    return { ...song, sections: song.sections.map(s => (s === sec ? next : s)) };
+}
+
 // ---- the engine strips: one per part, and one more for each section that sounds its own way ----------
 
 /** The engine strip a part plays through in section `sec`: its own when the section changes how the part sounds. */

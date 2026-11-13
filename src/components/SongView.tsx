@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import './SongView.css';
 import { MenuAnchor, MenuItem, PopMenu, useLongPress } from './PopMenu';
-import { ChainSlot, PartState, chainCount, chainLayout, partStateIn, sectionBars } from '../sections';
+import { ChainSlot, PartState, chainCount, chainLayout, hasOwnSound, partStateIn, sectionBars } from '../sections';
 import { FullSong, MAX_CHAIN, MAX_SECTIONS, PlaybackMode, Section } from '../song';
 import { isChordClip } from '../progression';
 import { resolveClip } from '../parts';
@@ -35,7 +35,8 @@ interface SongViewProps {
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 /** Px per bar for chain blocks, and the narrowest block. */
 const BAR_PX = 24;
-const MIN_BLOCK = 58;
+/** About eight characters of a section name. */
+const MIN_BLOCK = 84;
 
 /**
  * One line of chord chips: as many as fit, then a dark "+N" chip. Widths are measured, not estimated:
@@ -101,11 +102,12 @@ const SectionTile: React.FC<{
     const bars = sectionBars(song.timeSignature, section);
     const states: { color: string; state: PartState; name: string }[] = song.parts.map(p => ({ color: p.color, state: partStateIn(song, section, p), name: p.name }));
     const playsLabel = states.filter(s => s.state === 'plays').map(s => s.name).join(', ') || 'nothing';
+    const own = hasOwnSound(section);
     return (
         <div className={`sec-tile ${open ? 'open' : ''} ${tag === 'playing' ? 'playing' : ''}`} data-section={section.id}>
             <button
                 className="sec-main"
-                aria-label={`Open ${section.name}, ${plural(bars, 'bar')}, ${chords.length ? `chords ${chords.join(' ')}` : 'no chords'}; playing: ${playsLabel}${tag === 'playing' ? '. Playing now' : tag === 'next' ? '. Next' : ''}. Long-press for options`}
+                aria-label={`Open ${section.name}, ${plural(bars, 'bar')}, ${chords.length ? `chords ${chords.join(' ')}` : 'no chords'}; playing: ${playsLabel}${own ? '; has its own sound' : ''}${tag === 'playing' ? '. Playing now' : tag === 'next' ? '. Next' : ''}. Long-press for options`}
                 {...press.handlers}
                 onClick={() => {
                     if (!press.wasLongPress()) onOpen();
@@ -114,6 +116,7 @@ const SectionTile: React.FC<{
                 <span className="sec-top">
                     <span className="sec-badge">{section.letter}</span>
                     <span className="sec-name">{section.name}</span>
+                    {own && <span className="sec-own" title="Sounds its own way: set in Parts while this section is open" aria-hidden="true">own sound</span>}
                 </span>
                 <ChipLine labels={chords} />
                 <span className="sec-foot">
@@ -141,21 +144,31 @@ const ChainBlock: React.FC<{
 }> = ({ slot, open, state, progress, onPick, onMenu }) => {
     const press = useLongPress(onMenu);
     return (
-        <button
-            className={`chain-block ${open ? 'open' : ''} ${state ?? ''}`}
-            style={{ flexBasis: Math.max(MIN_BLOCK, slot.bars * BAR_PX) }}
-            aria-label={`${slot.section.name} from bar ${slot.startBar}${state === 'playing' ? ', playing' : ''}. Long-press to move, duplicate or remove`}
-            aria-current={state === 'playing' ? 'step' : undefined}
-            data-index={slot.index}
-            {...press.handlers}
-            onClick={() => {
-                if (!press.wasLongPress()) onPick();
-            }}
-        >
-            <span className="cb-bar">{slot.startBar}</span>
-            <span className="cb-name">{slot.section.name}</span>
-            {state === 'playing' && <span className="cb-head" style={{ left: `${progress * 100}%` }} aria-hidden="true" />}
-        </button>
+        <div className={`chain-slot ${open ? 'open' : ''} ${state ?? ''}`}>
+            <button
+                className={`chain-block ${open ? 'open' : ''} ${state ?? ''}`}
+                style={{ flexBasis: Math.max(MIN_BLOCK, slot.bars * BAR_PX) }}
+                aria-label={`${slot.section.name} from bar ${slot.startBar}${state === 'playing' ? ', playing' : ''}. Long-press or ⋯ to move, duplicate or remove`}
+                aria-current={state === 'playing' ? 'step' : undefined}
+                data-index={slot.index}
+                {...press.handlers}
+                onClick={() => {
+                    if (!press.wasLongPress()) onPick();
+                }}
+            >
+                <span className="cb-bar">{slot.startBar}</span>
+                <span className="cb-name">{slot.section.name}</span>
+                {state === 'playing' && <span className="cb-head" style={{ left: `${progress * 100}%` }} aria-hidden="true" />}
+            </button>
+            <button
+                className="cb-more"
+                aria-label={`${slot.section.name} from bar ${slot.startBar}: options`}
+                aria-haspopup="menu"
+                onClick={e => onMenu({ rect: e.currentTarget.getBoundingClientRect() })}
+            >
+                ⋯
+            </button>
+        </div>
     );
 };
 
@@ -280,7 +293,7 @@ const SongView: React.FC<SongViewProps> = p => {
 
             <div className="sv-label">
                 <span className="pd-label">Chain</span>
-                <span className="section-note sv-hint">{chainPlaying ? 'tap a block to jump there' : 'tap a block to open its section · long-press to move · + adds the open section'}</span>
+                <span className="section-note sv-hint">{chainPlaying ? 'tap a block to jump there' : 'tap a block to open its section · ⋯ to move · + adds the open section'}</span>
             </div>
             <div className="chain-row" ref={chainRow}>
                 {layout.map(slot => {
