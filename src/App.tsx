@@ -1761,6 +1761,7 @@ const App: React.FC = () => {
     );
     // Phones: the same entries inside a section's "⋯" menu (the header there is one row)
     const songItems: MenuItem[] = [
+        ...(ownSongKept ? [{ label: 'Back to my song', note: 'from before the link', onSelect: restoreOwnSong }] : []),
         { label: 'New song', hint: 'undoable', onSelect: songActions.new },
         { label: 'Open file…', onSelect: () => songFile.current?.click() },
         { label: 'Save to file', onSelect: songActions.save },
