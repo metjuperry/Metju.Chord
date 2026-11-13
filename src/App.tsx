@@ -82,14 +82,26 @@ const MELODY_OCT_MIN = 3;
 const MELODY_OCT_MAX = 5;
 const MAX_INVERSION = 3;
 
+/** Everything a strip's engine settings come from (objects by identity): when none of it changed, the strip needs no engine call. */
+const stripInputs = (p: Part): unknown[] => (hasInstrument(p)
+    ? [p.instrument, p.volume, p.fx, p.tone, p.shape, ...(p.kind === 'voice' ? [p.singers, p.range, p.vowel, p.vibrato, p.breath] : [])]
+    : [p.volume, p.fx]);
+
 /**
  * Keep the engine's strips in step with the parts: an instrument per instrument part, a kit per drum
- * part, and one more for each section that changes how a part sounds (`engineStrips`).
+ * part, and one more for each section that changes how a part sounds (`engineStrips`). `applied` holds
+ * what each strip was last given, so a song edit only touches the strips whose sound it changed (a
+ * section strip's part is a fresh object every time, so this compares what goes into the engine).
  */
-function syncParts(engine: ReturnType<typeof getEngine>, strips: { id: string; part: Part }[]) {
-    strips.forEach(({ id, part: p }) => (hasInstrument(p)
-        ? engine.setTrack(id, { instrument: p.instrument, volume: p.volume, fx: p.fx, tone: p.tone, shape: p.shape, voice: p.kind === 'voice' ? voiceSettings(p) : undefined })
-        : engine.setDrumTrack(id, { volume: p.volume, fx: p.fx })));
+function syncParts(engine: ReturnType<typeof getEngine>, strips: { id: string; part: Part }[], applied: Map<string, unknown[]>) {
+    strips.forEach(({ id, part: p }) => {
+        const inputs = stripInputs(p);
+        const last = applied.get(id);
+        if (last && last.length === inputs.length && last.every((v, i) => v === inputs[i])) return;
+        applied.set(id, inputs);
+        if (hasInstrument(p)) engine.setTrack(id, { instrument: p.instrument, volume: p.volume, fx: p.fx, tone: p.tone, shape: p.shape, voice: p.kind === 'voice' ? voiceSettings(p) : undefined });
+        else engine.setDrumTrack(id, { volume: p.volume, fx: p.fx });
+    });
 }
 
 /** How far a section plays on its own (Loop mode) before it wraps, or stops when loop is off. */
@@ -403,12 +415,15 @@ const App: React.FC = () => {
 
     // ---- audio start --------------------------------------------------------------
 
+    /** What each engine strip was last given (`syncParts`). */
+    const appliedStrips = useRef(new Map<string, unknown[]>());
+
     const startAudio = async () => {
         if (audioReady) return;
         await Tone.start();
         const engine = getEngine(); // built on first use, after the user gesture
         engine.setBpm(transportBpm(bpm, ts));
-        syncParts(engine, engineStrips(full));
+        syncParts(engine, engineStrips(full), appliedStrips.current);
         engine.selectTrack(trackOf(padPart.id));
         setAudioReady(true);
     };
@@ -433,10 +448,12 @@ const App: React.FC = () => {
     useEffect(() => {
         if (!audioReady) return;
         const engine = getEngine();
-        syncParts(engine, strips);
+        syncParts(engine, strips, appliedStrips.current);
         const ids = new Set(strips.map(x => x.id));
         engineParts.current.forEach(id => {
-            if (!ids.has(id)) engine.removeTrack(id);
+            if (ids.has(id)) return;
+            engine.removeTrack(id);
+            appliedStrips.current.delete(id);
         });
         engineParts.current = ids;
     }, [strips, audioReady]);
