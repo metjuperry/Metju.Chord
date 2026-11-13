@@ -7,9 +7,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test-and-build:
+  checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,8 +28,43 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Type check
+        run: npx tsc --noEmit -p . && npx tsc -p e2e
+
+      - name: Lint
+        run: npm run lint
+
       - name: Test
         run: npm test
 
       - name: Build
         run: npm run build
+
+      # Chromium for `npm run levels` and `npm run e2e`: Playwright's own build, cached between runs.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Levels (instruments render at matching loudness)
+        run: |
+          export CHROMIUM_PATH="$(node -p "require('playwright-core').chromium.executablePath()")"
+          npm run levels
+
+      - name: Browser tests
+        run: npm run e2e
+
+      - name: Upload failure artifacts (screenshots, traces, report)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failures
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
