@@ -836,3 +836,158 @@
         flex-wrap: wrap;
     }
 }
+
+/* ---- phones: a lane's editor full height --------------------------------------------------------
+   Picking a note, drum or voice lane on compact replaces the lane list with that lane's editor: the
+   lane bar ("‹ Lanes", the name, the chord row as read-only chips) stays put on top, the editor scrolls
+   up and down inside the panel, and the page itself doesn't scroll (App adds .lane-focus-on). */
+.app.compact.lane-focus-on {
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+}
+
+.app.compact .progression.lane-focus {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 4px 12px 6px;
+    overflow: hidden;
+}
+
+.lane-focus .focus-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.lane-focus .focus-body > * {
+    flex-shrink: 0;
+}
+
+/* the editors' own rule and gap above them aren't needed under the lane bar */
+.lane-focus :is(.part-editor, .drum-editor) {
+    border-top: 0;
+    padding-top: 0;
+}
+
+/* each editor's tools stay in view while its grid scrolls under them */
+.lane-focus :is(.part-head, .drum-head) {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    background: var(--panel);
+}
+
+.lane-focus .vowel-lane {
+    border-top: 1px solid var(--line);
+    padding-top: 8px;
+}
+
+.lane-focus .focus-body > .vowel-lane:first-child {
+    border-top: 0;
+    padding-top: 0;
+}
+
+/* the lane bar names the part already */
+.lane-focus :is(.melody-editor > .part-head, .drum-head) > .sel-label {
+    display: none;
+}
+
+.app.compact .lane-focus .dock {
+    margin: 0 -12px -6px;
+}
+
+.lane-bar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+}
+
+.lane-back {
+    flex: none;
+    white-space: nowrap;
+}
+
+.lane-bar-name {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.lane-bar-name .track-dot {
+    background: var(--track);
+}
+
+.chord-strip {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 32px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+    overflow: hidden;
+}
+
+.strip-bar {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--line);
+}
+
+.strip-chip {
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    padding: 0 6px;
+    border-left: 2px solid var(--accent);
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    color: var(--text);
+    font-family: var(--font-display);
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.strip-chip.rest {
+    border-left-color: var(--line);
+    background: none;
+}
+
+.strip-chip.here {
+    background: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+.chord-strip .strip-head::before {
+    top: 0;
+}
+
+/* narrow phones: the name gives its room to the chords (the dot stays) */
+@media (max-width: 720px) {
+    .lane-bar-name {
+        font-size: 0;
+        gap: 0;
+    }
+}

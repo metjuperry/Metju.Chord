@@ -54,7 +54,7 @@ import {
     DrumPattern, DrumVoice, PatternBars, TICKS_PER_SIXTEENTH, emptyPattern, hasHit, presetsFor, setBars,
     sixteenthsPerBar, sixteenthsPerStep, toggleHit,
 } from './drums';
-import { CHORD_LANE, MiniNote, PartPatch } from './components/Progression';
+import { CHORD_LANE, LaneBar, MiniNote, PartPatch } from './components/Progression';
 // last, so its compact sizes come after every component's own stylesheet
 import './touch.css';
 
@@ -319,8 +319,11 @@ const App: React.FC = () => {
     const [melCursor, setMelCursor] = useState(0);
     /** The melody note selected in the grid (its part and start tick: one note at a time, so that's unique). */
     const [selNoteKey, setSelNoteKey] = useState<{ part: string; start: number } | null>(null);
+    /** Phones: back on the lane list with a note, drum or voice lane still picked ("‹ Lanes"); picking a lane opens its editor again. */
+    const [laneList, setLaneList] = useState(false);
     const pickLane = (lane: string) => {
         setSelectedLane(lane);
+        setLaneList(false);
         const kind = parts.find(p => p.id === lane)?.kind;
         if (kind) setPartsSel(lane);
         // the pads follow what you're editing: notes for a melody, chords for the chord row or a chord part
@@ -1770,8 +1773,42 @@ const App: React.FC = () => {
         { label: 'Paste from Hooktheory…', onSelect: () => setHtOpen(true) },
         { label: 'Clear all', hint: 'undoable', danger: true, disabled: isCleanSlate(full), onSelect: edit.clearAll },
     ];
+    // Phones: a note, drum or voice lane's editor fills the section in place of the lane list
+    const focusKind = selPart?.kind === 'melody' || selPart?.kind === 'drums' || selPart?.kind === 'voice';
+    const laneFocus = compact && focusKind && !laneList && mode === 'song' && songZoom === 'section';
+    const laneBar = laneFocus && selPart ? (
+        <LaneBar
+            name={selPart.name}
+            color={selPart.color}
+            chords={chords.map(c => ({ ...c, start: c.start / T, len: c.len / T }))}
+            total={total}
+            beatsPerBar={ts.beats}
+            playhead={playhead}
+            playing={playing}
+            describe={describe}
+            onBack={() => {
+                setLaneList(true);
+                // back on the list, the focus goes to the lane it came from
+                requestAnimationFrame(() => document.querySelector<HTMLElement>('.lane-pick[aria-pressed="true"]')?.focus({ preventScroll: true }));
+            }}
+        />
+    ) : undefined;
+    const vowelLane = selPart?.kind === 'voice' ? (
+        <VowelLane
+            part={selPart}
+            chords={chords}
+            totalSteps={total}
+            stepsPerRow={rowSteps}
+            stepTicks={T}
+            beatsPerBar={ts.beats}
+            playStep={playSixteenth >= 0 ? Math.floor(playSixteenth / sixteenthsPerStep(ts)) : -1}
+            onChange={vowels => setParts(ps => ps.map(p => (p.id === selPart.id && p.kind === 'voice' ? { ...p, vowels } : p)))}
+        />
+    ) : null;
     const progressionEl = (
         <Progression
+            focus={laneFocus}
+            laneBar={laneBar}
             compact={compact}
             songItems={songItems}
             total={total}
@@ -1788,22 +1825,15 @@ const App: React.FC = () => {
             sixteenthsPerBar={sixteenthsPerBar(ts)}
             loopSteps={loop ? sectionLoopLength(song) / T : total}
             recordInto={notesOn ? padMelody!.name : undefined}
-            partEditor={selPart?.kind === 'voice' ? (
-                <>
-                    {partEditor}
-                    <VowelLane
-                        part={selPart}
-                        chords={chords}
-                        totalSteps={total}
-                        stepsPerRow={rowSteps}
-                        stepTicks={T}
-                        beatsPerBar={ts.beats}
-                        playStep={playSixteenth >= 0 ? Math.floor(playSixteenth / sixteenthsPerStep(ts)) : -1}
-                        onChange={vowels => setParts(ps => ps.map(p => (p.id === selPart.id && p.kind === 'voice' ? { ...p, vowels } : p)))}
-                    />
-                </>
-            ) : partEditor}
-            partDock={noteDock}
+            partEditor={
+                // on a phone's lane list (after "‹ Lanes") a note, drum or voice lane's editor stays closed
+                compact && focusKind && !laneFocus ? undefined
+                    : vowelLane ? (
+                        // a voice that sings the chord row has no notes to write: in the full-height view only its vowels show
+                        <>{laneFocus && !melodyPart ? null : partEditor}{vowelLane}</>
+                    ) : partEditor
+            }
+            partDock={compact && focusKind && !laneFocus ? undefined : noteDock}
             selected={selected}
             playhead={playhead}
             playing={playing}
@@ -1988,7 +2018,7 @@ const App: React.FC = () => {
     const rightTab: 'song' | 'parts' = mode === 'parts' ? 'parts' : 'song';
     const deskTabs = (['song', 'parts'] as const).map(t => ({ id: t, label: t === 'song' ? 'Song' : 'Parts' }));
     return (<>
-        <div className={`app ${compact ? 'compact' : 'wide desk'} mode-${mode} ${entering}`}>
+        <div className={`app ${compact ? 'compact' : 'wide desk'} mode-${mode} ${laneFocus ? 'lane-focus-on' : ''} ${entering}`}>
             <TopBar
                 compact={compact}
                 modes={compact ? undefined : []}

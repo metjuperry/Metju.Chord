@@ -90,7 +90,7 @@ Metju.Chord can be the clock for a Teenage Engineering Pocket Operator (or anyth
 ### On a computer and on a phone
 
 - **Computer**: the instrument stays on the left and in view; the right side has **Song | Parts** tabs. Below ~1280 px the pads go under the stick. Everything has a keyboard shortcut (see How to play in ⚙).
-- **Phone** (held sideways): one mode at a time from the top bar, which is one row and stays put while the page scrolls, so Play, Stop, Record and undo are always in reach. A section's header is one row too: its length, time signature and the Song menu are behind **⋯**. Every control is at least 44 px to hit. Play mode fits without scrolling (stick left, pads right). Quick repeated taps never select text.
+- **Phone** (held sideways): one mode at a time from the top bar, which is one row and stays put while the page scrolls, so Play, Stop, Record and undo are always in reach. A section's header is one row too: its length, time signature and the Song menu are behind **⋯**. Picking a Melody, Drums or Voice lane opens its editor full height in place of the lane list, with the section's chords in a strip on top and **‹ Lanes** to go back, so editing a part is one screen that scrolls inside itself, not a long page (a Voice that sings the chord row shows just its Vowels). Every control is at least 44 px to hit. Play mode fits without scrolling (stick left, pads right). Quick repeated taps never select text.
 - **Install it**: in Safari, Share → Add to Home Screen. It opens full screen, works **offline** (samples included) and keeps the screen awake while you play. A new version is picked up the next time it opens with a connection, never in the middle of a jam.
 
 ---

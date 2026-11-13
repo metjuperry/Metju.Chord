@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import './Progression.css';
 import './SongMenu.css';
 import { Clip, clipAt, clipEnd } from '../progression';
@@ -87,6 +87,13 @@ interface ProgressionProps {
     onSectionMute?: (partId: string, muted: boolean) => void;
     /** Shown in the chord toolbar when the section is in the chain more than once. */
     repeatNote?: string;
+    /**
+     * Phones, a note, drum or voice lane picked: its editor fills the section instead of the lane list
+     * (the editor carries the `LaneBar` with "‹ Lanes" and the chord strip).
+     */
+    focus?: boolean;
+    /** The `LaneBar` over the full-height editor. */
+    laneBar?: React.ReactNode;
 }
 
 const steps = (n: number) => (n === 1 ? '1 step' : `${n} steps`);
@@ -354,6 +361,16 @@ const Progression: React.FC<ProgressionProps> = props => {
         );
     };
 
+    if (props.focus && selPart) {
+        return (
+            <section className="panel progression lane-focus" aria-label={`${selPart.name} in ${props.sectionName ?? 'the section'}`}>
+                {props.laneBar}
+                <div className="focus-body">{props.partEditor}</div>
+                {props.partDock}
+            </section>
+        );
+    }
+
     return (
         <section className="panel progression" aria-label="Sequencer">
             <div className="prog-head">
@@ -465,6 +482,51 @@ const Progression: React.FC<ProgressionProps> = props => {
                 </div>
             )}
         </section>
+    );
+};
+
+/**
+ * The top of a lane's full-height editor on phones: "‹ Lanes" back to the lane list, the part's name,
+ * and the section's chord row as read-only chips across its steps, with the playhead.
+ */
+export const LaneBar: React.FC<{
+    name: string;
+    color: string;
+    /** The chord row, with positions and lengths in steps. */
+    chords: Clip[];
+    total: number;
+    beatsPerBar: number;
+    /** Step under the playhead, or -1. */
+    playhead: number;
+    playing: boolean;
+    describe: (clip: Clip) => { symbol: string; numeral: string };
+    onBack: () => void;
+}> = p => {
+    const pct = (steps: number) => `${(steps / p.total) * 100}%`;
+    const back = useRef<HTMLButtonElement>(null);
+    useEffect(() => {
+        // opened from the keyboard: the lane button that had the focus is gone, so the focus comes here
+        if (!document.activeElement || document.activeElement === document.body) back.current?.focus({ preventScroll: true });
+    }, []);
+    return (
+        <div className="lane-bar" style={{ '--track': p.color } as React.CSSProperties}>
+            <button ref={back} className="chip-button lane-back" title="Back to the lane list" onClick={p.onBack}>‹ Lanes</button>
+            <span className="lane-bar-name"><span className="track-dot" />{p.name}</span>
+            <div className="chord-strip" role="img" aria-label={`Chords: ${p.chords.filter(c => !c.rest).map(c => p.describe(c).symbol).join(', ') || 'none yet'}`}>
+                {Array.from({ length: Math.floor((p.total - 1) / p.beatsPerBar) }, (_, i) => (
+                    <i key={i} className="strip-bar" style={{ left: pct((i + 1) * p.beatsPerBar) }} />
+                ))}
+                {p.chords.map(c => (
+                    <span key={c.start} className={`strip-chip ${c.rest ? 'rest' : ''} ${p.playing && p.playhead >= c.start && p.playhead < clipEnd(c) ? 'here' : ''}`} style={{ left: pct(c.start), width: pct(c.len) }}>
+                        {c.rest ? '' : p.describe(c).symbol}
+                    </span>
+                ))}
+                {p.playing && p.playhead >= 0 && (
+                    // App writes the exact position (--pp, in steps) on every .playhead each frame while playing
+                    <span className="playhead strip-head" style={{ '--step': p.playhead, left: `calc(var(--pp, var(--step)) / ${p.total} * 100%)` } as React.CSSProperties} />
+                )}
+            </div>
+        </div>
     );
 };
 
