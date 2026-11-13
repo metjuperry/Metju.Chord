@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { newSong, defaultSettings, fromSingleSection, readSaved, readSong, readSettings, encodeShare, decodeShare, SAVE_VERSION, SavedState, ticksPerStep,
+import { newSong, defaultSettings, chordLengthSteps, fromSingleSection, readSaved, readSong, readSettings, encodeShare, decodeShare, SAVE_VERSION, SavedState, ticksPerStep,
     changeTimeSignature, stepsPerRow, transportBpm, isCompound, ticksPerBar } from './song';
 import { TICKS_PER_STEP as S } from './progression';
 import { newPart } from './parts';
@@ -251,6 +251,24 @@ describe('next-chord hint setting', () => {
     });
 });
 
+describe('chord length setting', () => {
+    it('is a bar by default, keeps 1 and 2 beats, and repairs anything else', () => {
+        expect(defaultSettings().chordLength).toBe('bar');
+        expect(readSettings({}).chordLength).toBe('bar');
+        expect(readSettings({ chordLength: 1 }).chordLength).toBe(1);
+        expect(readSettings({ chordLength: 2 }).chordLength).toBe(2);
+        expect(readSettings({ chordLength: 'bar' }).chordLength).toBe('bar');
+        for (const bad of [3, 0, '2', 'beat', null, 1.5]) expect(readSettings({ chordLength: bad }).chordLength).toBe('bar');
+    });
+
+    it('a bar is the time signature\'s beats', () => {
+        expect(chordLengthSteps('bar', { beats: 4, unit: 4 })).toBe(4);
+        expect(chordLengthSteps('bar', { beats: 3, unit: 4 })).toBe(3);
+        expect(chordLengthSteps('bar', { beats: 6, unit: 8 })).toBe(6);
+        expect(chordLengthSteps(2, { beats: 6, unit: 8 })).toBe(2);
+    });
+});
+
 describe('settings from the UI overhaul', () => {
     it('reads the auto theme and rejects unknown ones', () => {
         expect(readSettings({ theme: 'auto' }).theme).toBe('auto');
@@ -260,7 +278,7 @@ describe('settings from the UI overhaul', () => {
 
     it('keeps the pads part and the click accent, with defaults for older saves', () => {
         const old = { voiceLeading: true, octave: 3, inversion: 1, loop: false, theme: 'light', nextHint: false };
-        expect(readSettings(old)).toEqual({ ...old, padPart: '', clickAccent: true, openSection: '', playMode: 'loop', learnTab: 'progressions', chordMood: false, soundPreview: true, shapeView: 'simple', partsTab: 'sound' });
+        expect(readSettings(old)).toEqual({ ...old, padPart: '', clickAccent: true, openSection: '', playMode: 'loop', learnTab: 'progressions', chordMood: false, soundPreview: true, shapeView: 'simple', partsTab: 'sound', chordLength: 'bar' });
         expect(readSettings({ padPart: 'p4', clickAccent: false })).toMatchObject({ padPart: 'p4', clickAccent: false });
         expect(readSettings({ padPart: 7 }).padPart).toBe('');
     });

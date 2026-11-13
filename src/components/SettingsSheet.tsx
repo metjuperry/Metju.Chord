@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import './SettingsSheet.css';
 import { GearIcon } from './TopBar';
 import { useDialog } from './useDialog';
-import type { ThemeSetting } from '../song';
+import { CHORD_LENGTHS, ChordLength, ThemeSetting } from '../song';
 import { PULSE_LENGTHS, SYNC_OFFSET_MAX, SYNC_OFFSET_STEP, SyncOut } from '../sync';
 
 interface SettingsSheetProps {
@@ -22,6 +22,8 @@ interface SettingsSheetProps {
     onChordMood: (on: boolean) => void;
     soundPreview: boolean;
     onSoundPreview: (on: boolean) => void;
+    chordLength: ChordLength;
+    onChordLength: (length: ChordLength) => void;
     sync: SyncOut;
     onSync: (patch: Partial<SyncOut>) => void;
     /** The tempo the PO should be set to (quarter notes per minute, as the PO counts). */
@@ -88,6 +90,18 @@ const SettingsSheet: React.FC<SettingsSheetProps> = p => {
                 <Toggle label="Next chords on the screen" desc="after each chord, the ones that often follow it in this key" on={p.nextHint} onChange={p.onNextHint} />
                 <Toggle label="Chord mood in Play mode" desc="a word for how the chord tends to feel, next to its type (i · 9th · bittersweet)" on={p.chordMood} onChange={p.onChordMood} />
                 <Toggle label="Hear sound changes" desc="while the song is stopped, changing a part in Parts plays the key's root on it, on the beat" on={p.soundPreview} onChange={p.onSoundPreview} />
+
+                <div className="ss-row">
+                    <span className="ss-text">
+                        <span className="ss-title" id="ss-chord-length">Chord length</span>
+                        <span className="section-note">how long a chord is when you record it or place it from the chord toolbar</span>
+                    </span>
+                    <div className="segmented" role="group" aria-labelledby="ss-chord-length">
+                        {CHORD_LENGTHS.map(l => (
+                            <button key={l.id} aria-pressed={p.chordLength === l.id} onClick={() => p.onChordLength(l.id)}>{l.label}</button>
+                        ))}
+                    </div>
+                </div>
 
                 <div className="ss-rule" />
 

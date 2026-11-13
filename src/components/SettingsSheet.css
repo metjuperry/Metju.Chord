@@ -85,6 +85,7 @@
 
 .ss-row .segmented > button {
     min-height: 30px;
+    white-space: nowrap;
 }
 
 .ss-rule {

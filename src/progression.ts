@@ -70,11 +70,24 @@ export function remove(clips: Clip[], clip: Clip): Clip[] {
     return clips.filter(c => c !== clip);
 }
 
-/** Change a clip's length (min `minLen`, never past `total`), pushing aside what follows. */
+/**
+ * Change a clip's length (min `minLen`, never past `total`). Lengthening into the next clip pushes it and
+ * everything after it later when there is that much empty room at the end of the row; when there isn't,
+ * the longer clip overwrites what it runs into (trimming or removing it).
+ */
 export function setLength(clips: Clip[], clip: Clip, len: number, total: number, minLen = TICKS_PER_STEP): Clip[] {
     const next = Math.max(minLen, Math.min(len, total - clip.start));
     if (next === clip.len) return clips;
-    return place(remove(clips, clip), { ...clip, len: next });
+    const longer = { ...clip, len: next };
+    const rest = remove(clips, clip);
+    const after = rest.filter(c => c.start >= clipEnd(clip));
+    // how far the clip now runs into the first one after it
+    const overlap = after.length ? clipEnd(longer) - Math.min(...after.map(c => c.start)) : 0;
+    if (overlap > 0 && total - lastEnd(rest) >= overlap) {
+        const pushed = rest.map(c => (c.start >= clipEnd(clip) ? { ...c, start: c.start + overlap } : c));
+        return [...pushed, longer].sort((a, b) => a.start - b.start);
+    }
+    return place(rest, longer);
 }
 
 /** Split a held clip at `tick` (or after its first `step`) so the chord is struck again there. */

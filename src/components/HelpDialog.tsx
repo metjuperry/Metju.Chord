@@ -73,7 +73,7 @@ const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose }) => {
                         switches at the next bar line. Record works in Loop (in Chain it switches to Loop first).
                         Inside a section: the chord row the pads record into and a lane per part. Tap a lane's name to edit that part's notes or
                         beat below; its <b>M</b> mutes it in this section only. The chord tools stay docked at the bottom. ‹ › and the section name
-                        switch sections; ‹ Song goes back. While a section is open, Parts changes how the parts sound in that section only; from the whole song, a change reaches every section. New, open, save, share and Paste from Hooktheory (into the open section) are in the Song menu; on a phone a section's ⋯ has them, with its length (− Row / + Row) and the time signature. The melody and drum editors have Copy and Paste: copy a lane, open another section, paste. In the melody grid each row's ⋯ copies, cuts, pastes or clears just that row, to move a phrase.</dd>
+                        switch sections; ‹ Song goes back. While a section is open, Parts changes how the parts sound in that section only; from the whole song, a change reaches every section. New, open, save, share and Paste from Hooktheory (into the open section) are in the Song menu; on a phone a section's ⋯ has them, with its length (− Row / + Row) and the time signature. On a phone a Melody, Drums or Voice lane opens its editor full screen, with the chords along the top; ‹ Lanes goes back to the list. The melody and drum editors have Copy and Paste: copy a lane, open another section, paste. In the melody grid each row's ⋯ copies, cuts, pastes or clears just that row, to move a phrase.</dd>
                     <dt><b>Parts</b></dt>
                     <dd><i>How</i> it sounds: every part with its volume, mute and solo, and for the selected one its instrument, how it plays
                         (chord, strum, arpeggio; bass style; melody range), tone knobs and effects. On a phone these are three tabs next to the part's name: <b>Sound</b> (instrument, how it plays), <b>Shape</b> (the shape and tone knobs) and <b>Effects</b>. <b>Master</b> holds the shared reverb, delay and output. Mute and solo here are for the whole song.
@@ -128,13 +128,18 @@ const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose }) => {
                     One row per note of the scale. Tap an empty cell to add a note, tap a note to select it (yellow edge), tap it again to
                     remove it. With a note selected, <b>♭ ♮ ♯</b> in the toolbar at the bottom (or <kbd>Shift ↑</kbd> / <kbd>Shift ↓</kbd>)
                     make it a semitone lower or higher: it stays on its row with a small ♯ or ♭ and is named as written (F♯, G♭). It's still
-                    that scale note, so it moves with the key: F♯ in A minor becomes C♯ in E minor.
+                    that scale note, so it moves with the key: F♯ in A minor becomes C♯ in E minor. On a phone the grid shows one octave
+                    at a time: <b>Low</b> / <b>High</b> switch, and a mark at the top or bottom of a column means a note in the other one.
+                    Columns are 1/8 (<b>1/16</b> zooms in); new-note length and the part's octave are under ⋯.
                 </p>
 
                 <h3 className="eyebrow">The chord row</h3>
                 <p className="section-note">
                     Each chord shows a dot where it's struck and a bar while it keeps ringing (held, not struck again); while playing, the part
-                    already played turns orange. Lengthen with the grip or <kbd>]</kbd>; a rest can let some parts play on through it (by default
+                    already played turns orange. With Record off, the chord tools also show the key's seven chords: tap one to put it at the cursor (the cursor moves on),
+                    tap it again or long-press any of them for the stick's types (7th, sus4, 9th…). New chords, placed or recorded, are as long
+                    as <b>New</b> next to them says (1 beat, 2 beats or 1 bar; also in ⚙).
+                    Lengthen with the grip or <kbd>]</kbd>: the chords after it move along while there's room at the end of the row; a rest can let some parts play on through it (by default
                     chords and bass stop, melody and drums carry on).
                 </p>
 

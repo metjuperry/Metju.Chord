@@ -8,14 +8,14 @@ import Progression from './components/Progression';
 import HelpDialog from './components/HelpDialog';
 import DrumEditor from './components/DrumEditor';
 import IntroScreen, { IntroPhase } from './components/IntroScreen';
-import MelodyEditor from './components/MelodyEditor';
+import MelodyEditor, { MelodyTools, higherOctave } from './components/MelodyEditor';
 import PartsView, { MASTER, subLabel } from './components/PartsView';
 import SettingsSheet, { CreditsDialog } from './components/SettingsSheet';
 import LearnPanel, { HearEvent, UseHow } from './components/LearnPanel';
 import { LearnTab, Progression as LearnProgression, chordMood, fitProgression, insertProgression, progressionClips } from './learn';
 import {
     ChordParams, ChordType, KEYS, NoteTag, ResolvedChord, StickDir, scaleLabel,
-    STICK_DIRS, ScaleId, buildChordMidi, chordTags, keyPitchClass, resolveChord, romanNumeral, scalePitchClasses,
+    STICK_DIRS, STICK_LABELS, ScaleId, buildChordMidi, chordTags, keyPitchClass, resolveChord, romanNumeral, scalePitchClasses,
     nextChords, noteNames, spellNoteOctave, stickChordType, triadQuality, voiceLead,
 } from './theory';
 import { getEngine } from './audio/engine';
@@ -27,8 +27,8 @@ import ConfirmDialog from './components/ConfirmDialog';
 import HooktheoryDialog from './components/HooktheoryDialog';
 import { HtClip, ImportOptions, ImportSummary, importHooktheory } from './hooktheory';
 import {
-    BEFORE_SHARE_KEY, FullSong, LEGACY_STORAGE_KEY, PlaybackMode, STORAGE_KEY, SAVE_VERSION, SavedState, Song, ThemeSetting, decodeShare, defaultSettings, encodeShare,
-    isCompound, newFullSong, readSaved, stepsPerRow, ticksPerBar, ticksPerStep, transportBpm,
+    BEFORE_SHARE_KEY, CHORD_LENGTHS, ChordLength, FullSong, LEGACY_STORAGE_KEY, PlaybackMode, STORAGE_KEY, SAVE_VERSION, SavedState, Song, ThemeSetting, decodeShare, defaultSettings, encodeShare,
+    chordLengthSteps, isCompound, newFullSong, readSaved, stepsPerRow, ticksPerBar, ticksPerStep, transportBpm,
 } from './song';
 import {
     ChainSlot, addSection, appendToChain, applySectionEdit, chainCount, chainLayout, changeSongTimeSignature, cleanSlate, deleteSection,
@@ -54,7 +54,7 @@ import {
     DrumPattern, DrumVoice, PatternBars, TICKS_PER_SIXTEENTH, emptyPattern, hasHit, presetsFor, setBars,
     sixteenthsPerBar, sixteenthsPerStep, toggleHit,
 } from './drums';
-import { CHORD_LANE, MiniNote, PartPatch } from './components/Progression';
+import { CHORD_LANE, LaneBar, MiniNote, PartPatch } from './components/Progression';
 // last, so its compact sizes come after every component's own stylesheet
 import './touch.css';
 
@@ -220,6 +220,8 @@ const App: React.FC = () => {
     const [soundPreview, setSoundPreview] = useState(initial.soundPreview);
     const [shapeView, setShapeView] = useState(initial.shapeView);
     const [partsTab, setPartsTab] = useState(initial.partsTab);
+    /** How long a recorded or placed chord is: 1 or 2 beats, or a bar. */
+    const [chordLength, setChordLength] = useState<ChordLength>(initial.chordLength);
     /** Sync out for a Pocket Operator: this device's setting, not the song's (sync.ts). */
     const [syncOut, setSyncOutState] = useState<SyncOut>(loadSync);
     const setSyncOut = (patch: Partial<SyncOut>) => setSyncOutState(s => {
@@ -319,8 +321,19 @@ const App: React.FC = () => {
     const [melCursor, setMelCursor] = useState(0);
     /** The melody note selected in the grid (its part and start tick: one note at a time, so that's unique). */
     const [selNoteKey, setSelNoteKey] = useState<{ part: string; start: number } | null>(null);
+    /** Phones: back on the lane list with a note, drum or voice lane still picked ("‹ Lanes"); picking a lane opens its editor again. */
+    const [laneList, setLaneList] = useState(false);
+    /** Phones: the melody grid shows one octave (the upper one when `melHigh`), in 1/8 columns unless `melFine`. */
+    const [melHigh, setMelHigh] = useState(false);
+    const [melFine, setMelFine] = useState(false);
     const pickLane = (lane: string) => {
+        if (lane !== selectedLane) {
+            // a grid opens on the octave where most of its notes are
+            const w = noteWriter(parts.find(p => p.id === lane));
+            if (w) setMelHigh(higherOctave(w.notes));
+        }
         setSelectedLane(lane);
+        setLaneList(false);
         const kind = parts.find(p => p.id === lane)?.kind;
         if (kind) setPartsSel(lane);
         // the pads follow what you're editing: notes for a melody, chords for the chord row or a chord part
@@ -374,7 +387,7 @@ const App: React.FC = () => {
     // Latest state for Transport callbacks and the global key handler
     const liveState = {
         ts, stepTicks: T, barTicks, selectedKey, scale, voiceLeading, octave, inversion, stickDir, padPart, chords, parts, total, selected, loop, recording,
-        padMode, padMelody, melodyLen, melCursor, playing, clickAccent, full, view: song,
+        padMode, padMelody, melodyLen, melCursor, playing, clickAccent, full, view: song, chordLength,
     };
     const live = useRef(liveState);
     live.current = liveState;
@@ -526,11 +539,57 @@ const App: React.FC = () => {
                 setPlayhead(Math.floor(next / perStep));
             }
         } else if (params) {
-            const { scale: _scale, ...chord } = params;
-            setChords(place(s.chords, { start: s.selected * s.stepTicks, len: s.stepTicks, chord }));
-            setSelected(Math.min(s.selected + 1, s.total - 1));
-            setPlayhead(Math.min(s.selected + 1, s.total - 1));
+            recordChord(params);
+            setLastPlaced(null);
         }
+    };
+
+    /**
+     * Write a chord at the cursor, as long as the Chord length setting (cut at the section's end), and move
+     * the cursor past it: one undo step. Recording from the pads and the chord toolbar's chords both use it.
+     */
+    const recordChord = (params: ChordParams, s = live.current) => {
+        const { scale: _scale, ...chord } = params;
+        const steps = Math.min(chordLengthSteps(s.chordLength, s.ts), s.total - s.selected);
+        setChords(place(s.chords, { start: s.selected * s.stepTicks, len: steps * s.stepTicks, chord }));
+        const next = Math.min(s.selected + steps, s.total - 1);
+        setSelected(next);
+        setPlayhead(next);
+        return { start: s.selected, len: steps };
+    };
+
+    /** The chord the toolbar's chords just placed, while the cursor still sits right after it (a second tap opens its types). */
+    const [lastPlaced, setLastPlaced] = useState<{ degree: number; start: number; len: number; next: number } | null>(null);
+
+    /**
+     * The chord toolbar's chords (Song, Record off): put the chord on `degree` (the stick's `dir` type) at the
+     * cursor, as long as Chord length, and move the cursor on, like recording from the pads; or, with
+     * `replace`, change the chord just placed to that type. Voice leading moves from the chord before it in
+     * the row. One undo step; the chord sounds briefly.
+     */
+    const placeChord = (degree: number, dir: StickDir, replace = false) => {
+        const s = live.current;
+        const at = replace && lastPlaced ? lastPlaced.start : s.selected;
+        let params = paramsFor(degree, dir, s);
+        if (s.voiceLeading) {
+            const before = [...s.chords].reverse().find(c => !c.rest && c.start < at * s.stepTicks);
+            const prev = before && !before.rest ? resolveClip({ chords: s.chords, key: s.selectedKey, scale: s.scale }, before).midi : null;
+            const base = buildChordMidi(keyPitchClass(s.selectedKey), degree, params.type, params.octave, params.scale);
+            const v = voiceLead(base, prev);
+            params = { ...params, inversion: v.inversion, octave: params.octave + v.octaveShift };
+        }
+        const chord = resolveChord(s.selectedKey, params);
+        if (!s.playing) {
+            const stop = getEngine().attack(chord.midi);
+            window.setTimeout(stop, 450);
+        }
+        if (replace && lastPlaced) {
+            const { scale: _scale, ...c } = params;
+            setChords(place(s.chords, { start: lastPlaced.start * s.stepTicks, len: lastPlaced.len * s.stepTicks, chord: c }));
+            return;
+        }
+        const placed = recordChord(params, s);
+        setLastPlaced({ degree, ...placed, next: Math.min(placed.start + placed.len, s.total - 1) });
     };
 
     const releasePad = (id: string) => {
@@ -1184,7 +1243,7 @@ const App: React.FC = () => {
     const snapshot = (): SavedState => ({
         version: SAVE_VERSION,
         song: full,
-        settings: { voiceLeading, octave, inversion, loop, theme, nextHint, padPart: padPartId, clickAccent, openSection: openKey, playMode, learnTab, chordMood: chordMoodOn, soundPreview, shapeView, partsTab },
+        settings: { voiceLeading, octave, inversion, loop, theme, nextHint, padPart: padPartId, clickAccent, openSection: openKey, playMode, learnTab, chordMood: chordMoodOn, soundPreview, shapeView, partsTab, chordLength },
     });
 
     // Autosave a moment after any change
@@ -1198,7 +1257,7 @@ const App: React.FC = () => {
         }, 400);
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [full, voiceLeading, octave, inversion, loop, theme, nextHint, padPartId, clickAccent, openKey, playMode, learnTab, chordMoodOn, soundPreview, shapeView, partsTab]);
+    }, [full, voiceLeading, octave, inversion, loop, theme, nextHint, padPartId, clickAccent, openKey, playMode, learnTab, chordMoodOn, soundPreview, shapeView, partsTab, chordLength]);
 
     /** Replace the song (undoable) and take over its saved settings. */
     const loadState = (state: SavedState, message: string) => {
@@ -1216,6 +1275,7 @@ const App: React.FC = () => {
         setChordMoodOn(st.chordMood);
         setSoundPreview(st.soundPreview);
         setShapeView(st.shapeView);
+        setChordLength(st.chordLength);
         setPadPartId(st.padPart);
         setSelectedLane(CHORD_LANE);
         setSelected(0);
@@ -1641,6 +1701,9 @@ const App: React.FC = () => {
                 onPaste={melodyActions.paste}
                 canPaste={laneClip?.kind === 'melody'}
                 onRange={melodyActions.range}
+                compact={compact}
+                high={melHigh}
+                fine={melFine}
             />
         ) : (
             // chord and bass parts have nothing to write: they follow the chord row; how they play is in Parts
@@ -1770,8 +1833,81 @@ const App: React.FC = () => {
         { label: 'Paste from Hooktheory…', onSelect: () => setHtOpen(true) },
         { label: 'Clear all', hint: 'undoable', danger: true, disabled: isCleanSlate(full), onSelect: edit.clearAll },
     ];
+    // Phones: a note, drum or voice lane's editor fills the section in place of the lane list
+    const focusKind = selPart?.kind === 'melody' || selPart?.kind === 'drums' || selPart?.kind === 'voice';
+    const laneFocus = compact && focusKind && !laneList && mode === 'song' && songZoom === 'section';
+    const laneBar = laneFocus && selPart ? (
+        <LaneBar
+            name={selPart.name}
+            color={selPart.color}
+            chords={chords.map(c => ({ ...c, start: c.start / T, len: c.len / T }))}
+            total={total}
+            beatsPerBar={ts.beats}
+            playhead={playhead}
+            playing={playing}
+            describe={describe}
+            tools={melodyPart ? (
+                <MelodyTools
+                    part={melodyPart}
+                    harmony={harmony}
+                    high={melHigh}
+                    onHigh={setMelHigh}
+                    fine={melFine}
+                    onFine={setMelFine}
+                    perBeat={sixteenthsPerStep(ts)}
+                    len={melodyLen}
+                    onLen={setMelodyLen}
+                    onOctave={melodyActions.octave}
+                    onCopy={melodyActions.copy}
+                    onPaste={melodyActions.paste}
+                    canPaste={laneClip?.kind === 'melody'}
+                    onClear={melodyActions.clear}
+                />
+            ) : undefined}
+            onBack={() => {
+                setLaneList(true);
+                // back on the list, the focus goes to the lane it came from
+                requestAnimationFrame(() => document.querySelector<HTMLElement>('.lane-pick[aria-pressed="true"]')?.focus({ preventScroll: true }));
+            }}
+        />
+    ) : undefined;
+    const vowelLane = selPart?.kind === 'voice' ? (
+        <VowelLane
+            part={selPart}
+            chords={chords}
+            totalSteps={total}
+            stepsPerRow={rowSteps}
+            stepTicks={T}
+            beatsPerBar={ts.beats}
+            playStep={playSixteenth >= 0 ? Math.floor(playSixteenth / sixteenthsPerStep(ts)) : -1}
+            onChange={vowels => setParts(ps => ps.map(p => (p.id === selPart.id && p.kind === 'voice' ? { ...p, vowels } : p)))}
+        />
+    ) : null;
+    // The chord toolbar's chords: the key's seven triads, in the pads' order; each one's stick types on demand
+    const chordPicks = [0, 1, 2, 3, 4, 5, 6].map(degree => ({
+        degree,
+        numeral: romanNumeral(degree, scale),
+        symbol: resolveChord(selectedKey, { degree, type: 'triad', inversion, octave, scale }).name.symbol,
+    }));
+    const chordTypes = (degree: number) => STICK_DIRS.map(dir => ({
+        dir,
+        symbol: resolveChord(selectedKey, { degree, type: stickChordType(dir, triadQuality(degree, scale)), inversion, octave, scale }).name.symbol,
+        label: STICK_LABELS[dir],
+    }));
+    // the chord just placed from the toolbar, while the cursor is still right after it and it's still there
+    const placedClip = lastPlaced ? clipAt(clips, lastPlaced.start * T) : undefined;
+    const justPlaced = lastPlaced && selected === lastPlaced.next && isChordClip(placedClip) && placedClip.start === lastPlaced.start * T && placedClip.chord.degree === lastPlaced.degree
+        ? lastPlaced.degree : undefined;
     const progressionEl = (
         <Progression
+            chordPicks={recording ? undefined : chordPicks}
+            chordTypes={chordTypes}
+            justPlaced={justPlaced}
+            onPickChord={placeChord}
+            focus={laneFocus}
+            chordLength={chordLength}
+            onChordLength={setChordLength}
+            laneBar={laneBar}
             compact={compact}
             songItems={songItems}
             total={total}
@@ -1788,22 +1924,15 @@ const App: React.FC = () => {
             sixteenthsPerBar={sixteenthsPerBar(ts)}
             loopSteps={loop ? sectionLoopLength(song) / T : total}
             recordInto={notesOn ? padMelody!.name : undefined}
-            partEditor={selPart?.kind === 'voice' ? (
-                <>
-                    {partEditor}
-                    <VowelLane
-                        part={selPart}
-                        chords={chords}
-                        totalSteps={total}
-                        stepsPerRow={rowSteps}
-                        stepTicks={T}
-                        beatsPerBar={ts.beats}
-                        playStep={playSixteenth >= 0 ? Math.floor(playSixteenth / sixteenthsPerStep(ts)) : -1}
-                        onChange={vowels => setParts(ps => ps.map(p => (p.id === selPart.id && p.kind === 'voice' ? { ...p, vowels } : p)))}
-                    />
-                </>
-            ) : partEditor}
-            partDock={noteDock}
+            partEditor={
+                // on a phone's lane list (after "‹ Lanes") a note, drum or voice lane's editor stays closed
+                compact && focusKind && !laneFocus ? undefined
+                    : vowelLane ? (
+                        // a voice that sings the chord row has no notes to write: in the full-height view only its vowels show
+                        <>{laneFocus && !melodyPart ? null : partEditor}{vowelLane}</>
+                    ) : partEditor
+            }
+            partDock={compact && focusKind && !laneFocus ? undefined : noteDock}
             selected={selected}
             playhead={playhead}
             playing={playing}
@@ -1988,7 +2117,7 @@ const App: React.FC = () => {
     const rightTab: 'song' | 'parts' = mode === 'parts' ? 'parts' : 'song';
     const deskTabs = (['song', 'parts'] as const).map(t => ({ id: t, label: t === 'song' ? 'Song' : 'Parts' }));
     return (<>
-        <div className={`app ${compact ? 'compact' : 'wide desk'} mode-${mode} ${entering}`}>
+        <div className={`app ${compact ? 'compact' : 'wide desk'} mode-${mode} ${laneFocus ? 'lane-focus-on' : ''} ${entering}`}>
             <TopBar
                 compact={compact}
                 modes={compact ? undefined : []}
@@ -2077,6 +2206,8 @@ const App: React.FC = () => {
                 onChordMood={setChordMoodOn}
                 soundPreview={soundPreview}
                 onSoundPreview={setSoundPreview}
+                chordLength={chordLength}
+                onChordLength={setChordLength}
                 sync={syncOut}
                 onSync={setSyncOut}
                 syncBpm={transportBpm(bpm, ts)}

@@ -340,3 +340,135 @@
     outline: 2px solid var(--accent);
     outline-offset: -2px;
 }
+
+/* ---- the melody grid on phones ----------------------------------------------------------------
+   One octave at a time (8 rows, root to root) at 36 px a row, 1/8 columns (1/16 when zoomed in), the
+   rows side by side in one sideways scroll; each keeps its note names and ⋯. Notes in the other octave
+   show as a mark at the top or bottom edge of their column. */
+.melody-editor.compact {
+    --mel-label: 48px;
+    --mel-cell: 44px;
+    gap: 6px;
+}
+
+.melody-editor.compact.fine {
+    --mel-cell: 36px;
+}
+
+.melody-editor.compact .mel-legend {
+    display: none;
+}
+
+.melody-editor.compact .mel-blocks {
+    flex-direction: row;
+    gap: 14px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    /* room above the row ⋯ for its 44 px hit area (the box clips it) */
+    padding: 10px 0 2px;
+}
+
+.melody-editor.compact .mel-scroll {
+    flex: none;
+    overflow: visible;
+}
+
+.melody-editor.compact .mel-chords {
+    height: 24px;
+}
+
+.melody-editor.compact .mel-row-tools {
+    padding-right: 4px;
+    justify-content: flex-end;
+}
+
+.melody-editor.compact .mel-row-menu {
+    width: 36px;
+    height: 24px;
+}
+
+.melody-editor.compact .mel-cell {
+    height: 36px;
+}
+
+.melody-editor.compact .mel-name {
+    font-size: 11px;
+}
+
+.melody-editor.compact .mel-acc {
+    font-size: 12px;
+    padding-left: 5px;
+}
+
+/* a note in the octave not shown: a short bar at the edge it lies beyond */
+.mel-cell:is(.peek-up, .peek-down)::before {
+    content: '';
+    position: absolute;
+    left: 18%;
+    right: 18%;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--track);
+    opacity: 0.85;
+}
+
+.mel-cell.peek-up::before {
+    top: 2px;
+}
+
+.mel-cell.peek-down::before {
+    bottom: 2px;
+}
+
+/* tools at the end of the lane bar */
+.lane-tools {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.lane-tools .segmented {
+    --seg-thumb: var(--track);
+}
+
+.lane-tools .segmented > button {
+    padding: 0 10px;
+    white-space: nowrap;
+}
+
+.lane-tools .segmented > button[aria-pressed='true'] {
+    background: var(--track);
+    color: #000;
+}
+
+/* a labelled control at the top of a ⋯ menu */
+.menu-field {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 2px 4px 6px 10px;
+}
+
+.menu-field .section-note {
+    white-space: nowrap;
+}
+
+.menu-field .segmented > button {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0 8px;
+    white-space: nowrap;
+}
+
+.menu-field .segmented > button[aria-pressed='true'] {
+    background: var(--seg-thumb, var(--accent));
+    color: #000;
+}
+
+.menu-field + button[role='menuitem'] {
+    margin-top: 2px;
+    border-top: 1px solid var(--line);
+}
