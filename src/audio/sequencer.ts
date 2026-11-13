@@ -101,10 +101,15 @@ export class SequencerPlayer<T> {
         getEngine().releaseTransport('sequencer');
     }
 
-    /** Where playback is now, in ticks, or null when stopped. */
-    position(): number | null {
+    /**
+     * Where playback is, in ticks, or null when stopped: at audio time `time`, or by default at the
+     * Transport's now, which is Tone's look-ahead (0.1 s) ahead of what is heard. Live recording asks at
+     * the time the live note sounds (`liveTime`), so a note lands where the player heard it.
+     */
+    position(time?: number): number | null {
         if (this.repeatId === null) return null;
-        const now = Tone.getTransport().ticks;
+        const transport = Tone.getTransport();
+        const now = time === undefined ? transport.ticks : transport.getTicksAtTime(time);
         let mark = this.marks[0];
         for (const m of this.marks) if (m[0] <= now) mark = m;
         const pos = mark[1] + Math.max(0, now - mark[0]) / ratio();

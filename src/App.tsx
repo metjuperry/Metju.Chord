@@ -18,7 +18,7 @@ import {
     STICK_DIRS, STICK_LABELS, ScaleId, buildChordMidi, chordTags, keyPitchClass, resolveChord, romanNumeral, scalePitchClasses,
     nextChords, noteNames, spellNoteOctave, stickChordType, triadQuality, voiceLead,
 } from './theory';
-import { getEngine } from './audio/engine';
+import { getEngine, liveTime } from './audio/engine';
 import { useHistory } from './useHistory';
 import { keepScreenOn } from './pwa';
 import SongMenu from './components/SongMenu';
@@ -526,7 +526,8 @@ const App: React.FC = () => {
         if (step !== undefined && s.padMelody) {
             const perStep = s.stepTicks / TICKS_PER_SIXTEENTH;
             const total16 = s.total * perStep;
-            const pos = s.playing ? player.current?.position() : null;
+            // where the song is when this note sounds (not Tone's look-ahead ahead of it)
+            const pos = s.playing ? player.current?.position(liveTime()) : null;
             if (pos !== null && pos !== undefined) {
                 // live: the note starts on the nearest 1/16 and lasts until the pad is let go
                 hold.rec = { start16: Math.round(pos / TICKS_PER_SIXTEENTH) % total16, step, acc, part: s.padMelody.id };
@@ -601,7 +602,7 @@ const App: React.FC = () => {
         if (hold.rec) {
             // a live note ends where the pad was let go, rounded to the 1/16 (at least one 1/16 long)
             const s = live.current;
-            const pos = player.current?.position();
+            const pos = player.current?.position(liveTime());
             let len16 = s.melodyLen;
             if (pos !== null && pos !== undefined) {
                 const loop16 = sectionLoopLength(s.view) / TICKS_PER_SIXTEENTH;

@@ -67,6 +67,16 @@ const MASTER_GAIN = 0.8;
 const NO_FX: PartFx = noFx();
 
 /**
+ * How far past the audio clock live playing (pads, keys, auditions) is scheduled. Sequenced playback
+ * uses Tone's times, which run `lookAhead` (0.1 s) ahead so the scheduler has slack; a pad played by
+ * hand can't wait that long. A few ms keep an envelope that starts "now" from starting already late
+ * (and clicking) when the audio thread renders the next block before the call reaches it.
+ */
+export const LIVE_LEAD = 0.005;
+/** The audio time to play something live at: the audio clock plus `LIVE_LEAD`, not `Tone.now()`. */
+export const liveTime = () => Tone.immediate() + LIVE_LEAD;
+
+/**
  * Owns every audio node. Each part has its own channel (see Channel); the parts share one reverb
  * and one delay, which they send into, and everything ends in master -> limiter -> destination.
  */
@@ -345,7 +355,6 @@ export class Engine {
         this.applyFx(ch, { ...(opts.fx ?? NO_FX), chorus: 0, tremolo: 0, glide: 0 });
     }
 
-    /** Play one drum hit on a drum part at an audio-clock `time`. */
     /** A Voice part's singers move to `vowel` at `time`, taking `glide` seconds (the vowel lane). */
     setVowel(track: string, vowel: Vowel, time?: number, glide?: number) {
         this.strips.get(track)?.voice.vowel?.(vowel, time ?? Tone.now(), glide);
@@ -356,11 +365,12 @@ export class Engine {
         this.strips.forEach(s => s.voice.restVowel?.());
     }
 
+    /** Play one drum hit on a drum part at an audio-clock `time` (default: live, `liveTime`). */
     playDrum(track: string, voice: DrumVoice, time?: number, velocity = 1) {
         const ch = this.kits.get(track);
         if (!ch) return;
         try {
-            ch.kit.trigger(voice, time ?? Tone.now(), velocity);
+            ch.kit.trigger(voice, time ?? liveTime(), velocity);
         } catch {
             // two hits on one monophonic voice at the same instant: the second is dropped
         }
@@ -427,10 +437,13 @@ export class Engine {
 
     // ---- playing -----------------------------------------------------------
 
-    /** Play a chord for `duration` (seconds or Tone time) at an audio-clock `time`, on `track` (default: the selected one). */
+    /**
+     * Play a chord for `duration` (seconds or Tone time) at an audio-clock `time` (default: live,
+     * `liveTime`), on `track` (default: the selected one).
+     */
     playChord(midi: number[], opts: { duration: Tone.Unit.Time; time?: number; track?: string; strum?: number[]; velocity?: number }) {
         const strip = this.strip(opts.track);
-        const time = opts.time ?? Tone.now();
+        const time = opts.time ?? liveTime();
         const seconds = Tone.Time(opts.duration).toSeconds();
         if (opts.strum) {
             // each note starts a little later; all of them stop together (the next stroke damps them)
@@ -444,13 +457,13 @@ export class Engine {
     }
 
     /**
-     * Start a chord on `track` (default: the selected one); returns how to release it, on that same
-     * synth even if the selection changes.
+     * Start a chord at `time` (default: live, `liveTime`) on `track` (default: the selected one); returns
+     * how to release it (live too), on that same synth even if the selection changes.
      */
     attack(midi: number[], time?: number, track?: string, strum?: number[], strength = 1): () => void {
         const strip = this.strip(track);
         const voice = strip.voice;
-        const at = time ?? Tone.now();
+        const at = time ?? liveTime();
         if (strum) {
             const velocity = velocityFor(midi.length) * strength;
             this.filterEnv(strip, at);
@@ -460,7 +473,7 @@ export class Engine {
         }
         // a quick tap still lets the whole strum sound before it lets go
         const last = strum ? Math.max(0, ...strum) : 0;
-        return () => voice.release(midi, Math.max(Tone.now(), at + last + 0.01));
+        return () => voice.release(midi, Math.max(liveTime(), at + last + 0.01));
     }
 
     /**
