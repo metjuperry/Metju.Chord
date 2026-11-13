@@ -61,6 +61,9 @@ const TREMOLO_RATE = '8n';
 
 
 
+/** How long the reverb size must stay put before its impulse response is rendered again (ms). */
+const REVERB_SETTLE_MS = 150;
+
 /** Master gain at full output level. */
 const MASTER_GAIN = 0.8;
 
@@ -91,6 +94,9 @@ export class Engine {
     private delayBus = new Tone.Gain(1);
     private delay = new Tone.FeedbackDelay({ delayTime: '8n', feedback: 0.35, wet: 1 });
     private delayReturn = new Tone.Gain(0.7);
+    /** A reverb size waiting for a drag to settle (`settleReverb`), and when the size last changed (ms). */
+    private reverbTimer: ReturnType<typeof setTimeout> | null = null;
+    private reverbChanged = -Infinity;
     private space: Space = {
         reverb: { size: 2.5, ret: 0.8 },
         delay: { time: '8n', feedback: 0.35, ret: 0.7 },
@@ -184,9 +190,32 @@ export class Engine {
         src.start(pulseTime(time, this.sync.offset, ctx.currentTime));
     }
 
-    /** Resolves once the reverb impulse response is rendered. */
+    /** Resolves once the reverb impulse response is rendered (at the size last asked for, even mid-drag). */
     ready(): Promise<void> {
+        this.settleReverb(true);
         return this.reverb.ready;
+    }
+
+    /**
+     * Apply the reverb size last asked for. Setting `Reverb.decay` renders a new impulse response
+     * offline, too much to do on every pointer move of a drag, so a change right after another waits
+     * until the size has stayed put for `REVERB_SETTLE_MS` (or `now`); a lone change applies at once.
+     */
+    private settleReverb(now = false) {
+        if (this.reverbTimer !== null) {
+            clearTimeout(this.reverbTimer);
+            this.reverbTimer = null;
+        }
+        const size = this.space.reverb.size;
+        const apply = () => {
+            if (this.reverb.decay !== size) this.reverb.decay = size;
+        };
+        const recent = performance.now() - this.reverbChanged < REVERB_SETTLE_MS;
+        if (now || !recent) apply();
+        else this.reverbTimer = setTimeout(() => {
+            this.reverbTimer = null;
+            apply();
+        }, REVERB_SETTLE_MS);
     }
 
     // ---- channels ------------------------------------------------------------
@@ -286,7 +315,7 @@ export class Engine {
 
     /** The shared reverb, delay and output level. */
     setSpace(space: Space) {
-        if (space.reverb.size !== this.space.reverb.size) this.reverb.decay = space.reverb.size;
+        const resize = space.reverb.size !== this.space.reverb.size;
         this.reverbReturn.gain.rampTo(space.reverb.ret, 0.05);
         this.delay.delayTime.rampTo(Tone.Time(space.delay.time).toSeconds(), 0.05);
         this.delay.feedback.rampTo(space.delay.feedback, 0.05);
@@ -294,6 +323,10 @@ export class Engine {
         // full level is the master gain the instruments were matched at, leaving headroom for the sends
         this.master.gain.rampTo(MASTER_GAIN * space.out.level, 0.05);
         this.space = JSON.parse(JSON.stringify(space));
+        if (resize) {
+            this.settleReverb();
+            this.reverbChanged = performance.now();
+        }
     }
 
     // ---- instruments -------------------------------------------------------
