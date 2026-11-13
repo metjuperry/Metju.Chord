@@ -298,7 +298,7 @@ export function newPart(kind: PartKind, existing: Part[], drums?: DrumPattern): 
         case 'voice':
             // a choir on "ooh", singing the chords: something to hear straight away
             return {
-                ...base, kind, instrument: 'voice', tone: neutralTone(), shape: {}, fx: { ...noFx(), reverb: 0.35 },
+                ...base, kind, instrument: 'voice', tone: neutralTone(), shape: {}, fx: { ...noFx(), reverb: 0.2 },
                 singers: 'choir', range: 'low', vowel: 'u', vibrato: 0.35, breath: 0.15, sings: 'chords', octave: RANGE_OCTAVE.low, notes: [],
                 vowels: [], vowelGlide: 0.3,
             };

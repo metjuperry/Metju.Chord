@@ -457,27 +457,66 @@ def make(dump):
     return out
 
 
+def biquad_mag(kind, f, f0, q, gain_db=0.0, sr=44100):
+    """|H(f)| of a Web Audio BiquadFilter (the RBJ cookbook filters it uses): 'lowpass' or 'peaking'."""
+    w0 = 2 * np.pi * f0 / sr
+    alpha = np.sin(w0) / (2 * q)
+    cw = np.cos(w0)
+    if kind == "highshelf":
+        A = 10 ** (gain_db / 40)
+        al = np.sin(w0) / 2 * np.sqrt(2)
+        sa = 2 * np.sqrt(A) * al
+        b = [A * ((A + 1) + (A - 1) * cw + sa), -2 * A * ((A - 1) + (A + 1) * cw), A * ((A + 1) + (A - 1) * cw - sa)]
+        a = [(A + 1) - (A - 1) * cw + sa, 2 * ((A - 1) - (A + 1) * cw), (A + 1) - (A - 1) * cw - sa]
+    elif kind == "lowpass":
+        b = [(1 - cw) / 2, 1 - cw, (1 - cw) / 2]
+        a = [1 + alpha, -2 * cw, 1 - alpha]
+    else:
+        A = 10 ** (gain_db / 40)
+        b = [1 + alpha * A, -2 * cw, 1 - alpha * A]
+        a = [1 + alpha / A, -2 * cw, 1 - alpha / A]
+    z = np.exp(-1j * 2 * np.pi * np.asarray(f, dtype=float) / sr)
+    return np.abs((b[0] + b[1] * z + b[2] * z * z) / (a[0] + a[1] * z + a[2] * z * z))
+
+
+def peak_db(hz, bw, k):
+    """How far a formant rises (dB) as a peaking filter: as high as a resonance of its sharpness would,
+    kept within 3 dB and PEAK_MAX_DB[k] (F1 highest, the upper ones lower, as in a voice)."""
+    return float(np.clip(20 * np.log10(hz / bw), 3, PEAK_MAX_DB[k]))
+
+
+PEAK_MAX_DB = [24, 20, 15, 15]
+AIR_HZ, AIR_DB = 2500, 18
+
+
 def mouth(f, fmts):
-    """The app's mouth (audio/voice.ts): four parallel band-pass filters at the formants, each with the
-    level it's given there, as a magnitude at frequencies `f` (phases ignored)."""
-    out = np.zeros_like(f, dtype=float)
-    for hz, bw, db in fmts:
-        q = hz / bw
-        out += 10 ** (db / 20) * np.sqrt(hz / bw) * 0.6 / np.sqrt(1 + q * q * (f / hz - hz / f) ** 2)
+    """The app's mouth (audio/voice.ts), as a magnitude at frequencies `f`: F1 and F2 as resonances in a
+    row (low-pass biquads, Q = centre / bandwidth: the vowel, with the valleys and the fall above it a
+    vocal tract has), F3 and F4 as peaks (peaking biquads) so the top stays as open as real singers'."""
+    out = np.ones_like(np.asarray(f, dtype=float))
+    for k, (hz, bw, _db) in enumerate(fmts):
+        out = out * (biquad_mag("lowpass", f, hz, hz / bw) if k < 2 else biquad_mag("peaking", f, hz, hz / bw, peak_db(hz, bw, k)))
+    # the air above the formants a voice keeps (four resonances alone fall away too fast)
+    out = out * biquad_mag("highshelf", f, AIR_HZ, 1, AIR_DB)
     return out
+
+
+# how far the colour may make up for the mouth's fall (dB): all of it, in practice, since the app's
+# mouth takes it away again; a lower limit leaves the top of the voice dull and far away
+MOUTH_FLOOR_DB = 45
 
 
 def colour_db(q):
     """A singer's colour from one note (dB per harmonic, 0 at the loudest): its harmonics with just this
-    vowel's four formants divided out, the way the app puts them back. The voice's natural slope (its
+    vowel's four formants divided out, the way the app puts them back (as a cascade). The voice's natural slope (its
     harmonics falling ~10 dB an octave) stays; dividing by the whole LPC envelope (`source_db`) would take
-    that out too and leave a flat, buzzy wave. Where no formant reaches, the division is limited to 30 dB."""
+    that out too and leave a flat, buzzy wave. The division is limited to MOUTH_FLOOR_DB."""
     h = np.array(q["harmonics_db"])
     if "formants" not in q:
         return h - h.max()
     k = np.arange(1, len(h) + 1) * q["f0"]
     m = mouth(k, q["formants"])
-    m = np.maximum(m, m.max() * 10 ** (-30 / 20))
+    m = np.maximum(m, m.max() * 10 ** (-MOUTH_FLOOR_DB / 20))
     c = h - 20 * np.log10(m)
     c[h <= -150] = -150
     return c - c.max()
@@ -629,10 +668,12 @@ def selftest():
         assert all(0 <= a <= 1 for s in out[rng_]["singers"] for a in s)
         # the fundamental and every harmonic near it are there: no note measured an octave off
         assert all(min(s[:3]) > 0.03 for s in out[rng_]["singers"]), out[rng_]["singers"]
-        # and the voice keeps its natural slope (falling, as the synthetic singers' harmonics do), not flattened
+        # and a singer through the app's mouth keeps a voice's natural slope (falling, as the synthetic
+        # singers' harmonics do), not flattened: the colour times the mouth, on "a" at the expected note
+        k = np.arange(1, 25)
+        heard = lambda sg: np.array(sg[:24]) * mouth(k * NOTE[rng_], out[rng_]["formants"]["a"])
         for sg in out[rng_]["singers"]:
-            k = np.arange(1, 25)
-            assert np.polyfit(np.log2(k), 20 * np.log10(np.array(sg[:24]) + 1e-6), 1)[0] < -4, sg[:24]
+            assert np.polyfit(np.log2(k), 20 * np.log10(heard(sg) / heard(sg).max() + 1e-6), 1)[0] < -4, sg[:24]
     vib = out["techniques"]["vibrato"]
     assert abs(vib["vibrato_rate"] - 5.5) < 0.6 and 25 < vib["vibrato_depth"] < 80, vib
     # an analysis with nothing usable still makes a file, with warnings

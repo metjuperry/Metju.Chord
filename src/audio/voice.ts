@@ -8,23 +8,28 @@ import { FORMANTS, SINGERS, VOWEL_TRIM } from './voiceData';
 /**
  * The Voice part's singers. Each note is sung by one singer (Solo) or five (Choir): a wave with the
  * singer's own colour (voiceData SINGERS), slightly detuned, with its own vibrato and slow drift.
- * Each singer sings through their own mouth: four resonant filters at the vowel's formants
- * (voiceData FORMANTS), so changing the vowel glides those filters while the notes go on, and high
- * notes keep their vowel instead of turning chipmunky. Breath is filtered noise through the first
- * singer's mouth. Choir singers sit across the stereo field.
+ * Each singer sings through their own mouth: four resonances in a row (a cascade, as a vocal tract
+ * is) at the vowel's formants (voiceData FORMANTS), so changing the vowel glides those filters while
+ * the notes go on, and high notes keep their vowel instead of turning chipmunky. Breath is filtered
+ * noise through the first singer's mouth. Choir singers sit across the stereo field.
  */
 
 /** Output level in dB, matched with `npm run levels`. */
-export const VOICE_VOLUME = 1;
+export const VOICE_VOLUME = 0;
 
 const CHOIR = 5;
 /** Where each singer stands (pan) and how far off pitch they sing (cents); the first is the solo voice. */
-const PLACES: { pan: number; cents: number; vibHz: number; driftHz: number }[] = [
-    { pan: 0, cents: 0, vibHz: 5.4, driftHz: 0.21 },
-    { pan: -0.55, cents: -11, vibHz: 5.0, driftHz: 0.17 },
-    { pan: 0.55, cents: 9, vibHz: 5.8, driftHz: 0.13 },
-    { pan: -0.25, cents: 5, vibHz: 4.7, driftHz: 0.26 },
-    { pan: 0.25, cents: -6, vibHz: 6.1, driftHz: 0.19 },
+/**
+ * Where each singer stands (pan), how far off pitch they sing (cents), their vibrato and drift, and the
+ * size of their vocal tract (their formants scaled by `tract`): five identical mouths in a choir comb
+ * against each other into a hollow, cave-like sound; slightly different ones sound like five people.
+ */
+const PLACES: { pan: number; cents: number; vibHz: number; driftHz: number; tract: number }[] = [
+    { pan: 0, cents: 0, vibHz: 5.4, driftHz: 0.21, tract: 1 },
+    { pan: -0.55, cents: -11, vibHz: 5.0, driftHz: 0.17, tract: 0.96 },
+    { pan: 0.55, cents: 9, vibHz: 5.8, driftHz: 0.13, tract: 1.04 },
+    { pan: -0.25, cents: 5, vibHz: 4.7, driftHz: 0.26, tract: 0.98 },
+    { pan: 0.25, cents: -6, vibHz: 6.1, driftHz: 0.19, tract: 1.02 },
 ];
 /** Full vibrato depth, in cents either way. */
 const VIBRATO_CENTS = 45;
@@ -33,11 +38,23 @@ const DRIFT_CENTS = 7;
 /** How quickly the mouth moves to a new vowel, in seconds. */
 export const VOWEL_GLIDE = 0.08;
 const MAX_NOTES = 10;
+/** How far an upper formant (F3, F4) rises as a peak, in dB: as a resonance of its sharpness would, within 3-15 dB (scripts/voices/vocalset.py peak_db). */
+const PEAK_MAX_DB = [24, 20, 15, 15];
+/** The air shelf above the formants (scripts/voices/vocalset.py AIR_HZ, AIR_DB). */
+const AIR_HZ = 2500;
+const AIR_DB = 18;
+const peakDb = (hz: number, bw: number, k: number) => Math.min(PEAK_MAX_DB[k], Math.max(3, 20 * Math.log10(hz / bw)));
+/** Breath's level against the singing (the Breath knob scales it). */
+const BREATH_LEVEL = 0.12;
 
 interface Mouth {
     input: Tone.Gain;
+    /** The four formants in a row (a cascade), F1 first. */
     filters: Tone.Filter[];
-    levels: Tone.Gain[];
+    /** The air shelf after the formants. */
+    air: Tone.Filter;
+    /** The vowel's loudness trim. */
+    trim: Tone.Gain;
     pan: Tone.Panner;
     vibrato: Tone.LFO;
     drift: Tone.LFO;
@@ -57,11 +74,18 @@ const mtof = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
 
 export class VoiceInstrument implements Instrument {
     readonly output = new Tone.Volume(VOICE_VOLUME);
+    /**
+     * A gentle leveller: how loud a vowel comes out depends on where the sung notes fall against its
+     * formants (a note right on F1 rings out), so the same vowel jumps a few dB from chord to chord;
+     * singers even that out by ear, this does it for them.
+     */
+    private readonly even = new Tone.Compressor({ threshold: -34, ratio: 3, knee: 12, attack: 0.04, release: 0.3 }).connect(this.output);
     readonly ready = Promise.resolve();
     private readonly ctx = Tone.getContext().rawContext as AudioContext;
     private readonly mouths: Mouth[];
     private readonly noise = new Tone.Noise('pink').start();
-    private readonly breathTone = new Tone.Filter({ type: 'highpass', frequency: 1400, Q: 0.4 });
+    private readonly breathTone = new Tone.Filter({ type: 'highpass', frequency: 900, Q: 0.5 });
+    private readonly breathOut = new Tone.Gain(BREATH_LEVEL);
     private settings: VoiceSettings = { singers: 'choir', range: 'low', vowel: 'u', vibrato: 0.35, breath: 0.15 };
     private waves = new Map<string, PeriodicWave>();
     private notes: Sung[] = [];
@@ -69,22 +93,26 @@ export class VoiceInstrument implements Instrument {
     private env: Adsr = { ...SYNTH_ENVELOPES.voice };
 
     constructor() {
-        this.noise.connect(this.breathTone);
+        this.breathTone.connect(this.breathOut);
         this.mouths = PLACES.map(place => {
             const input = new Tone.Gain(1);
-            const pan = new Tone.Panner(place.pan).connect(this.output);
-            const filters: Tone.Filter[] = [];
-            const levels: Tone.Gain[] = [];
-            for (let k = 0; k < 4; k++) {
-                const f = new Tone.Filter({ type: 'bandpass', frequency: 500, Q: 5 });
-                const g = new Tone.Gain(1);
-                input.chain(f, g, pan);
-                filters.push(f);
-                levels.push(g);
-            }
+            const pan = new Tone.Panner(place.pan).connect(this.even);
+            const trim = new Tone.Gain(1);
+            // a cascade of resonances, as a vocal tract is: each formant's level then follows from where
+            // the formants sit, so every vowel keeps the same voice (a parallel bank with a level per
+            // formant made each vowel sound like another singer)
+            // F1 and F2 as resonances (low-pass), F3 and F4 as peaks: four low-passes in a row fall away
+            // above F4 far faster than a voice does, which sounds muffled, as if from another room
+            const filters = [0, 1, 2, 3].map(k => new Tone.Filter({ type: k < 2 ? 'lowpass' : 'peaking', frequency: 500, Q: 5, rolloff: -12 }));
+            // the air above the formants a voice keeps: four resonances alone fall away too fast
+            const air = new Tone.Filter({ type: 'highshelf', frequency: AIR_HZ, gain: AIR_DB });
+            input.chain(...filters, air, trim, pan);
+            // breath is air through the same mouth as the voice (so it's shaped by the vowel the way the
+            // singing is, and in the cascade every vowel shapes it alike); the first singer breathes
+            if (place === PLACES[0]) this.breathOut.connect(input);
             const vibrato = new Tone.LFO({ frequency: place.vibHz, min: 0, max: 0 }).start();
             const drift = new Tone.LFO({ frequency: place.driftHz, type: 'triangle', min: 0, max: 0 }).start();
-            return { input, filters, levels, pan, vibrato, drift };
+            return { input, filters, air, trim, pan, vibrato, drift };
         });
         this.sing(this.settings);
     }
@@ -107,16 +135,22 @@ export class VoiceInstrument implements Instrument {
     vowel(vowel: Vowel, time: number, glide = VOWEL_GLIDE) {
         const shape = FORMANTS[this.settings.range][vowel];
         const trim = Tone.dbToGain(VOWEL_TRIM[this.settings.range][vowel]);
-        this.mouths.forEach(m => {
-            shape.forEach(([freq, bw, db], k) => {
+        const end = time + Math.max(0.005, glide);
+        this.mouths.forEach((m, i) => {
+            shape.forEach(([hz, bw], k) => {
+                const freq = hz * PLACES[i].tract;
+                if (k > 1) m.filters[k].gain.setValueAtTime(peakDb(freq, bw, k), time);
                 const f = m.filters[k];
                 f.frequency.cancelScheduledValues(time);
                 f.frequency.setValueAtTime(f.frequency.getValueAtTime(time), time);
-                f.frequency.exponentialRampToValueAtTime(freq, time + Math.max(0.005, glide));
-                f.Q.setValueAtTime(freq / bw, time);
-                // a narrow band passes little: make up for it so each formant is as loud as its level says
-                m.levels[k].gain.setTargetAtTime(Tone.dbToGain(db) * Math.sqrt(freq / bw) * 0.6 * trim, time, glide / 3 + 0.001);
+                f.frequency.exponentialRampToValueAtTime(freq, end);
+                f.Q.cancelScheduledValues(time);
+                f.Q.setValueAtTime(f.Q.getValueAtTime(time), time);
+                f.Q.linearRampToValueAtTime(freq / bw, end);
             });
+            m.trim.gain.cancelScheduledValues(time);
+            m.trim.gain.setValueAtTime(m.trim.gain.getValueAtTime(time), time);
+            m.trim.gain.linearRampToValueAtTime(trim, end);
         });
     }
 
@@ -173,8 +207,9 @@ export class VoiceInstrument implements Instrument {
             if (this.settings.breath > 0) {
                 breath = this.ctx.createGain();
                 breath.gain.value = 0;
-                Tone.connect(this.breathTone, breath);
-                Tone.connect(breath, this.mouths[0].input);
+                Tone.connect(this.noise, breath);
+                Tone.connect(breath, this.breathTone);
+                // (breathTone → breathOut → the first singer's mouth)
                 this.envelope(breath.gain, time, peak * this.settings.breath * 0.9);
             }
             this.notes.push({ midi: m, start: time, released: false, oscs, gains, breath, peak });
@@ -233,10 +268,12 @@ export class VoiceInstrument implements Instrument {
         setTimeout(() => {
             this.notes.forEach(n => n.oscs.forEach(o => o.disconnect()));
             this.mouths.forEach(m => {
-                [m.input, m.pan, m.vibrato, m.drift, ...m.filters, ...m.levels].forEach(x => x.dispose());
+                [m.input, m.pan, m.air, m.trim, m.vibrato, m.drift, ...m.filters].forEach(x => x.dispose());
             });
             this.noise.dispose();
             this.breathTone.dispose();
+            this.breathOut.dispose();
+            this.even.dispose();
             this.output.dispose();
         }, 50);
     }

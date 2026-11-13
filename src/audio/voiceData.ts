@@ -34,13 +34,14 @@ const TEXTBOOK: { [r in VoiceRange]: { [v in Vowel]: Formant[] } } = {
 };
 
 /**
- * Each vowel made as loud as the others (dB), so changing vowel doesn't jump in level: a solo voice's
- * RMS on each vowel, at three pitches across the range, made equal (centred on 0 dB; VOICE_VOLUME sets the overall level). Refit whenever the
- * formants or singers change (the closed vowels, I and U, pass the least).
+ * Each vowel made as loud as the others to the ear (dB), so changing vowel doesn't jump in level:
+ * a choir holding each vowel on three chords across its range, A-weighted (the ear hears an "ee",
+ * whose energy sits low, as quieter than plain RMS says), made equal and centred on 0 dB; VOICE_VOLUME
+ * sets the overall level. Refit whenever the formants, the singers or the mouth change.
  */
 export const VOWEL_TRIM: { [r in VoiceRange]: { [v in Vowel]: number } } = {
-    low: { a: 5.5, e: 3.4, i: -0.2, o: 1.3, u: 0.8 },
-    high: { a: 3.0, e: 0.2, i: -7.3, o: -1.4, u: -5.4 },
+    low: { a: 1.4, e: 1.4, i: 5.4, o: 5.6, u: 11.4 },
+    high: { a: -11.7, e: -8.0, i: 0.5, o: -6.2, u: 0.3 },
 };
 
 /** Harmonics in a singer's wave. */
@@ -68,10 +69,31 @@ const STAND_INS: { [r in VoiceRange]: number[][] } = {
 type Measured = { [r in VoiceRange]?: { singers: number[][]; formants: { [v in Vowel]?: Formant[] } } };
 const measured = MEASURED as unknown as Measured;
 
-/** Where each vowel's resonances sit, per range: measured, or the textbook's where there's no measurement. */
+const VOWEL_IDS: Vowel[] = ['a', 'e', 'i', 'o', 'u'];
+const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+const clampTo = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
+
+/**
+ * One voice across the vowels. What tells vowels apart is the first two formants; the third and
+ * fourth belong to the singer (their "ring") and stay put whatever they sing. So: F1 and F2 per
+ * vowel, as measured, with bandwidths kept to what voices have (a bandwidth measured off a sung note
+ * can come out far too wide or narrow, which changes the voice, not the vowel); F3 and F4 the same on
+ * every vowel, at the median of where they were measured. Levels aren't used: in the cascade
+ * (voice.ts) they follow from where the formants sit.
+ */
+function oneVoice(all: { [v in Vowel]: Formant[] }): { [v in Vowel]: Formant[] } {
+    const f3 = median(VOWEL_IDS.map(v => all[v][2][0]));
+    const f4 = Math.max(f3 + 400, median(VOWEL_IDS.map(v => all[v][3][0])));
+    return Object.fromEntries(VOWEL_IDS.map(v => {
+        const [[f1, b1], [f2, b2]] = all[v];
+        return [v, [[f1, clampTo(b1, 60, 110), 0], [f2, clampTo(b2, 70, 130), 0], [f3, 240, 0], [f4, 300, 0]]];
+    })) as { [v in Vowel]: Formant[] };
+}
+
+/** Where each vowel's resonances sit, per range: measured (or the textbook's where there's no measurement), as one voice. */
 export const FORMANTS: { [r in VoiceRange]: { [v in Vowel]: Formant[] } } = {
-    low: { ...TEXTBOOK.low, ...measured.low?.formants },
-    high: { ...TEXTBOOK.high, ...measured.high?.formants },
+    low: oneVoice({ ...TEXTBOOK.low, ...measured.low?.formants }),
+    high: oneVoice({ ...TEXTBOOK.high, ...measured.high?.formants }),
 };
 
 /** Each range's singers (the first is the solo voice, the choir uses all five): measured, or the stand-ins. */
