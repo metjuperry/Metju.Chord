@@ -137,7 +137,6 @@ export class Engine {
     }
 
     private buildSync() {
-        const ctx = Tone.getContext();
         // a mono sum: one channel, stereo input mixed down ((L + R) / 2)
         const sum = new Tone.Gain(1);
         const raw = sum.input as GainNode;
@@ -405,10 +404,6 @@ export class Engine {
     private strip(track: string = this.current): Strip {
         if (!this.strips.has(track)) this.setTrack(track, { instrument: 'epiano', volume: 0 });
         return this.strips.get(track)!;
-    }
-
-    private voice(track: string = this.current): Instrument {
-        return this.strip(track).voice;
     }
 
     /**

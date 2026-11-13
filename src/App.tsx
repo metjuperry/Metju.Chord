@@ -27,7 +27,7 @@ import ConfirmDialog from './components/ConfirmDialog';
 import HooktheoryDialog from './components/HooktheoryDialog';
 import { HtClip, ImportOptions, ImportSummary, importHooktheory } from './hooktheory';
 import {
-    BEFORE_SHARE_KEY, CHORD_LENGTHS, ChordLength, FullSong, LEGACY_STORAGE_KEY, PlaybackMode, STORAGE_KEY, SAVE_VERSION, SavedState, Song, ThemeSetting, decodeShare, defaultSettings, encodeShare,
+    BEFORE_SHARE_KEY, ChordLength, FullSong, LEGACY_STORAGE_KEY, PlaybackMode, STORAGE_KEY, SAVE_VERSION, SavedState, Song, ThemeSetting, decodeShare, defaultSettings, encodeShare,
     chordLengthSteps, isCompound, newFullSong, readSaved, stepsPerRow, ticksPerBar, ticksPerStep, transportBpm,
 } from './song';
 import {
