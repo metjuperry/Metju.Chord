@@ -20,9 +20,10 @@ export interface ArpOptions {
 const velocityFor = (voices: number) => 1 / Math.sqrt(Math.max(1, voices));
 
 /**
- * A part's channel: instrument -> filter -> drive -> makeup -> chorus -> tremolo -> pan -> level -> master,
+ * A part's channel: instrument -> filter -> drive -> makeup -> chorus -> tremolo -> stereo -> pan -> level -> master,
  * with the level also feeding two sends into the shared reverb and delay. Drum parts skip everything
- * between the input and the pan.
+ * between the input and the pan. Chorus and tremolo exist only while the part uses them (`useInsert`);
+ * `stereo` makes the signal two channels either way (as they do), so the pan law doesn't change with them.
  */
 interface Channel {
     input: Tone.Gain;
@@ -30,12 +31,24 @@ interface Channel {
     filter?: Tone.Filter;
     lfo?: Tone.LFO;
     pan: Tone.Panner;
+    /** In the chain only while the drive is above 0 (`wireInserts`). */
     drive?: Tone.WaveShaper;
     makeup?: Tone.Gain;
+    /** Whether the drive is in the chain. */
+    driving?: boolean;
+    /**
+     * Mono up to two channels, the way the stereo effects' own inputs do it, at `REST_GAIN`: the level
+     * every part was matched at, with Tone's Tremolo always in the chain passing half (see `useInsert`).
+     */
+    stereo?: Tone.Gain;
+    /** After the tremolo: ×2, so the tremolo plus the rest gain passes what it did before. */
+    tremoloBoost?: Tone.Gain;
     /** A waveform tap after the level, made when the Parts scope first asks (`analyser`). */
     scope?: Tone.Analyser;
     chorus?: Tone.Chorus;
     tremolo?: Tone.Tremolo;
+    /** An unused chorus or tremolo waiting to be taken out (`useInsert`). */
+    idle?: { chorus?: ReturnType<typeof setTimeout>; tremolo?: ReturnType<typeof setTimeout> };
     level: Tone.Volume;
     sendReverb: Tone.Gain;
     sendDelay: Tone.Gain;
@@ -58,6 +71,15 @@ interface Strip extends Channel {
 const GLIDE_WINDOW = 2;
 /** Tremolo speed: 1/8 notes of the tempo. */
 const TREMOLO_RATE = '8n';
+/**
+ * A channel's gain where the tremolo goes. Tone's Tremolo maps its LFO to [1, 0] scaled by the depth,
+ * so at depth 0 it passes a constant 0.5, and at depth d it swings 0.5 ± 0.5·d. Every part was
+ * level-matched with one always in the chain, so a channel without it keeps that 0.5, and one with it
+ * has ×2 after it.
+ */
+const REST_GAIN = 0.5;
+/** How long a chorus or tremolo turned back to 0 stays in the channel before it's taken out (ms). */
+const INSERT_IDLE_MS = 2000;
 
 
 
@@ -221,8 +243,8 @@ export class Engine {
     // ---- channels ------------------------------------------------------------
 
     /**
-     * A channel's nodes, wired up: input -> [tone -> shelf -> drive -> makeup -> chorus -> tremolo] -> pan -> level.
-     * `inserts` adds the bracketed part (not for drums).
+     * A channel's nodes, wired up: input -> [filter -> makeup -> stereo] -> pan -> level.
+     * `inserts` adds the bracketed part (not for drums); the drive, chorus and tremolo go in when used.
      */
     private makeChannel(volume: number, inserts: boolean): Channel {
         const input = new Tone.Gain(1);
@@ -243,14 +265,71 @@ export class Engine {
         lfo.connect(filter.frequency);
         const drive = new Tone.WaveShaper(x => x, 4096);
         const makeup = new Tone.Gain(1);
-        const chorus = new Tone.Chorus({ frequency: 1.5, delayTime: 3.5, depth: 0.7, spread: 180, wet: 0 }).start();
-        // a mono wobble (no stereo spread) that does nothing at depth 0
-        const tremolo = new Tone.Tremolo({ frequency: Tone.Time(TREMOLO_RATE).toFrequency(), depth: 0, spread: 0 }).start();
-        input.chain(filter, drive, makeup, chorus, tremolo, pan);
+        const stereo = new Tone.Gain(REST_GAIN);
+        stereo.channelCount = 2;
+        stereo.channelCountMode = 'explicit';
+        // the drive goes in once it's turned up (wireInserts); at 0 it would only copy the sound
+        input.chain(filter, makeup, stereo, pan);
         return {
-            input, filter, lfo, drive, makeup, chorus, tremolo, pan, level, sendReverb, sendDelay,
-            nodes: [input, filter, lfo, drive, makeup, chorus, tremolo, pan, level, sendReverb, sendDelay],
+            input, filter, lfo, drive, makeup, stereo, pan, level, sendReverb, sendDelay, idle: {}, driving: false,
+            nodes: [input, filter, lfo, drive, makeup, stereo, pan, level, sendReverb, sendDelay],
         };
+    }
+
+    /**
+     * Put a channel's chorus or tremolo in when its amount first leaves 0 (it starts at 0, which passes
+     * the sound through unchanged, and `applyFx` ramps it up), and take it out once it has been back at 0
+     * for `INSERT_IDLE_MS`: an unused one would keep its LFOs and delay lines running for nothing.
+     */
+    private useInsert(ch: Channel, kind: 'chorus' | 'tremolo', amount: number) {
+        if (!ch.makeup || !ch.idle) return;
+        const waiting = ch.idle[kind];
+        if (amount > 0) {
+            if (waiting !== undefined) clearTimeout(waiting);
+            ch.idle[kind] = undefined;
+            if (ch[kind]) return;
+            const node = kind === 'chorus'
+                ? new Tone.Chorus({ frequency: 1.5, delayTime: 3.5, depth: 0.7, spread: 180, wet: 0 }).start()
+                // a mono wobble (no stereo spread) that does nothing at depth 0
+                : new Tone.Tremolo({ frequency: Tone.Time(TREMOLO_RATE).toFrequency(), depth: 0, spread: 0 }).start();
+            if (kind === 'chorus') ch.chorus = node as Tone.Chorus;
+            else {
+                ch.tremolo = node as Tone.Tremolo;
+                ch.tremoloBoost = new Tone.Gain(1 / REST_GAIN);
+                ch.nodes.push(ch.tremoloBoost);
+            }
+            ch.nodes.push(node);
+            this.wireInserts(ch);
+        } else if (ch[kind] && waiting === undefined) {
+            ch.idle[kind] = setTimeout(() => {
+                const node = ch[kind];
+                ch.idle![kind] = undefined;
+                if (!node) return;
+                const boost = kind === 'tremolo' ? ch.tremoloBoost : undefined;
+                ch[kind] = undefined;
+                if (boost) ch.tremoloBoost = undefined;
+                ch.nodes = ch.nodes.filter(n => n !== node && n !== boost);
+                this.wireInserts(ch);
+                node.dispose();
+                boost?.dispose();
+            }, INSERT_IDLE_MS);
+        }
+    }
+
+    /** filter -> drive -> makeup -> chorus -> tremolo (×2) -> stereo, with the drive only while it's on and whichever effects the channel has. */
+    private wireInserts(ch: Channel, driving = ch.driving) {
+        if (!ch.filter || !ch.drive || !ch.makeup || !ch.stereo) return;
+        if (driving !== ch.driving) {
+            ch.filter.disconnect();
+            ch.drive.disconnect();
+            if (driving) ch.filter.chain(ch.drive, ch.makeup);
+            else ch.filter.connect(ch.makeup);
+            ch.driving = driving;
+        }
+        const fx = [ch.chorus, ch.tremolo, ch.tremoloBoost].filter((n): n is Tone.Chorus | Tone.Tremolo | Tone.Gain => !!n);
+        ch.makeup.disconnect();
+        fx.forEach(n => n.disconnect());
+        ch.makeup.chain(...fx, ch.stereo);
     }
 
     /** Set a strip's pan. */
@@ -277,6 +356,7 @@ export class Engine {
         }
         if (strip.drive && strip.makeup && (!prev || prev.drive !== s.drive || prev.driveType !== s.driveType)) {
             strip.drive.curve = driveCurve(s.driveType, s.drive);
+            this.wireInserts(strip, s.drive > 0);
             strip.drive.oversample = s.drive > 0 && s.driveType !== 'bitcrush' ? '4x' : 'none';
             strip.makeup.gain.rampTo(Tone.dbToGain(driveMakeupDb(s.driveType, s.drive)), 0.03);
         }
@@ -302,6 +382,8 @@ export class Engine {
 
     /** Set a channel's effects, smoothly. */
     private applyFx(ch: Channel, fx: PartFx) {
+        this.useInsert(ch, 'chorus', fx.chorus);
+        this.useInsert(ch, 'tremolo', fx.tremolo);
         ch.chorus?.wet.rampTo(fx.chorus, 0.05);
         ch.tremolo?.depth.rampTo(fx.tremolo, 0.05);
         ch.sendReverb.gain.rampTo(fx.reverb, 0.05);
@@ -309,6 +391,8 @@ export class Engine {
     }
 
     private disposeChannel(ch: Channel, after = 600) {
+        Object.values(ch.idle ?? {}).forEach(t => t !== undefined && clearTimeout(t));
+        ch.idle = undefined;
         ch.level.volume.rampTo(-80, 0.05);
         setTimeout(() => ch.nodes.forEach(n => n.dispose()), after);
     }
