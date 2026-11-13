@@ -28,14 +28,17 @@ test('chain of two sections: each slot plays its own notes for its own length, t
     const one = [ROOT.C, ROOT.F + 12, ROOT.G + 12];
     await expect.poll(async () => (await roots(page)).join()).toContain([...one, ...one].join());
 
-    // lengths: A is one bar (1 s at 240 BPM), B two bars. Note starts are exact audio times.
+    // lengths: A is one bar (1 s at 240 BPM), B two bars. Note starts are exact audio times; measure from slot start
+    // to slot start (the first note after the previous slot's last), since the first A may have been cut by clearNotes.
     const all = await notes(page);
-    const start = (midi: number, from = 0) => all.filter(n => n.midi === midi && n.t > from)[0].t;
-    const a1 = start(ROOT.C), b1 = start(ROOT.F + 12, a1), a2 = start(ROOT.C, b1);
-    expect(b1 - a1).toBeCloseTo(1, 1);
-    expect(a2 - b1).toBeCloseTo(2, 1);
+    const first = (midi: number, after: number) => all.find(n => n.midi === midi && n.t > after)!.t;
+    const b1 = first(ROOT.F + 12, 0);
+    const a2 = first(ROOT.C, b1);
+    const b2 = first(ROOT.F + 12, a2);
+    expect(a2 - b1, 'B is two bars').toBeCloseTo(2, 1);
+    expect(b2 - a2, 'A is one bar').toBeCloseTo(1, 1);
     // B's second chord comes a bar into B
-    expect(start(ROOT.G + 12, b1) - b1).toBeCloseTo(1, 1);
+    expect(first(ROOT.G + 12, b1) - b1).toBeCloseTo(1, 1);
 
     // the own sound is part of the saved song, in B only
     const saved = (await savedState(page)).song;
