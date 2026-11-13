@@ -68,7 +68,7 @@ const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose }) => {
                     <dt><b>Song</b></dt>
                     <dd><i>What</i> plays, in <b>sections</b> (verse, chorus…) put in order in the <b>chain</b>. The song view shows the sections as
                         tiles (tap one to open it; long-press or ⋯ to rename, duplicate, delete or add it to the chain) and the chain as blocks
-                        (tap to open that section, or while the chain plays to jump there; long-press to move, duplicate or remove; + adds the open
+                        (tap to open that section, or while the chain plays to jump there; ⋯ or long-press to move, duplicate or remove; + adds the open
                         section). <b>Chain</b> plays the sections in order; <b>Loop</b> loops the open one, and picking another while it plays
                         switches at the next bar line. Record works in Loop (in Chain it switches to Loop first).
                         Inside a section: the chord row the pads record into and a lane per part. Tap a lane's name to edit that part's notes or

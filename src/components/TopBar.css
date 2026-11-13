@@ -130,12 +130,19 @@
 .tb-play {
     width: 42px;
     height: 32px;
-    border: 0;
+    border: 1px solid var(--line);
     border-radius: 6px;
-    background: var(--accent);
-    color: var(--accent-ink);
+    background: var(--panel-2);
+    color: var(--text);
     display: grid;
     place-items: center;
+}
+
+/* yellow only while it plays: yellow means on */
+.tb-play.on {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--accent-ink);
 }
 
 .tb-stop {

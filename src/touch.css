@@ -17,6 +17,7 @@
     .knob,
     .switch,
     .sec-more,
+    .cb-more,
     .grip,
     .strip-step,
     .strip-button,
@@ -28,7 +29,7 @@
     inset: min(0px, calc(50% - 22px));
 }
 
-.app.compact :is(.segmented > button, .ms-button, .knob, .strip-step, .strip-button, .mel-row-menu, .lp-hear) {
+.app.compact :is(.segmented > button, .ms-button, .knob, .cb-more, .strip-step, .strip-button, .mel-row-menu, .lp-hear) {
     position: relative;
 }
 
@@ -200,6 +201,20 @@
 .app.compact .mel-row-menu {
     width: 36px;
     height: 28px;
+}
+
+/* the chain: a block's ⋯ is 28 px to see and over 44 px to hit (8 px into its block, 12 px into the
+   gap), so blocks sit 12 px apart */
+.app.compact .chain-row {
+    gap: 12px;
+}
+
+.app.compact .cb-more {
+    flex-basis: 28px;
+}
+
+.app.compact .chain-row .cb-more::after {
+    inset: 0 -12px 0 -8px;
 }
 
 /* ---- Parts ----------------------------------------------------------------------------------------- */

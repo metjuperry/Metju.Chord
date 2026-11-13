@@ -35,7 +35,8 @@ interface SongViewProps {
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 /** Px per bar for chain blocks, and the narrowest block. */
 const BAR_PX = 24;
-const MIN_BLOCK = 58;
+/** About eight characters of a section name. */
+const MIN_BLOCK = 84;
 
 /**
  * One line of chord chips: as many as fit, then a dark "+N" chip. Widths are measured, not estimated:
@@ -143,21 +144,31 @@ const ChainBlock: React.FC<{
 }> = ({ slot, open, state, progress, onPick, onMenu }) => {
     const press = useLongPress(onMenu);
     return (
-        <button
-            className={`chain-block ${open ? 'open' : ''} ${state ?? ''}`}
-            style={{ flexBasis: Math.max(MIN_BLOCK, slot.bars * BAR_PX) }}
-            aria-label={`${slot.section.name} from bar ${slot.startBar}${state === 'playing' ? ', playing' : ''}. Long-press to move, duplicate or remove`}
-            aria-current={state === 'playing' ? 'step' : undefined}
-            data-index={slot.index}
-            {...press.handlers}
-            onClick={() => {
-                if (!press.wasLongPress()) onPick();
-            }}
-        >
-            <span className="cb-bar">{slot.startBar}</span>
-            <span className="cb-name">{slot.section.name}</span>
-            {state === 'playing' && <span className="cb-head" style={{ left: `${progress * 100}%` }} aria-hidden="true" />}
-        </button>
+        <div className={`chain-slot ${open ? 'open' : ''} ${state ?? ''}`}>
+            <button
+                className={`chain-block ${open ? 'open' : ''} ${state ?? ''}`}
+                style={{ flexBasis: Math.max(MIN_BLOCK, slot.bars * BAR_PX) }}
+                aria-label={`${slot.section.name} from bar ${slot.startBar}${state === 'playing' ? ', playing' : ''}. Long-press or ⋯ to move, duplicate or remove`}
+                aria-current={state === 'playing' ? 'step' : undefined}
+                data-index={slot.index}
+                {...press.handlers}
+                onClick={() => {
+                    if (!press.wasLongPress()) onPick();
+                }}
+            >
+                <span className="cb-bar">{slot.startBar}</span>
+                <span className="cb-name">{slot.section.name}</span>
+                {state === 'playing' && <span className="cb-head" style={{ left: `${progress * 100}%` }} aria-hidden="true" />}
+            </button>
+            <button
+                className="cb-more"
+                aria-label={`${slot.section.name} from bar ${slot.startBar}: options`}
+                aria-haspopup="menu"
+                onClick={e => onMenu({ rect: e.currentTarget.getBoundingClientRect() })}
+            >
+                ⋯
+            </button>
+        </div>
     );
 };
 
@@ -282,7 +293,7 @@ const SongView: React.FC<SongViewProps> = p => {
 
             <div className="sv-label">
                 <span className="pd-label">Chain</span>
-                <span className="section-note sv-hint">{chainPlaying ? 'tap a block to jump there' : 'tap a block to open its section · long-press to move · + adds the open section'}</span>
+                <span className="section-note sv-hint">{chainPlaying ? 'tap a block to jump there' : 'tap a block to open its section · ⋯ to move · + adds the open section'}</span>
             </div>
             <div className="chain-row" ref={chainRow}>
                 {layout.map(slot => {

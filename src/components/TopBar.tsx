@@ -290,7 +290,7 @@ const TopBar: React.FC<TopBarProps> = p => (<>
             <button className="tb-stop" aria-label="Stop, back to start (Home)" title="Stop, back to start (Home)" onClick={p.onStop}>
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><rect x="2.5" y="2.5" width="7" height="7" rx="1" /></svg>
             </button>
-            <button className="tb-play" aria-label={p.playing ? 'Pause (Space)' : 'Play (Space)'} title={p.playing ? 'Pause (Space)' : 'Play (Space)'} onClick={p.onTogglePlay}>
+            <button className={`tb-play ${p.playing ? 'on' : ''}`} aria-label={p.playing ? 'Pause (Space)' : 'Play (Space)'} title={p.playing ? 'Pause (Space)' : 'Play (Space)'} onClick={p.onTogglePlay}>
                 {p.playing
                     ? <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M3 2h2v8H3zM7 2h2v8H7z" /></svg>
                     : <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M3 1.5v9l7-4.5z" /></svg>}
