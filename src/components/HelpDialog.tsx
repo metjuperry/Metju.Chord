@@ -73,10 +73,15 @@ const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose }) => {
                         switches at the next bar line. Record works in Loop (in Chain it switches to Loop first).
                         Inside a section: the chord row the pads record into and a lane per part. Tap a lane's name to edit that part's notes or
                         beat below; its <b>M</b> mutes it in this section only. The chord tools stay docked at the bottom. ‹ › and the section name
-                        switch sections; ‹ Song goes back. While a section is open, Parts changes how the parts sound in that section only; from the whole song, a change reaches every section. New, open, save, share and Paste from Hooktheory (into the open section) are in the Song menu. The melody and drum editors have Copy and Paste: copy a lane, open another section, paste. In the melody grid each row's ⋯ copies, cuts, pastes or clears just that row, to move a phrase.</dd>
+                        switch sections; ‹ Song goes back. While a section is open, Parts changes how the parts sound in that section only; from the whole song, a change reaches every section. New, open, save, share and Paste from Hooktheory (into the open section) are in the Song menu; on a phone a section's ⋯ has them, with its length (− Row / + Row) and the time signature. The melody and drum editors have Copy and Paste: copy a lane, open another section, paste. In the melody grid each row's ⋯ copies, cuts, pastes or clears just that row, to move a phrase.</dd>
                     <dt><b>Parts</b></dt>
                     <dd><i>How</i> it sounds: every part with its volume, mute and solo, and for the selected one its instrument, how it plays
                         (chord, strum, arpeggio; bass style; melody range), tone knobs and effects. <b>Master</b> holds the shared reverb, delay and output. Mute and solo here are for the whole song.</dd>
+                    <dt><b>Top bar</b></dt>
+                    <dd>Always in reach, on every screen: key, scale and tempo, Stop, Play and Record, <b>undo and redo</b>, the modes, Learn and ⚙.
+                        Hold <b>−</b> or <b>+</b> to run the tempo, or type the number. On a phone, key, scale and tempo are one button
+                        (<i>C Major · 100 BPM</i>): tap it for the three, and <b>Tap</b> the beat a few times to set the tempo by feel.
+                        A notice about something you can take back (New song, Clear all, a removed part or section) has its own <b>Undo</b>.</dd>
                     <dt><b>Desktop</b></dt>
                     <dd>On a wide screen the instrument stays on the left and Song and Parts are tabs on the right.</dd>
                     <dt><b>Learn</b></dt>
