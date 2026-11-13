@@ -74,6 +74,7 @@ Metju.Chord can be the clock for a Teenage Engineering Pocket Operator (or anyth
 - Turn on ⚙ → **Pocket Operator sync**. The left channel of the headphone out becomes a clock (2 short pulses per beat) and the app's sound, mixed to mono, plays on the right. A dot on ⚙ reminds you it's on.
 - Cable: headphone out (an adapter on iPhones) → the PO's line in. Listen from the PO's output: it plays the app's sound together with its own.
 - On the PO, set **SY4** (hold the button below knob B, press BPM until it shows SY4), set its tempo to the one the settings show, and press play on the PO. Then ▶ here starts both, and ■ stops both. Use ■ rather than ⏸ to start again from the top, so the PO's pattern and the song's bars stay lined up.
+- **Pulse length** (5, 10 or 20 ms, 20 by default): if the PO plays the app's sound but its own pattern doesn't run, it isn't hearing the clock; try another length (the PO-33 K.O! wants long pulses), turn the volume all the way up, or flip the pulses.
 - **Pulse timing** (±50 ms) moves the clock earlier or later if the PO feels ahead of or behind the chords; **Flip the pulses** is for gear that wants the other polarity.
 - Keep the song in 4/4: a PO pattern is 16 steps, one bar. Use a cable: Bluetooth adds too much delay for sync.
 - Sync is a setting of this device, not of the song: songs you open or share never turn it on.

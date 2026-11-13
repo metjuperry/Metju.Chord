@@ -6,7 +6,7 @@ import type { DrumVoice } from '../drums';
 import { PartFx, PartTone, VoiceSettings, Vowel, glideSeconds, glides, neutralTone, noFx, shapePan } from '../parts';
 import { PartShape, ShapeOverrides, driveCurve, driveMakeupDb, effectiveShape, filterEnvelope, lfoRange, resonanceQ } from '../sound';
 import type { Space } from '../song';
-import { PULSE_SECONDS, SyncOut, defaultSync, pulseTime } from '../sync';
+import { SyncOut, defaultSync, pulseTime } from '../sync';
 
 export type ArpRate = '4n' | '8n' | '8t' | '16n' | '16t' | '32n';
 
@@ -114,6 +114,7 @@ export class Engine {
      */
     setSync(next: SyncOut) {
         const was = this.sync.on;
+        if (this.syncNodes && next.length !== this.sync.length) this.syncNodes.buffer = this.pulseBuffer(next.length);
         this.sync = next;
         if (next.on === was) {
             this.syncNodes?.pulses.gain.setValueAtTime(next.invert ? -1 : 1, Tone.now());
@@ -148,11 +149,17 @@ export class Engine {
         pulses.connect(merge, 0, 0);
         sum.connect(merge, 0, 1);
         merge.connect(Tone.getDestination());
-        const length = Math.max(1, Math.round(PULSE_SECONDS * ctx.sampleRate));
+        this.syncNodes = { sum, pulses, merge, buffer: this.pulseBuffer(this.sync.length) };
+        return this.syncNodes;
+    }
+
+    /** One pulse: full scale for `ms` milliseconds. */
+    private pulseBuffer(ms: number) {
+        const ctx = Tone.getContext();
+        const length = Math.max(1, Math.round((ms / 1000) * ctx.sampleRate));
         const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
         buffer.getChannelData(0).fill(1);
-        this.syncNodes = { sum, pulses, merge, buffer };
-        return this.syncNodes;
+        return buffer;
     }
 
     /** One sync pulse on the left channel at audio time `time` (shifted by the offset). Does nothing while sync is off. */
