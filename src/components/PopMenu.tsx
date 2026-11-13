@@ -36,10 +36,18 @@ export const PopMenu: React.FC<{ anchor: MenuAnchor; label: string; items: MenuI
         let left: number;
         let top: number;
         if ('rect' in anchor) {
-            // under the element if it fits, else over it, else as low as it fits (a short landscape phone)
+            // under the element if it fits, else over it, else as low as it fits (a short landscape phone),
+            // and then beside the element where there is room, so it doesn't cover what opened it
             left = anchor.rect.left;
             top = anchor.rect.bottom + 4;
-            if (top + h > vh - 8) top = anchor.rect.top - h - 4 >= 8 ? anchor.rect.top - h - 4 : Math.max(8, vh - h - 8);
+            if (top + h > vh - 8) {
+                if (anchor.rect.top - h - 4 >= 8) top = anchor.rect.top - h - 4;
+                else {
+                    top = Math.max(8, vh - h - 8);
+                    if (anchor.rect.left - w - 4 >= 8) left = anchor.rect.left - w - 4;
+                    else if (anchor.rect.right + 4 + w <= vw - 8) left = anchor.rect.right + 4;
+                }
+            }
         } else {
             left = anchor.x;
             top = anchor.y;

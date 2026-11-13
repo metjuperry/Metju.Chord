@@ -1,0 +1,265 @@
+/* ---- phones: every control takes a thumb -----------------------------------------------------------
+   On compact (`.app.compact`: phones and small windows) every button, select, switch, knob and slider
+   has a hit area of at least 44 x 44 CSS px. Two ways, both only here so the desktop keeps its sizes:
+
+   1. Toolbars and menus get really taller controls (44 px rows).
+   2. Small controls in dense places keep their look and get an invisible, larger hit area: an ::after
+      centred on the control and grown to 44 px each way. Neighbours must then sit at least 44 px apart
+      (centre to centre), or the areas would eat into each other.
+
+   Not covered: the melody and drum grid cells and the drum row names (their own redesign), pads, stick.
+   The top bar's sizes are in TopBar.css. */
+
+/* 2: the invisible hit area */
+.app.compact :is(
+    .segmented > button,
+    .ms-button,
+    .knob,
+    .switch,
+    .sec-more,
+    .grip,
+    .strip-step,
+    .strip-button,
+    .mel-row-menu,
+    .lp-hear
+)::after {
+    content: '';
+    position: absolute;
+    inset: min(0px, calc(50% - 22px));
+}
+
+.app.compact :is(.segmented > button, .ms-button, .knob, .strip-step, .strip-button, .mel-row-menu, .lp-hear) {
+    position: relative;
+}
+
+/* 1: taller toolbars */
+.app.compact .chip-button {
+    min-height: 44px;
+}
+
+.app.compact .icon-button {
+    width: 44px;
+    height: 44px;
+}
+
+/* a segmented group is one 44 px box: no inner padding, the pressed thumb fills its button */
+.app.compact .segmented {
+    padding: 0;
+}
+
+/* at least 44 px wide, and never narrower than its label */
+.app.compact .segmented > button {
+    min-height: 42px;
+    flex: 1 0 44px;
+}
+
+.app.compact .song-popover button {
+    min-height: 44px;
+}
+
+.app.compact :is(.ts-select, .pd-select select, .drum-preset, .knob-cell select) {
+    height: 44px;
+}
+
+.app.compact .ss-close {
+    width: 44px;
+    height: 44px;
+}
+
+/* ---- Play: the strip keeps its slim look, with 44 px hit areas in a 44 px row ---------------------- */
+
+.app.compact .play-strip {
+    min-height: 44px;
+}
+
+.app.compact .device .strip-seg,
+.app.compact .device .pad-mode {
+    padding: 2px;
+}
+
+.app.compact .device .strip-seg > button {
+    min-height: 28px;
+}
+
+.app.compact .device .pad-mode > button {
+    min-height: 36px;
+}
+
+.app.compact .strip-step {
+    width: 32px;
+    height: 32px;
+}
+
+.app.compact .strip-button {
+    height: 32px;
+    min-width: 44px;
+}
+
+/* the octave steps sit 44 px apart, so their hit areas don't meet over the value */
+.app.compact .strip-value {
+    min-width: 28px;
+}
+
+/* iPhone SE landscape: the strip stays one row (the pads keep their height), so the two small labels go */
+@media (max-width: 720px) {
+    .app.compact .strip-group > .strip-label {
+        display: none;
+    }
+
+    .app.compact .play-strip {
+        column-gap: 8px;
+    }
+}
+
+/* ---- Song: the overview ---------------------------------------------------------------------------- */
+
+.app.compact .song-button {
+    height: 44px;
+}
+
+.app.compact .sec-more {
+    width: 32px;
+    height: 32px;
+}
+
+/* the Song menu hangs from the top bar's edge and scrolls inside the window, however short it is */
+.app.compact .song-menu > .song-popover {
+    position: fixed;
+    top: calc(max(4px, env(safe-area-inset-top)) + 53px);
+    right: max(8px, env(safe-area-inset-right));
+    max-height: calc(100vh - max(4px, env(safe-area-inset-top)) - 61px - env(safe-area-inset-bottom));
+    max-height: calc(100dvh - max(4px, env(safe-area-inset-top)) - 61px - env(safe-area-inset-bottom));
+    overflow-y: auto;
+}
+
+/* ---- Song: inside a section ------------------------------------------------------------------------ */
+
+.app.compact :is(.ss-back, .ss-arrow, .ss-current) {
+    height: 44px;
+}
+
+.app.compact .ss-arrow {
+    width: 44px;
+}
+
+.app.compact .part-lane .lane {
+    min-height: 44px;
+}
+
+.app.compact .drum-mini {
+    height: 44px;
+}
+
+/* a lane's M: small to look at, 44 px to hit, inside the lane's label */
+.app.compact .lane-ms {
+    width: 28px;
+    height: 28px;
+}
+
+.app.compact .lane-ms::after {
+    inset: -8px -3px -8px -13px;
+}
+
+/* the lengthen grip reaches a little into the chord and the next step */
+.app.compact .grip::after {
+    inset: -1px -13px;
+}
+
+.app.compact .length {
+    height: 46px;
+}
+
+.app.compact .length > button {
+    width: 44px;
+    height: 44px;
+}
+
+.app.compact .length > b {
+    line-height: 44px;
+}
+
+.app.compact .acc-group button {
+    min-width: 48px;
+}
+
+.app.compact .vowel-cell {
+    min-height: 44px;
+}
+
+/* the melody grid's row menu: a 44 px label column and row, so its hit area fits (the cells stay as they are) */
+.app.compact .melody-editor {
+    --mel-label: 44px;
+}
+
+.app.compact .mel-row-tools {
+    min-height: 44px;
+    padding-right: 0;
+    justify-content: center;
+}
+
+.app.compact .mel-row-menu {
+    width: 36px;
+    height: 28px;
+}
+
+/* ---- Parts ----------------------------------------------------------------------------------------- */
+
+/* the list and the part scroll on their own (PartsView.css): nothing in them may be squeezed */
+.app.compact :is(.parts-list, .part-detail) > * {
+    flex-shrink: 0;
+}
+
+/* a part's row: the name on one 44 px line, the volume bar with M and S on the next */
+.app.compact .pl-row:not(.pl-master) {
+    flex-wrap: wrap;
+    gap: 0 4px;
+    padding: 0 4px 4px 8px;
+}
+
+.app.compact .pl-row:not(.pl-master) > .pl-main {
+    display: contents;
+}
+
+.app.compact .pl-pick {
+    flex: 1 0 100%;
+    min-height: 44px;
+}
+
+.app.compact .pl-row .vol-bar {
+    flex: 1 1 0;
+    height: 44px;
+    margin: 0 6px 0 0;
+}
+
+.app.compact .pl-row .vol-bar::before,
+.app.compact .pl-row .vol-fill {
+    top: 19px;
+    height: 6px;
+    border-radius: 3px;
+}
+
+.app.compact .pl-row .vol-zero {
+    top: 16px;
+    height: 12px;
+}
+
+.app.compact .pl-row .ms-button {
+    width: 40px;
+    height: 40px;
+}
+
+.app.compact .pd-pads {
+    min-height: 44px;
+}
+
+.app.compact .pd-remove {
+    width: 44px;
+    height: 44px;
+}
+
+/* ---- Learn ----------------------------------------------------------------------------------------- */
+
+.app.compact .lp-hear {
+    min-height: 44px;
+    min-width: 44px;
+}

@@ -102,8 +102,24 @@
     white-space: nowrap;
 }
 
-.top-bar:not(.compact) .tb-tempo b {
+/* the tempo itself: a number you can type, looking like the label it used to be until it's pointed at */
+.tb-bpm {
+    width: 3.4ch;
+    padding: 2px 0;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
     font-size: 15px;
+    font-weight: 700;
+    text-align: center;
+}
+
+.tb-bpm:hover,
+.tb-bpm:focus {
+    border-color: var(--line-2);
+    background: var(--bg);
 }
 
 .tb-unit {
@@ -225,37 +241,6 @@
     background: var(--hot);
 }
 
-/* Narrow landscape phones (iPhone SE): drop the logo and tighten so the bar stays on one line */
-@media (max-width: 720px) {
-    .top-bar.compact .brand {
-        display: none;
-    }
-
-    .top-bar.compact {
-        gap: 5px;
-    }
-
-    .top-bar.compact .tb-modes > button {
-        padding: 0 9px;
-    }
-
-    .top-bar.compact .tb-step {
-        width: 28px;
-    }
-
-    .top-bar.compact .tb-tempo {
-        min-width: 48px;
-    }
-
-    .top-bar.compact .tb-select select {
-        padding: 0 20px 0 7px;
-    }
-
-    .top-bar.compact .tb-chevron {
-        right: 6px;
-    }
-}
-
 /* 📖 Learn, beside ⚙ in the same style; on narrow phones just the book */
 .tb-learn {
     width: auto;
@@ -271,66 +256,9 @@
     border-color: var(--accent);
 }
 
-@media (max-width: 760px) {
-    .top-bar.compact .tb-learn {
-        width: 36px;
-        padding: 0;
-        justify-content: center;
-    }
-
-    .top-bar.compact .tb-learn-label {
-        display: none;
-    }
-}
-
 /* no mode switch (desktop has its own tabs): Learn and settings go to the right end */
-.tb-group + .tb-learn {
+.top-bar:not(.compact) .tb-learn {
     margin-left: auto;
-}
-
-/* Portrait phones: the bar takes two rows; keep it at two with Stop in the transport */
-@media (max-width: 440px) {
-    .top-bar.compact {
-        gap: 5px;
-    }
-
-    .top-bar.compact .tb-group {
-        gap: 4px;
-    }
-
-    .top-bar.compact .tb-play {
-        width: 38px;
-    }
-
-    .top-bar.compact .tb-stop,
-    .top-bar.compact .tb-rec {
-        width: 30px;
-    }
-
-    .top-bar.compact .tb-modes > button {
-        padding: 0 8px;
-    }
-
-    .top-bar.compact .tb-gear {
-        width: 32px;
-    }
-}
-
-@media (max-width: 370px) {
-    .top-bar.compact .tb-modes > button {
-        padding: 0 5px;
-    }
-
-    .top-bar.compact .tb-play {
-        width: 34px;
-    }
-
-    .top-bar.compact .tb-stop,
-    .top-bar.compact .tb-rec,
-    .top-bar.compact .tb-gear,
-    .top-bar.compact .tb-learn {
-        width: 28px;
-    }
 }
 
 /* PO sync on: a small dot on the gear, so a pair of headphones doesn't get clicks in one ear by surprise */
@@ -347,4 +275,235 @@
     height: 7px;
     border-radius: 50%;
     background: var(--accent);
+}
+
+/* Undo and redo, after the transport: the bar's own button look */
+.top-bar .undo-redo {
+    gap: 3px;
+}
+
+.top-bar .undo-redo .icon-button {
+    width: 36px;
+    height: 32px;
+    border-radius: 6px;
+}
+
+.top-bar.compact .undo-redo {
+    gap: 4px;
+}
+
+.top-bar.compact .undo-redo .icon-button {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+}
+
+/* ---- compact: one fixed row ----------------------------------------------------------------
+   The bar runs edge to edge and stays at the top while the page scrolls under it, so Play, Stop,
+   Record and undo are always in reach. It keeps clear of the notch and the status bar itself.
+   Every button is 44 px tall. */
+.top-bar.compact {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    flex-wrap: nowrap;
+    gap: 6px;
+    margin: 0 calc(-1 * max(8px, env(safe-area-inset-right))) 0 calc(-1 * max(8px, env(safe-area-inset-left)));
+    padding:
+        max(4px, env(safe-area-inset-top))
+        max(8px, env(safe-area-inset-right))
+        4px
+        max(8px, env(safe-area-inset-left));
+    border-width: 0 0 1px;
+    border-radius: 0;
+}
+
+.top-bar.compact .tb-group {
+    gap: 4px;
+}
+
+.top-bar.compact .tb-stop,
+.top-bar.compact .tb-rec,
+.top-bar.compact .tb-gear {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    flex: 0 0 auto;
+}
+
+.top-bar.compact .tb-play {
+    width: 54px;
+    height: 44px;
+    border-radius: 8px;
+}
+
+.top-bar.compact .tb-modes {
+    padding: 0;
+    border: 0;
+    gap: 0;
+}
+
+.top-bar.compact .tb-modes > button {
+    min-height: 44px;
+    padding: 0 12px;
+}
+
+/* key and scale over the tempo: one chip that opens the sheet */
+.tb-chip {
+    flex: 0 1 auto;
+    min-width: 0;
+    height: 44px;
+    padding: 0 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+    font-size: 11px;
+    line-height: 1.15;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.tb-chip b {
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tb-chip > span {
+    color: var(--muted);
+}
+
+.tb-chip[aria-expanded='true'] {
+    border-color: var(--accent);
+}
+
+/* narrower than a landscape phone (portrait, a small window): the bar may take a second row */
+@media (max-width: 600px) {
+    .top-bar.compact {
+        flex-wrap: wrap;
+    }
+}
+
+/* iPhone SE landscape: no logo, Learn is just the book */
+@media (max-width: 720px) {
+    .top-bar.compact .brand {
+        display: none;
+    }
+
+    .top-bar.compact .tb-modes > button {
+        padding: 0 9px;
+    }
+}
+
+@media (max-width: 760px) {
+    .top-bar.compact .tb-learn {
+        width: 44px;
+        padding: 0;
+        justify-content: center;
+    }
+
+    .top-bar.compact .tb-learn-label {
+        display: none;
+    }
+}
+
+.top-bar.compact .tb-learn {
+    width: auto;
+    min-width: 44px;
+}
+
+/* The sheet under the chip: key, scale, tempo. The ⚙ sheet's look, hanging from the bar's left. */
+.ss-backdrop.tb-sheet-backdrop {
+    justify-content: flex-start;
+    align-items: flex-start;
+    padding-top: calc(max(4px, env(safe-area-inset-top)) + 52px);
+}
+
+.ss-sheet.tb-sheet {
+    width: auto;
+    max-width: 100%;
+    gap: 10px;
+    padding: 12px 14px;
+    animation-name: tb-sheet-in;
+}
+
+@keyframes tb-sheet-in {
+    from {
+        transform: translateY(-10px);
+        opacity: 0;
+    }
+}
+
+.tb-sheet-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.tb-sheet-row > .pd-label {
+    width: 52px;
+    flex: 0 0 auto;
+}
+
+.tb-sheet .tb-select select {
+    height: 44px;
+    padding: 0 28px 0 12px;
+    font-size: 13px;
+    border-radius: 8px;
+}
+
+.tb-sheet .tb-step {
+    width: 52px;
+    height: 44px;
+    border-radius: 8px;
+    font-size: 18px;
+    touch-action: none;
+}
+
+.tb-sheet .tb-tempo {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 4px;
+}
+
+.tb-sheet .tb-bpm {
+    width: 64px;
+    height: 44px;
+    border-color: var(--line-2);
+    border-radius: 8px;
+    background: var(--bg);
+    font-size: 18px;
+}
+
+.tb-tap {
+    min-width: 96px;
+    height: 44px;
+    margin-left: 8px;
+    padding: 0 14px;
+    border: 1px solid var(--line-2);
+    border-radius: 8px;
+    background: var(--panel-2);
+    font-size: 12px;
+    font-weight: 700;
+    touch-action: none;
+}
+
+.tb-tap:active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+}
+
+.tb-tap-hint {
+    font-weight: 400;
+}
+
+.tb-sheet .ss-close {
+    width: 44px;
+    height: 44px;
 }

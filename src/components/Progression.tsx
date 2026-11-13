@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import './Progression.css';
 import './SongMenu.css';
 import { Clip, clipAt, clipEnd } from '../progression';
 import { TIME_SIGNATURES, TimeSignature, isCompound, tsLabel } from '../song';
 import { InstrumentId } from '../audio/instruments';
 import { DrumPattern, DrumVoice, hasHit } from '../drums';
+import { MenuAnchor, MenuItem, PopMenu } from './PopMenu';
 import { Part, outsideRests, playsThroughRest, restSpans, writesNotes } from '../parts';
 
 /** Which drums show on which line of a drum lane's miniature: cymbals, the backbeat, the kick. */
@@ -74,6 +75,10 @@ interface ProgressionProps {
     onDelete: () => void;
     /** The Song menu, shown at the end of the header. */
     songMenu?: React.ReactNode;
+    /** Phones: the header is one row; bars, time signature, rows and the Song menu's items sit behind "⋯". */
+    compact?: boolean;
+    /** The Song menu's entries for that "⋯" menu. */
+    songItems?: MenuItem[];
     /** "‹ Song" and the section switcher, at the start of the header. */
     sectionHeader?: React.ReactNode;
     /** The open section's name and its mutes: each lane's M silences its part in this section only. */
@@ -82,8 +87,6 @@ interface ProgressionProps {
     onSectionMute?: (partId: string, muted: boolean) => void;
     /** Shown in the chord toolbar when the section is in the chain more than once. */
     repeatNote?: string;
-    /** Undo and redo, shown with the cursor buttons. */
-    undoRedo?: React.ReactNode;
 }
 
 const steps = (n: number) => (n === 1 ? '1 step' : `${n} steps`);
@@ -109,6 +112,20 @@ const Progression: React.FC<ProgressionProps> = props => {
     const anySolo = parts.some(p => p.solo);
     const mutedHere = (p: Part) => !!props.sectionMutes?.[p.id];
     const silenced = (p: Part) => (anySolo ? !p.solo : p.mute) || mutedHere(p);
+    const barsLabel = `${Math.round((total / beatsPerBar) * 10) / 10} bars`;
+    const [more, setMore] = useState<MenuAnchor | null>(null);
+    /** When "⋯" last closed: the press that closes it (outside the menu, on the button) must not open it again. */
+    const moreClosed = useRef(0);
+    const tsSelect = (
+        <select
+            className="ts-select"
+            aria-label="Time signature"
+            value={tsLabel(props.timeSignature)}
+            onChange={e => props.onTimeSignature(TIME_SIGNATURES.find(t => tsLabel(t) === e.target.value)!)}
+        >
+            {TIME_SIGNATURES.map(t => <option key={tsLabel(t)} value={tsLabel(t)}>{tsLabel(t)}</option>)}
+        </select>
+    );
 
     /** The chord row within one sequencer row. A chord held past the end of a row continues in the next. */
     const renderChordLane = (rowStart: number, rowEnd: number) => {
@@ -348,7 +365,6 @@ const Progression: React.FC<ProgressionProps> = props => {
                     <button className="icon-button" aria-label="Next chord" onClick={props.onNext}>{Icon.next}</button>
                     <button className="icon-button" aria-label="Loop" title="Loop: play to the end of the music and start again" aria-pressed={loop} onClick={props.onToggleLoop}>{Icon.loop}</button>
                 </div>
-                {props.undoRedo}
                 {recording && (
                     <span className="rec-note" role="status">
                         ● {props.recordInto
@@ -356,20 +372,49 @@ const Progression: React.FC<ProgressionProps> = props => {
                             : `Pads write chords at step ${selected + 1}`}
                     </span>
                 )}
-                <div className="bars">
-                    <span className="section-note">{Math.round((total / beatsPerBar) * 10) / 10} bars</span>
-                    <select
-                        className="ts-select"
-                        aria-label="Time signature"
-                        value={tsLabel(props.timeSignature)}
-                        onChange={e => props.onTimeSignature(TIME_SIGNATURES.find(t => tsLabel(t) === e.target.value)!)}
-                    >
-                        {TIME_SIGNATURES.map(t => <option key={tsLabel(t)} value={tsLabel(t)}>{tsLabel(t)}</option>)}
-                    </select>
-                    {rows > 1 && <button className="chip-button" onClick={props.onRemoveRow}>− Row</button>}
-                    <button className="chip-button" onClick={props.onAddRow}>+ Row</button>
-                    {props.songMenu}
-                </div>
+                {props.compact ? (
+                    <>
+                        <button
+                            className="icon-button prog-more"
+                            aria-haspopup="menu"
+                            aria-expanded={!!more}
+                            aria-label={`More: ${barsLabel}, time signature, rows, song menu`}
+                            title="Length, time signature, song menu"
+                            onClick={e => {
+                                if (performance.now() - moreClosed.current > 350) setMore({ rect: e.currentTarget.getBoundingClientRect() });
+                            }}
+                        >
+                            ⋯
+                        </button>
+                        {more && (
+                            <PopMenu
+                                anchor={more}
+                                label="Section length, time signature and the song menu"
+                                items={props.songItems ?? []}
+                                onClose={() => {
+                                    moreClosed.current = performance.now();
+                                    setMore(null);
+                                }}
+                            >
+                                <div className="more-row">
+                                    <span className="section-note">{barsLabel}</span>
+                                    {tsSelect}
+                                    <span className="more-space" />
+                                    <button role="menuitem" className="chip-button" disabled={rows < 2} onClick={props.onRemoveRow}>− Row</button>
+                                    <button role="menuitem" className="chip-button" onClick={props.onAddRow}>+ Row</button>
+                                </div>
+                            </PopMenu>
+                        )}
+                    </>
+                ) : (
+                    <div className="bars">
+                        <span className="section-note">{barsLabel}</span>
+                        {tsSelect}
+                        {rows > 1 && <button className="chip-button" onClick={props.onRemoveRow}>− Row</button>}
+                        <button className="chip-button" onClick={props.onAddRow}>+ Row</button>
+                        {props.songMenu}
+                    </div>
+                )}
             </div>
 
             <div className="seq-rows">{Array.from({ length: rows }, (_, r) => renderRow(r))}</div>

@@ -21,7 +21,8 @@ import {
 import { getEngine } from './audio/engine';
 import { useHistory } from './useHistory';
 import { keepScreenOn } from './pwa';
-import SongMenu, { UndoRedo } from './components/SongMenu';
+import SongMenu from './components/SongMenu';
+import { MenuItem } from './components/PopMenu';
 import ConfirmDialog from './components/ConfirmDialog';
 import HooktheoryDialog from './components/HooktheoryDialog';
 import { HtClip, ImportOptions, ImportSummary, importHooktheory } from './hooktheory';
@@ -54,6 +55,8 @@ import {
     sixteenthsPerBar, sixteenthsPerStep, toggleHit,
 } from './drums';
 import { CHORD_LANE, MiniNote, PartPatch } from './components/Progression';
+// last, so its compact sizes come after every component's own stylesheet
+import './touch.css';
 
 /**
  * Keys that play the pads (by physical position, so any layout works): the number row, the numpad,
@@ -199,7 +202,12 @@ const App: React.FC = () => {
     const [octave, setOctave] = useState(initial.octave);
     const [inversion, setInversion] = useState(initial.inversion);
     const [nextHint, setNextHint] = useState(initial.nextHint);
-    const [notice, setNotice] = useState<string | null>(null);
+    const [notice, setNotice] = useState<{ text: string; undo: boolean } | null>(null);
+    /** The notice is being pointed at or has the focus: it stays until that ends. */
+    const [noticeHeld, setNoticeHeld] = useState(false);
+    /** Compact: the key, scale and tempo sheet behind the top bar's chip. */
+    const [keyOpen, setKeyOpen] = useState(false);
+    const songFile = useRef<HTMLInputElement>(null);
     const [helpOpen, setHelpOpen] = useState(false);
     const [htOpen, setHtOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
@@ -947,8 +955,10 @@ const App: React.FC = () => {
         },
         remove: (id: string) => {
             if (!partActions.canRemove(id)) return;
+            const gone = parts.find(p => p.id === id);
             setParts(ps => ps.filter(p => p.id !== id));
             if (id === selectedLane) setSelectedLane(CHORD_LANE);
+            if (gone) flash(`Removed ${gone.name}.`, { undo: true });
         },
     };
 
@@ -1084,7 +1094,7 @@ const App: React.FC = () => {
             });
             setSelNoteKey(null);
             // the one thing worth saying: some notes didn't fit this part's range
-            if (dropped) flash(`${dropped} note${dropped === 1 ? '' : 's'} sat outside this part's two octaves and ${dropped === 1 ? 'was' : 'were'} left out.`);
+            if (dropped) flash(`${dropped} note${dropped === 1 ? '' : 's'} sat outside this part's two octaves and ${dropped === 1 ? 'was' : 'were'} left out.`, { undo: true });
         },
         /** A row's ⋯ menu in the grid: copy, cut (copy and clear), paste over, or clear the notes in [from, to). */
         range: (action: 'copy' | 'cut' | 'paste' | 'clear', from: number, to: number) => {
@@ -1158,13 +1168,17 @@ const App: React.FC = () => {
 
     // ---- saving, files, share links -----------------------------------------------------
 
-    const flash = (text: string) => setNotice(text);
+    /** A short notice. `undo`: it is about an edit that can be undone, so it carries an Undo button (and stays longer). */
+    const flash = (text: string, options?: { undo?: boolean }) => {
+        setNoticeHeld(false);
+        setNotice({ text, undo: !!options?.undo });
+    };
     // a notice set before the first tap (a share link opening) waits for the app to be on screen
     useEffect(() => {
-        if (!notice || !audioReady) return;
-        const t = setTimeout(() => setNotice(null), notice.length > 60 ? 5000 : 2600);
+        if (!notice || noticeHeld || !audioReady) return;
+        const t = setTimeout(() => setNotice(null), notice.undo || notice.text.length > 60 ? 6000 : 2600);
         return () => clearTimeout(t);
-    }, [notice, audioReady]);
+    }, [notice, noticeHeld, audioReady]);
 
     const snapshot = (): SavedState => ({
         version: SAVE_VERSION,
@@ -1205,7 +1219,7 @@ const App: React.FC = () => {
         setSelectedLane(CHORD_LANE);
         setSelected(0);
         setPlayhead(0);
-        flash(message);
+        flash(message, { undo: true });
     };
 
     /** The song that was here before a share link opened over it is kept aside (see `keepOwnSong`). */
@@ -1246,7 +1260,7 @@ const App: React.FC = () => {
             // unreadable or storage blocked: nothing to go back to
         }
         setOwnSongKept(false);
-        if (state) loadState(state, 'Back to your song. Undo to return to the shared one.');
+        if (state) loadState(state, 'Back to your song.');
         else flash('Your earlier song couldn’t be read.');
     };
 
@@ -1281,7 +1295,7 @@ const App: React.FC = () => {
             setMelodyPartId(first.id);
         }
         const what = [summary.notes && `${summary.notes} note${summary.notes === 1 ? '' : 's'}`, summary.chords && `${summary.chords} chord${summary.chords === 1 ? '' : 's'}`].filter(Boolean).join(' and ');
-        flash(`Pasted ${what}. Undo to take ${summary.notes + summary.chords === 1 ? 'it' : 'them'} out.`);
+        flash(`Pasted ${what}.`, { undo: true });
     };
 
     const songActions = {
@@ -1294,7 +1308,7 @@ const App: React.FC = () => {
             setSelectedLane(CHORD_LANE);
             setSelected(0);
             setPlayhead(0);
-            flash('New song. Undo to get the old one back.');
+            flash('New song.', { undo: true });
         },
         save: () => {
             const blob = new Blob([JSON.stringify(snapshot(), null, 2)], { type: 'application/json' });
@@ -1384,13 +1398,13 @@ const App: React.FC = () => {
         learnAdded.current = { id: prog.id, song: next };
         const bar = Math.floor(at / barTicks) + 1;
         const what = how === 'switch' ? ` and switched to ${scaleLabel(sc).toLowerCase()}` : how === 'closest' ? ' (closest in your scale)' : '';
-        flash(`${prog.name} added to ${openSec.name} at bar ${bar}${what}.${done.cut ? ` ${done.cut} chord${done.cut === 1 ? '' : 's'} past the end left out.` : ''} Undo to take it out.`);
+        flash(`${prog.name} added to ${openSec.name} at bar ${bar}${what}.${done.cut ? ` ${done.cut} chord${done.cut === 1 ? '' : 's'} past the end left out.` : ''}`, { undo: true });
     };
 
     // ---- keyboard -----------------------------------------------------------------------
 
     // while a dialog is open the instrument's keys are off (typing or tabbing in it mustn't play pads)
-    const modalOpen = helpOpen || htOpen || settingsOpen || creditsOpen || confirmClear || (learnOpen && compact);
+    const modalOpen = helpOpen || htOpen || settingsOpen || creditsOpen || confirmClear || (learnOpen && compact) || (keyOpen && compact);
     const keyActions = useRef({ pressPad, releasePad, releaseAll, togglePlay, stopAndRewind, toggleRecord, edit, melody: melodyActions, helpOpen: modalOpen, undo: history.undo, redo: history.redo });
     keyActions.current = { pressPad, releasePad, releaseAll, togglePlay, stopAndRewind, toggleRecord, edit, melody: melodyActions, helpOpen: modalOpen, undo: history.undo, redo: history.redo };
 
@@ -1745,8 +1759,20 @@ const App: React.FC = () => {
             canClearAll={!isCleanSlate(full)}
         />
     );
+    // Phones: the same entries inside a section's "⋯" menu (the header there is one row)
+    const songItems: MenuItem[] = [
+        ...(ownSongKept ? [{ label: 'Back to my song', note: 'from before the link', onSelect: restoreOwnSong }] : []),
+        { label: 'New song', hint: 'undoable', onSelect: songActions.new },
+        { label: 'Open file…', onSelect: () => songFile.current?.click() },
+        { label: 'Save to file', onSelect: songActions.save },
+        { label: 'Copy share link', onSelect: songActions.share },
+        { label: 'Paste from Hooktheory…', onSelect: () => setHtOpen(true) },
+        { label: 'Clear all', hint: 'undoable', danger: true, disabled: isCleanSlate(full), onSelect: edit.clearAll },
+    ];
     const progressionEl = (
         <Progression
+            compact={compact}
+            songItems={songItems}
             total={total}
             stepsPerRow={rowSteps}
             timeSignature={ts}
@@ -1799,7 +1825,6 @@ const App: React.FC = () => {
             onRest={edit.rest}
             onRestPart={edit.restPart}
             onDelete={edit.del}
-            undoRedo={<UndoRedo canUndo={history.canUndo} canRedo={history.canRedo} onUndo={history.undo} onRedo={history.redo} />}
             songMenu={songMenuEl}
             sectionHeader={(
                 <SectionSwitcher
@@ -1854,7 +1879,7 @@ const App: React.FC = () => {
                 if (!gone || full.sections.length <= 1) return;
                 if (id === openKey) openSection(full.sections.find(sec => sec.id !== id)!.id);
                 editFull(f => deleteSection(f, id));
-                flash(`Deleted ${gone.name}. Undo to bring it back.`);
+                flash(`Deleted ${gone.name}.`, { undo: true });
             }}
             onAddToChain={id => editFull(f => appendToChain(f, id))}
             onMoveEntry={(i, dir) => editFull(f => moveEntry(f, i, dir))}
@@ -1967,6 +1992,12 @@ const App: React.FC = () => {
                 onKeyChange={setSelectedKey}
                 onScaleChange={setScale}
                 onBpmChange={b => setBpm(Math.max(BPM_MIN, Math.min(BPM_MAX, b)))}
+                canUndo={history.canUndo}
+                canRedo={history.canRedo}
+                onUndo={history.undo}
+                onRedo={history.redo}
+                keyOpen={keyOpen}
+                onKeyOpen={setKeyOpen}
                 onTogglePlay={togglePlay}
                 onStop={stopAndRewind}
                 onToggleRecord={toggleRecord}
@@ -2042,6 +2073,18 @@ const App: React.FC = () => {
                 onCredits={() => setCreditsOpen(true)}
             />
             {compact && learnEl(false)}
+            {/* "Open file…" from a section's ⋯ menu: the menu is gone by the time a file is picked, so the input lives here */}
+            <input
+                ref={songFile}
+                type="file"
+                accept=".json,application/json"
+                hidden
+                onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) songActions.open(file);
+                    e.target.value = '';
+                }}
+            />
             <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
             <ConfirmDialog
                 open={confirmClear}
@@ -2058,7 +2101,7 @@ const App: React.FC = () => {
                     setSelected(0);
                     setMelCursor(0);
                     setPlayhead(0);
-                    flash('Cleared. Undo to get it all back.');
+                    flash('Cleared.', { undo: true });
                 }}
             >
                 <p>A clean slate: one empty section, the chain reset, only the {full.parts.find(p => p.kind === 'chords')?.name ?? 'Keys'} part, and no effects.</p>
@@ -2066,7 +2109,29 @@ const App: React.FC = () => {
             </ConfirmDialog>
             <CreditsDialog open={creditsOpen} onClose={() => setCreditsOpen(false)} />
             {htDialog}
-            {notice && <div className="toast" role="status">{notice}</div>}
+            {notice && (
+                <div
+                    className={`toast ${notice.undo ? 'with-undo' : ''}`}
+                    role="status"
+                    onPointerEnter={() => setNoticeHeld(true)}
+                    onPointerLeave={() => setNoticeHeld(false)}
+                    onFocus={() => setNoticeHeld(true)}
+                    onBlur={() => setNoticeHeld(false)}
+                >
+                    <span>{notice.text}</span>
+                    {notice.undo && history.canUndo && (
+                        <button
+                            className="toast-undo"
+                            onClick={() => {
+                                history.undo();
+                                setNotice(null);
+                            }}
+                        >
+                            Undo
+                        </button>
+                    )}
+                </div>
+            )}
         </div>
         {introEl}
     </>);
