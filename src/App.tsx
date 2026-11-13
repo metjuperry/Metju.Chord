@@ -18,7 +18,7 @@ import {
     STICK_DIRS, STICK_LABELS, ScaleId, buildChordMidi, chordTags, keyPitchClass, resolveChord, romanNumeral, scalePitchClasses,
     nextChords, noteNames, spellNoteOctave, stickChordType, triadQuality, voiceLead,
 } from './theory';
-import { getEngine } from './audio/engine';
+import { getEngine, liveTime } from './audio/engine';
 import { useHistory } from './useHistory';
 import { keepScreenOn } from './pwa';
 import SongMenu from './components/SongMenu';
@@ -38,7 +38,7 @@ import {
 import { PREVIEW_TAIL_BEATS, previewSound } from './preview';
 import { slideIn, useSegmentThumbs, zoomSection } from './motion';
 import type { ShapeOverrides } from './sound';
-import { Scheduled, chainEvents, kickTicks, sectionEvents, sectionLoopLength, sectionMusicEnd } from './playback';
+import { Scheduled, chainTimeline, kickTicks, sectionEventsOf, sectionLoopLength, sectionMusicEnd } from './playback';
 import SongView from './components/SongView';
 import SectionSwitcher from './components/SectionSwitcher';
 import VowelLane from './components/VowelLane';
@@ -47,7 +47,7 @@ import {
     Accidental, ChordPart, Harmony, MAX_PARTS, Note, Part, PartFx, PartKind, PartTone, noFx,
     fitNotes, pasteNotes, notesIn, replaceRange, hasInstrument, hasNotes, fitVowels, melodyMidi, voiceSettings, writesNotes, noteWriter, NotesPart, newPart, noteAt, noteMidi, partNotes, placeNote, removeNote, resolveClip, withAcc,
 } from './parts';
-import { SeqEvent, SeqOptions, SequencerPlayer, ticksToSeconds } from './audio/sequencer';
+import { SeqEvent, SeqEvents, SeqOptions, SequencerPlayer, ticksToSeconds } from './audio/sequencer';
 import { SyncOut, loadSync, saveSync, windowPulses } from './sync';
 import { liveStroke } from './strum';
 import {
@@ -82,14 +82,26 @@ const MELODY_OCT_MIN = 3;
 const MELODY_OCT_MAX = 5;
 const MAX_INVERSION = 3;
 
+/** Everything a strip's engine settings come from (objects by identity): when none of it changed, the strip needs no engine call. */
+const stripInputs = (p: Part): unknown[] => (hasInstrument(p)
+    ? [p.instrument, p.volume, p.fx, p.tone, p.shape, ...(p.kind === 'voice' ? [p.singers, p.range, p.vowel, p.vibrato, p.breath] : [])]
+    : [p.volume, p.fx]);
+
 /**
  * Keep the engine's strips in step with the parts: an instrument per instrument part, a kit per drum
- * part, and one more for each section that changes how a part sounds (`engineStrips`).
+ * part, and one more for each section that changes how a part sounds (`engineStrips`). `applied` holds
+ * what each strip was last given, so a song edit only touches the strips whose sound it changed (a
+ * section strip's part is a fresh object every time, so this compares what goes into the engine).
  */
-function syncParts(engine: ReturnType<typeof getEngine>, strips: { id: string; part: Part }[]) {
-    strips.forEach(({ id, part: p }) => (hasInstrument(p)
-        ? engine.setTrack(id, { instrument: p.instrument, volume: p.volume, fx: p.fx, tone: p.tone, shape: p.shape, voice: p.kind === 'voice' ? voiceSettings(p) : undefined })
-        : engine.setDrumTrack(id, { volume: p.volume, fx: p.fx })));
+function syncParts(engine: ReturnType<typeof getEngine>, strips: { id: string; part: Part }[], applied: Map<string, unknown[]>) {
+    strips.forEach(({ id, part: p }) => {
+        const inputs = stripInputs(p);
+        const last = applied.get(id);
+        if (last && last.length === inputs.length && last.every((v, i) => v === inputs[i])) return;
+        applied.set(id, inputs);
+        if (hasInstrument(p)) engine.setTrack(id, { instrument: p.instrument, volume: p.volume, fx: p.fx, tone: p.tone, shape: p.shape, voice: p.kind === 'voice' ? voiceSettings(p) : undefined });
+        else engine.setDrumTrack(id, { volume: p.volume, fx: p.fx });
+    });
 }
 
 /** How far a section plays on its own (Loop mode) before it wraps, or stops when loop is off. */
@@ -403,12 +415,15 @@ const App: React.FC = () => {
 
     // ---- audio start --------------------------------------------------------------
 
+    /** What each engine strip was last given (`syncParts`). */
+    const appliedStrips = useRef(new Map<string, unknown[]>());
+
     const startAudio = async () => {
         if (audioReady) return;
         await Tone.start();
         const engine = getEngine(); // built on first use, after the user gesture
         engine.setBpm(transportBpm(bpm, ts));
-        syncParts(engine, engineStrips(full));
+        syncParts(engine, engineStrips(full), appliedStrips.current);
         engine.selectTrack(trackOf(padPart.id));
         setAudioReady(true);
     };
@@ -433,10 +448,12 @@ const App: React.FC = () => {
     useEffect(() => {
         if (!audioReady) return;
         const engine = getEngine();
-        syncParts(engine, strips);
+        syncParts(engine, strips, appliedStrips.current);
         const ids = new Set(strips.map(x => x.id));
         engineParts.current.forEach(id => {
-            if (!ids.has(id)) engine.removeTrack(id);
+            if (ids.has(id)) return;
+            engine.removeTrack(id);
+            appliedStrips.current.delete(id);
         });
         engineParts.current = ids;
     }, [strips, audioReady]);
@@ -526,7 +543,8 @@ const App: React.FC = () => {
         if (step !== undefined && s.padMelody) {
             const perStep = s.stepTicks / TICKS_PER_SIXTEENTH;
             const total16 = s.total * perStep;
-            const pos = s.playing ? player.current?.position() : null;
+            // where the song is when this note sounds (not Tone's look-ahead ahead of it)
+            const pos = s.playing ? player.current?.position(liveTime()) : null;
             if (pos !== null && pos !== undefined) {
                 // live: the note starts on the nearest 1/16 and lasts until the pad is let go
                 hold.rec = { start16: Math.round(pos / TICKS_PER_SIXTEENTH) % total16, step, acc, part: s.padMelody.id };
@@ -601,7 +619,7 @@ const App: React.FC = () => {
         if (hold.rec) {
             // a live note ends where the pad was let go, rounded to the 1/16 (at least one 1/16 long)
             const s = live.current;
-            const pos = player.current?.position();
+            const pos = player.current?.position(liveTime());
             let len16 = s.melodyLen;
             if (pos !== null && pos !== undefined) {
                 const loop16 = sectionLoopLength(s.view) / TICKS_PER_SIXTEENTH;
@@ -644,10 +662,14 @@ const App: React.FC = () => {
     const [queued, setQueued] = useState<string | null>(null);
     /** Chain mode: the chain slot playing and the song tick, for the Song view. */
     const [chainPos, setChainPos] = useState<{ index: number; tick: number } | null>(null);
-    const scheduleCache = useRef<{ full: FullSong; mode: PlaybackMode; section: string; loop: boolean; result: { events: SeqEvent<Scheduled>[]; opts: SeqOptions } } | null>(null);
+    const scheduleCache = useRef<{ full: FullSong; mode: PlaybackMode; section: string; loop: boolean; result: { events: SeqEvents<Scheduled>; opts: SeqOptions } } | null>(null);
 
-    /** The music as timed events, and how it loops: the whole chain, or the section being looped. Cached per song edit. */
-    const schedule = (): { events: SeqEvent<Scheduled>[]; opts: SeqOptions } => {
+    /**
+     * The music as timed events, and how it loops: the whole chain, or the section being looped. Built
+     * again per song edit, from each section's cached events (`sectionEventsOf`), so only the sections
+     * an edit changed are worked out again.
+     */
+    const schedule = (): { events: SeqEvents<Scheduled>; opts: SeqOptions } => {
         const s = live.current;
         const t = transport.current;
         const c = scheduleCache.current;
@@ -655,13 +677,13 @@ const App: React.FC = () => {
         let result;
         if (t.mode === 'chain') {
             // each section from its start for its full length; drum patterns restart, notes are cut at its end
-            const { events, length } = chainEvents(s.full);
-            result = { events, opts: { loop: s.loop, loopEnd: length, end: length } };
+            const { slots, length } = chainTimeline(s.full);
+            result = { events: { slots }, opts: { loop: s.loop, loopEnd: length, end: length } };
         } else {
             const sec = findSection(s.full, t.section);
             const view = sectionView(s.full, sec.id);
             result = {
-                events: sectionEvents(view, sec, playLength(view, s.loop), 0, false),
+                events: sectionEventsOf(s.full, sec, playLength(view, s.loop), false),
                 opts: { loop: s.loop, loopEnd: sectionLoopLength(view), end: sectionMusicEnd(view) },
             };
         }
