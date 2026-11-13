@@ -84,7 +84,10 @@ export const PopMenu: React.FC<{ anchor: MenuAnchor; label: string; items: MenuI
             clearTimeout(t);
             document.removeEventListener('pointerdown', close);
             document.removeEventListener('keydown', key, true);
-            if (before && document.contains(before) && box.current?.contains(document.activeElement)) before.focus();
+            // back to what had the focus, unless the press that closed the menu put it somewhere else
+            // (by now the menu may be gone, and the focus that was in it with it)
+            const now = document.activeElement;
+            if (before && document.contains(before) && (!now || now === document.body || box.current?.contains(now))) before.focus();
         };
     }, []);
 
@@ -166,3 +169,41 @@ export function useLongPress(onLong: (anchor: MenuAnchor) => void) {
         },
     };
 }
+
+/**
+ * A "⋯" button with its menu: items and, above them, any controls passed as children (a segmented
+ * group, a select). The press that closes the menu (outside it, on the button) doesn't open it again.
+ */
+export const MoreMenu: React.FC<{ label: string; title?: string; items: MenuItem[]; className?: string; children?: React.ReactNode }> = ({ label, title, items, className, children }) => {
+    const [anchor, setAnchor] = useState<MenuAnchor | null>(null);
+    const closed = useRef(0);
+    return (
+        <>
+            <button
+                className={`icon-button more-button ${className ?? ''}`}
+                aria-haspopup="menu"
+                aria-expanded={!!anchor}
+                aria-label={label}
+                title={title ?? label}
+                onClick={e => {
+                    if (performance.now() - closed.current > 350) setAnchor({ rect: e.currentTarget.getBoundingClientRect() });
+                }}
+            >
+                ⋯
+            </button>
+            {anchor && (
+                <PopMenu
+                    anchor={anchor}
+                    label={label}
+                    items={items}
+                    onClose={() => {
+                        closed.current = performance.now();
+                        setAnchor(null);
+                    }}
+                >
+                    {children}
+                </PopMenu>
+            )}
+        </>
+    );
+};

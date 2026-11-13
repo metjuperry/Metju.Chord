@@ -7,7 +7,8 @@
       centred on the control and grown to 44 px each way. Neighbours must then sit at least 44 px apart
       (centre to centre), or the areas would eat into each other.
 
-   Not covered: the melody and drum grid cells and the drum row names (their own redesign), pads, stick.
+   Not covered: the drum grid cells and row names (their own redesign), pads, stick. The melody grid's
+   cells are 36 px and more on phones (one octave at a time, 1/8 columns: PartEditors.css).
    The top bar's sizes are in TopBar.css. */
 
 /* 2: the invisible hit area */
@@ -187,20 +188,10 @@
     min-height: 44px;
 }
 
-/* the melody grid's row menu: a 44 px label column and row, so its hit area fits (the cells stay as they are) */
-.app.compact .melody-editor {
-    --mel-label: 44px;
-}
-
-.app.compact .mel-row-tools {
-    min-height: 44px;
-    padding-right: 0;
-    justify-content: center;
-}
-
-.app.compact .mel-row-menu {
-    width: 36px;
-    height: 28px;
+/* the melody grid on phones (PartEditors.css, .melody-editor.compact): its row menu sits in a 48 px label
+   column over the row names, so the hit area reaches up and down over labels, never into cells */
+.app.compact .mel-row-menu::after {
+    inset: -10px -4px;
 }
 
 /* the chain: a block's ⋯ is 28 px to see and over 44 px to hit (8 px into its block, 12 px into the

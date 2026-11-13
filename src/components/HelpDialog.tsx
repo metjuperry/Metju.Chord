@@ -128,7 +128,9 @@ const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose }) => {
                     One row per note of the scale. Tap an empty cell to add a note, tap a note to select it (yellow edge), tap it again to
                     remove it. With a note selected, <b>♭ ♮ ♯</b> in the toolbar at the bottom (or <kbd>Shift ↑</kbd> / <kbd>Shift ↓</kbd>)
                     make it a semitone lower or higher: it stays on its row with a small ♯ or ♭ and is named as written (F♯, G♭). It's still
-                    that scale note, so it moves with the key: F♯ in A minor becomes C♯ in E minor.
+                    that scale note, so it moves with the key: F♯ in A minor becomes C♯ in E minor. On a phone the grid shows one octave
+                    at a time: <b>Low</b> / <b>High</b> switch, and a mark at the top or bottom of a column means a note in the other one.
+                    Columns are 1/8 (<b>1/16</b> zooms in); new-note length and the part's octave are under ⋯.
                 </p>
 
                 <h3 className="eyebrow">The chord row</h3>

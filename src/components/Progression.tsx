@@ -501,6 +501,8 @@ export const LaneBar: React.FC<{
     playing: boolean;
     describe: (clip: Clip) => { symbol: string; numeral: string };
     onBack: () => void;
+    /** The editor's own tools, at the end of the bar (the melody grid's octave and zoom). */
+    tools?: React.ReactNode;
 }> = p => {
     const pct = (steps: number) => `${(steps / p.total) * 100}%`;
     const back = useRef<HTMLButtonElement>(null);
@@ -526,6 +528,7 @@ export const LaneBar: React.FC<{
                     <span className="playhead strip-head" style={{ '--step': p.playhead, left: `calc(var(--pp, var(--step)) / ${p.total} * 100%)` } as React.CSSProperties} />
                 )}
             </div>
+            {p.tools}
         </div>
     );
 };

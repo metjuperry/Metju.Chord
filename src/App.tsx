@@ -8,7 +8,7 @@ import Progression from './components/Progression';
 import HelpDialog from './components/HelpDialog';
 import DrumEditor from './components/DrumEditor';
 import IntroScreen, { IntroPhase } from './components/IntroScreen';
-import MelodyEditor from './components/MelodyEditor';
+import MelodyEditor, { MelodyTools, higherOctave } from './components/MelodyEditor';
 import PartsView, { MASTER, subLabel } from './components/PartsView';
 import SettingsSheet, { CreditsDialog } from './components/SettingsSheet';
 import LearnPanel, { HearEvent, UseHow } from './components/LearnPanel';
@@ -321,7 +321,15 @@ const App: React.FC = () => {
     const [selNoteKey, setSelNoteKey] = useState<{ part: string; start: number } | null>(null);
     /** Phones: back on the lane list with a note, drum or voice lane still picked ("‹ Lanes"); picking a lane opens its editor again. */
     const [laneList, setLaneList] = useState(false);
+    /** Phones: the melody grid shows one octave (the upper one when `melHigh`), in 1/8 columns unless `melFine`. */
+    const [melHigh, setMelHigh] = useState(false);
+    const [melFine, setMelFine] = useState(false);
     const pickLane = (lane: string) => {
+        if (lane !== selectedLane) {
+            // a grid opens on the octave where most of its notes are
+            const w = noteWriter(parts.find(p => p.id === lane));
+            if (w) setMelHigh(higherOctave(w.notes));
+        }
         setSelectedLane(lane);
         setLaneList(false);
         const kind = parts.find(p => p.id === lane)?.kind;
@@ -1644,6 +1652,9 @@ const App: React.FC = () => {
                 onPaste={melodyActions.paste}
                 canPaste={laneClip?.kind === 'melody'}
                 onRange={melodyActions.range}
+                compact={compact}
+                high={melHigh}
+                fine={melFine}
             />
         ) : (
             // chord and bass parts have nothing to write: they follow the chord row; how they play is in Parts
@@ -1786,6 +1797,24 @@ const App: React.FC = () => {
             playhead={playhead}
             playing={playing}
             describe={describe}
+            tools={melodyPart ? (
+                <MelodyTools
+                    part={melodyPart}
+                    harmony={harmony}
+                    high={melHigh}
+                    onHigh={setMelHigh}
+                    fine={melFine}
+                    onFine={setMelFine}
+                    perBeat={sixteenthsPerStep(ts)}
+                    len={melodyLen}
+                    onLen={setMelodyLen}
+                    onOctave={melodyActions.octave}
+                    onCopy={melodyActions.copy}
+                    onPaste={melodyActions.paste}
+                    canPaste={laneClip?.kind === 'melody'}
+                    onClear={melodyActions.clear}
+                />
+            ) : undefined}
             onBack={() => {
                 setLaneList(true);
                 // back on the list, the focus goes to the lane it came from

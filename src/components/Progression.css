@@ -903,6 +903,8 @@
 
 .app.compact .lane-focus .dock {
     margin: 0 -12px -6px;
+    padding-top: 4px;
+    padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
 }
 
 .lane-bar {
