@@ -260,7 +260,7 @@ describe('settings from the UI overhaul', () => {
 
     it('keeps the pads part and the click accent, with defaults for older saves', () => {
         const old = { voiceLeading: true, octave: 3, inversion: 1, loop: false, theme: 'light', nextHint: false };
-        expect(readSettings(old)).toEqual({ ...old, padPart: '', clickAccent: true, openSection: '', playMode: 'loop', learnTab: 'progressions', chordMood: false, soundPreview: true, shapeView: 'simple' });
+        expect(readSettings(old)).toEqual({ ...old, padPart: '', clickAccent: true, openSection: '', playMode: 'loop', learnTab: 'progressions', chordMood: false, soundPreview: true, shapeView: 'simple', partsTab: 'sound' });
         expect(readSettings({ padPart: 'p4', clickAccent: false })).toMatchObject({ padPart: 'p4', clickAccent: false });
         expect(readSettings({ padPart: 7 }).padPart).toBe('');
     });
@@ -271,6 +271,8 @@ describe('settings from the UI overhaul', () => {
         expect(readSettings({ soundPreview: false }).soundPreview).toBe(false);
         expect(readSettings({ shapeView: 'advanced' }).shapeView).toBe('advanced');
         expect(readSettings({ shapeView: 'expert' }).shapeView).toBe('simple');
+        expect(readSettings({ partsTab: 'effects' }).partsTab).toBe('effects');
+        expect(readSettings({ partsTab: 'mixer' }).partsTab).toBe('sound');
         expect(readSettings({ soundPreview: 'off' }).soundPreview).toBe(true);
     });
 

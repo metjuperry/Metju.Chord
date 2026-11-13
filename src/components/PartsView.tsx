@@ -13,7 +13,7 @@ import {
     RANGE_OCTAVE, vowelGlideSeconds, STRUM_DIRECTIONS, STRUM_SPREADS, TONE_KEYS, VOWELS, VoicePart, bassNotes, fxAvailable, hasInstrument, shapePan,
 } from '../parts';
 import { PPQ } from '../progression';
-import { ShapeView, Space } from '../song';
+import { PartsTab, ShapeView, Space } from '../song';
 import {
     DRIVE_TYPES, DriveType, FILTER_TYPES, FilterType, KNOBS, LFO_RATES, LfoRate, PartShape, ShapeKnob, ShapeOverrides, defaultShape, effectiveShape, fromKnob, shapeText, toKnob,
 } from '../sound';
@@ -440,9 +440,56 @@ interface PartDetailProps {
     onFx: (key: keyof PartFx, value: number) => void;
     /** Drums: jump to Song with this part's beat open. */
     onOpenBeat: () => void;
+    /** Phones: the detail is split into Sound · Shape · Effects, one at a time. */
+    compact: boolean;
+    tab: PartsTab;
+    onTab: (tab: PartsTab) => void;
 }
 
-const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onPadPart, onRemove, onUpdate, onTone, onShape, onShapeReset, shapeView, onShapeView, scope, onFx, onOpenBeat }) => {
+const TAB_LABELS: { [t in PartsTab]: string } = { sound: 'Sound', shape: 'Shape', effects: 'Effects' };
+
+/**
+ * The part's sub-tabs on a phone: a real tablist (arrow keys, Home, End move and pick; only the picked
+ * tab is in the Tab order).
+ */
+const PartTabs: React.FC<{ id: string; tabs: PartsTab[]; tab: PartsTab; onTab: (t: PartsTab) => void }> = ({ id, tabs, tab, onTab }) => {
+    const ref = useRef<HTMLDivElement>(null);
+    const go = (t: PartsTab) => {
+        onTab(t);
+        ref.current?.querySelector<HTMLElement>(`#pt-${id}-${t}`)?.focus();
+    };
+    return (
+        <div className="pd-tabs segmented small-seg" role="tablist" aria-label="Part settings" ref={ref}>
+            {tabs.map(t => (
+                <button
+                    key={t}
+                    role="tab"
+                    id={`pt-${id}-${t}`}
+                    aria-selected={t === tab}
+                    aria-pressed={t === tab}
+                    aria-controls={`pp-${id}`}
+                    tabIndex={t === tab ? 0 : -1}
+                    onClick={() => onTab(t)}
+                    onKeyDown={e => {
+                        const i = tabs.indexOf(tab);
+                        const next = e.key === 'ArrowRight' ? tabs[(i + 1) % tabs.length]
+                            : e.key === 'ArrowLeft' ? tabs[(i + tabs.length - 1) % tabs.length]
+                                : e.key === 'Home' ? tabs[0]
+                                    : e.key === 'End' ? tabs[tabs.length - 1] : null;
+                        if (!next) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        go(next);
+                    }}
+                >
+                    {TAB_LABELS[t]}
+                </button>
+            ))}
+        </div>
+    );
+};
+
+const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onPadPart, onRemove, onUpdate, onTone, onShape, onShapeReset, shapeView, onShapeView, scope, onFx, onOpenBeat, compact, tab: tabSetting, onTab }) => {
     // Effects stay on screen while you turn them (even down to 0) and after "+ Effect"; double-tap (0) takes one away
     const [pinned, setPinned] = useState<(keyof PartFx)[]>([]);
     useEffect(() => {
@@ -459,22 +506,27 @@ const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onP
         if (v <= 0 && part.fx[k] > 0.05) setPinned(ps => ps.filter(x => x !== k));
         onFx(k, v);
     };
+    // drums have no shape: their Shape tab isn't there, and a remembered Shape shows Sound
+    const tabs: PartsTab[] = hasInstrument(part) ? ['sound', 'shape', 'effects'] : ['sound', 'effects'];
+    const tab = tabs.includes(tabSetting) ? tabSetting : 'sound';
+    const showing = (t: PartsTab) => !compact || tab === t;
 
     return (
-        <section className="part-detail panel" aria-label={`${part.name}: sound`} style={{ '--track': part.color } as React.CSSProperties}>
+        <section className={`part-detail panel ${compact ? `tabbed tab-${tab}` : ''}`} aria-label={`${part.name}: sound`} style={{ '--track': part.color } as React.CSSProperties}>
             <div className="pd-head">
                 <span className="pd-dot" aria-hidden="true" />
                 <h2 className="pd-name">{part.name}</h2>
-                <span className="pd-kind">{KIND_TAG[part.kind]}</span>
+                {compact ? <PartTabs id={part.id} tabs={tabs} tab={tab} onTab={onTab} /> : <span className="pd-kind">{KIND_TAG[part.kind]}</span>}
                 <span className="pd-space" />
                 {part.kind === 'chords' && (
                     <button
                         className="chip-button pd-pads"
                         aria-pressed={isPadPart}
                         title={isPadPart ? 'The pads play through this part' : 'Make the pads play through this part'}
+                        aria-label={compact ? 'Pads play this part' : undefined}
                         onClick={onPadPart}
                     >
-                        Pads play this part
+                        {compact ? 'Pads' : 'Pads play this part'}
                     </button>
                 )}
                 {canRemove && (
@@ -482,6 +534,11 @@ const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onP
                 )}
             </div>
 
+            <div
+                className="pd-body"
+                {...(compact ? { role: 'tabpanel', id: `pp-${part.id}`, 'aria-labelledby': `pt-${part.id}-${tab}` } : {})}
+            >
+            {showing('sound') && (<>
             {part.kind === 'voice' ? (
                 <VoiceBlock part={part} onUpdate={patch => onUpdate(patch as Partial<Part>)} />
             ) : hasInstrument(part) ? (
@@ -545,12 +602,15 @@ const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onP
                 </div>
             )}
 
-            {hasInstrument(part) && (
-                <ShapeBlock part={part} view={shapeView} onView={onShapeView} onShape={onShape} onReset={onShapeReset} scope={scope} />
+            </>)}
+
+            {showing('shape') && hasInstrument(part) && (
+                <ShapeBlock part={part} view={shapeView} onView={onShapeView} onShape={onShape} onReset={onShapeReset} scope={scope} graphs={!compact || shapeView === 'advanced'} />
             )}
 
+            {(showing('shape') || showing('effects')) && (
             <div className="pd-knobs">
-                {hasInstrument(part) && (
+                {showing('shape') && hasInstrument(part) && (
                     <div className="knob-group" role="group" aria-label={`${part.name} tone`}>
                         <span className="pd-label">Tone</span>
                         <div className="knob-row">
@@ -582,6 +642,7 @@ const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onP
                         </div>
                     </div>
                 )}
+                {showing('effects') && (
                 <div className="knob-group" role="group" aria-label={`${part.name} effects`}>
                     <span className="pd-label">Effects{part.kind === 'drums' ? ' · sends' : ''}</span>
                     <div className="knob-row">
@@ -610,6 +671,9 @@ const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onP
                         {shown.length === 0 && off.length === 0 && <span className="section-note">—</span>}
                     </div>
                 </div>
+                )}
+            </div>
+            )}
             </div>
         </section>
     );
@@ -634,6 +698,8 @@ interface ShapeBlockProps {
     onShape: (patch: ShapeOverrides, key: string) => void;
     onReset: () => void;
     scope: () => WaveSource | null;
+    /** The envelope and filter pictures (on a phone only in Advanced, where they're draggable). */
+    graphs: boolean;
 }
 
 /**
@@ -651,7 +717,7 @@ function lerpShape(a: PartShape, b: PartShape, t: number): PartShape {
     return out;
 }
 
-const ShapeBlock: React.FC<ShapeBlockProps> = ({ part, view, onView, onShape, onReset: reset, scope }) => {
+const ShapeBlock: React.FC<ShapeBlockProps> = ({ part, view, onView, onShape, onReset: reset, scope, graphs }) => {
     const own = defaultShape(part.instrument);
     const target = useMemo(() => effectiveShape(part.instrument, part.shape), [part.instrument, part.shape]);
     // Reset swings the knobs and graphs back to the instrument's own sound; everything else follows at once
@@ -690,7 +756,7 @@ const ShapeBlock: React.FC<ShapeBlockProps> = ({ part, view, onView, onShape, on
             </div>
             {view === 'simple' ? (
                 <>
-                    <ShapeGraphs shape={shape} color={part.color} />
+                    {graphs && <ShapeGraphs shape={shape} color={part.color} />}
                     <div className="knob-row shape-knobs">{SIMPLE_KNOBS.map(knob)}</div>
                 </>
             ) : (
@@ -824,7 +890,7 @@ const MasterDetail: React.FC<{
                 <button className="chip-button small-chip" aria-pressed={overview} onClick={() => setOverview(o => !o)}>Mix overview</button>
                 <button className="chip-button small-chip" disabled={!anyWet} onClick={onDryAll} title="Turn every part's effects off (undoable)">All dry</button>
             </div>
-            <p className="section-note">Every part can send into one reverb and one delay; their returns and the output level are set here.</p>
+            <p className="section-note master-note">Every part can send into one reverb and one delay; their returns and the output level are set here.</p>
             <SpaceControls space={space} onSpace={onSpace} />
             {overview && (
                 <div className="pd-block">
@@ -852,6 +918,10 @@ interface PartsViewProps {
     onShapeReset: (id: string) => void;
     shapeView: ShapeView;
     onShapeView: (v: ShapeView) => void;
+    /** Phones: the part's detail in sub-tabs, the last one remembered. */
+    compact: boolean;
+    tab: PartsTab;
+    onTab: (tab: PartsTab) => void;
     /** The selected part's live waveform, for the Advanced scope. */
     scope: (id: string) => WaveSource | null;
     onFx: (id: string, key: keyof PartFx, value: number) => void;
@@ -928,6 +998,9 @@ const PartsView: React.FC<PartsViewProps> = p => {
                     scope={scopeFor}
                     onFx={(k, v) => p.onFx(part.id, k, v)}
                     onOpenBeat={() => p.onOpenBeat(part.id)}
+                    compact={p.compact}
+                    tab={p.tab}
+                    onTab={p.onTab}
                 />
             ) : (
                 <MasterDetail parts={p.parts} space={p.space} onSpace={p.onSpace} onDryAll={p.onDryAll} onFx={p.onFx} onSelect={p.onSelect} />

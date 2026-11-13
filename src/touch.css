@@ -205,14 +205,14 @@
 /* ---- Parts ----------------------------------------------------------------------------------------- */
 
 /* the list and the part scroll on their own (PartsView.css): nothing in them may be squeezed */
-.app.compact :is(.parts-list, .part-detail) > * {
+.app.compact :is(.parts-list, .part-detail, .pd-body) > * {
     flex-shrink: 0;
 }
 
 /* a part's row: the name on one 44 px line, the volume bar with M and S on the next */
 .app.compact .pl-row:not(.pl-master) {
     flex-wrap: wrap;
-    gap: 0 4px;
+    gap: 2px 4px; /* 2 px: M and S grow 2 px up to 44, clear of the name above */
     padding: 0 4px 4px 8px;
 }
 
@@ -246,6 +246,11 @@
 .app.compact .pl-row .ms-button {
     width: 40px;
     height: 40px;
+}
+
+/* M and S: hit areas side by side, not over each other */
+.app.compact .pl-row .ms-button + .ms-button {
+    margin-left: 2px;
 }
 
 .app.compact .pd-pads {

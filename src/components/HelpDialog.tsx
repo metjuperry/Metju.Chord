@@ -76,7 +76,7 @@ const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose }) => {
                         switch sections; ‹ Song goes back. While a section is open, Parts changes how the parts sound in that section only; from the whole song, a change reaches every section. New, open, save, share and Paste from Hooktheory (into the open section) are in the Song menu; on a phone a section's ⋯ has them, with its length (− Row / + Row) and the time signature. The melody and drum editors have Copy and Paste: copy a lane, open another section, paste. In the melody grid each row's ⋯ copies, cuts, pastes or clears just that row, to move a phrase.</dd>
                     <dt><b>Parts</b></dt>
                     <dd><i>How</i> it sounds: every part with its volume, mute and solo, and for the selected one its instrument, how it plays
-                        (chord, strum, arpeggio; bass style; melody range), tone knobs and effects. <b>Master</b> holds the shared reverb, delay and output. Mute and solo here are for the whole song.</dd>
+                        (chord, strum, arpeggio; bass style; melody range), tone knobs and effects. On a phone these are three tabs next to the part's name: <b>Sound</b> (instrument, how it plays), <b>Shape</b> (the shape and tone knobs) and <b>Effects</b>. <b>Master</b> holds the shared reverb, delay and output. Mute and solo here are for the whole song.</dd>
                     <dt><b>Top bar</b></dt>
                     <dd>Always in reach, on every screen: key, scale and tempo, Stop, Play and Record, <b>undo and redo</b>, the modes, Learn and ⚙.
                         Hold <b>−</b> or <b>+</b> to run the tempo, or type the number. On a phone, key, scale and tempo are one button

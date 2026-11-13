@@ -191,9 +191,13 @@ export interface Settings {
     soundPreview: boolean;
     /** Parts → Shape: six knobs (simple) or every control with draggable graphs (advanced). */
     shapeView: ShapeView;
+    /** Parts on a phone: the selected part's last sub-tab (Sound, Shape or Effects). */
+    partsTab: PartsTab;
 }
 
 export type ShapeView = 'simple' | 'advanced';
+
+export type PartsTab = 'sound' | 'shape' | 'effects';
 
 export type PlaybackMode = 'loop' | 'chain';
 
@@ -229,6 +233,7 @@ export function newSong(): Song {
 export const defaultSettings = (): Settings => ({
     voiceLeading: false, octave: 4, inversion: 0, loop: true, theme: 'dark', nextHint: true, padPart: '', clickAccent: true,
     openSection: '', playMode: 'loop', learnTab: 'progressions', chordMood: false, soundPreview: true, shapeView: 'simple',
+    partsTab: 'sound',
 });
 
 /** A part without its content: what a FullSong keeps song-wide. */
@@ -531,6 +536,7 @@ export function readSettings(v: unknown): Settings {
         chordMood: bool(v.chordMood, d.chordMood),
         soundPreview: bool(v.soundPreview, d.soundPreview),
         shapeView: oneOf<ShapeView>(v.shapeView, ['simple', 'advanced'], d.shapeView),
+        partsTab: oneOf<PartsTab>(v.partsTab, ['sound', 'shape', 'effects'], d.partsTab),
     };
 }
 

@@ -193,6 +193,13 @@
     gap: 10px;
 }
 
+.pd-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+}
+
 .pd-head {
     display: flex;
     flex-wrap: wrap;
@@ -540,6 +547,7 @@
     }
 
     .app.compact.mode-parts .parts-view {
+        grid-template-columns: 176px minmax(0, 1fr);
         flex: 1 1 auto;
         min-height: 0;
         align-items: stretch;
@@ -551,9 +559,71 @@
         min-height: 0;
     }
 
-    .part-detail {
+    .part-detail,
+    .pd-body {
         gap: 8px;
     }
+}
+
+/* phones: the part in sub-tabs (Sound · Shape · Effects) next to its name, one screen each */
+.app.compact .pd-tabs {
+    flex: 0 1 auto;
+}
+
+.app.compact .pd-tabs > button {
+    padding: 0 12px;
+}
+
+.app.compact .part-detail.tabbed .pd-head {
+    flex-wrap: nowrap;
+}
+
+.app.compact .part-detail.tabbed .pd-name {
+    min-width: 0;
+    font-size: 17px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* the instruments as a wrapping grid: every one in sight, no sideways scroll */
+.app.compact .inst-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+    overflow: visible;
+    padding-bottom: 0;
+}
+
+.app.compact .inst-tile {
+    height: 44px;
+    gap: 3px;
+}
+
+/* Master on a phone: the three cards side by side, each name over its knobs, in one screen */
+.app.compact .master-detail .fx-space {
+    display: flex;
+    flex-wrap: wrap;
+}
+
+.app.compact .master-detail .fx-card {
+    flex: 1 1 150px;
+    align-items: flex-start;
+}
+
+.app.compact .master-detail .fx-card:nth-child(2) {
+    flex-basis: 210px;
+}
+
+.app.compact .master-detail .fx-card:nth-child(3) {
+    flex-basis: 90px;
+}
+
+.app.compact .master-detail .fx-card b {
+    flex: 1 0 100%;
+}
+
+.app.compact .master-detail :is(.fx-card-val, .master-note) {
+    display: none;
 }
 
 /* portrait phone: the list on top, the part under it */
