@@ -1,5 +1,21 @@
 import { test, expect } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import { open, notes, clearNotes, roots, oscTypes, savedState, seed, section, clip, ROOT } from './helpers';
+
+/**
+ * How many oscillator types the engine has set once it has settled. Strips are built after the start tap, and
+ * some nodes only when first used, so a single read can catch it midway: read until two reads 400 ms apart agree.
+ */
+async function settledOscCount(page: Page): Promise<number> {
+    let prev = -1;
+    for (let i = 0; i < 20; i++) {
+        const n = (await oscTypes(page)).length;
+        if (n === prev) return n;
+        prev = n;
+        await page.waitForTimeout(400);
+    }
+    return prev;
+}
 
 // A chain of two sections of different lengths, the second with its own bass sound (instrument and octave):
 // each slot must play its own notes, for its own length, and the section's own strip must exist.
@@ -15,12 +31,12 @@ const chain = (own: boolean) => seed({
 
 test('chain of two sections: each slot plays its own notes for its own length, through its own strip', async ({ browser }) => {
     const control = await open(browser, { seed: chain(false) });
-    const base = (await oscTypes(control.page)).length;
+    const base = await settledOscCount(control.page);
     await control.context.close();
 
     const { page, context } = await open(browser, { seed: chain(true) });
-    // the section's own bass sound builds one more synth voice than the song's parts alone
-    await expect.poll(async () => (await oscTypes(page)).length).toBeGreaterThan(base);
+    // the section's own bass sound builds one more strip than the song's parts alone
+    expect(await settledOscCount(page)).toBeGreaterThan(base);
 
     await page.locator('.tb-play').tap();
     await clearNotes(page);

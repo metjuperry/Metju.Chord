@@ -98,6 +98,8 @@ async function learnAndSettings(page: Page) {
     await page.locator('.tb-learn').tap();
     await noHorizontalOverflow(page, 'Learn');
     const tabs = page.locator('.lp-tabs [role=tab]');
+    // Learn may be loaded on demand: wait for it before counting
+    await expect(tabs.first()).toBeVisible();
     const n = await tabs.count();
     expect(n, 'Learn has tabs').toBeGreaterThanOrEqual(2);
     for (let i = 0; i < n; i++) {
