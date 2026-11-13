@@ -463,6 +463,11 @@
     background: color-mix(in srgb, var(--track) 10%, var(--panel-2));
 }
 
+/* the singers' knobs have a longer label ("Vowel glide"): a tile wide enough to hold it */
+.voice-knobs .knob-tile {
+    width: 78px;
+}
+
 .knob-label {
     font-size: 9px;
     font-weight: 700;
@@ -493,16 +498,6 @@
     line-height: 1;
 }
 
-.add-effect-popover,
-.parts-view .add-part-popover {
-    left: 0;
-    right: auto;
-    min-width: 260px;
-}
-
-.add-part {
-    position: relative;
-}
 
 .add-part-hint {
     color: var(--muted);

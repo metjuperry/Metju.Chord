@@ -25,7 +25,7 @@ const SHORTCUTS: [string, string][] = [
     ['Q W E · A D · Z X C', 'Hold to push the stick while playing'],
     ['← →', 'Inversion'],
     ['↑ ↓', 'Octave'],
-    ['Space', 'Play / pause (carries on from where it stopped)'],
+    ['Space', 'Play / pause (carries on from where it stopped). On a button you reached with Tab, Space presses that button'],
     ['Home', 'Stop and go back to the start'],
     ['R', 'Arm recording'],
     ['N', 'Pads play chords / single notes on the melody'],

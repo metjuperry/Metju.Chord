@@ -144,7 +144,7 @@ export function applySectionEdit(song: FullSong, id: string, view: Song, scope: 
                 sounds.set(sid, nextAll);
             }
         }
-        return shallowEqual(old, next, ['notes', 'drums']) ? old : next;
+        return shallowEqual(old, next, ['notes', 'drums', 'vowels']) ? old : next;
     });
     const ids = new Set(parts.map(p => p.id));
     /** The section's own sound after the edit: same object when nothing changed, left out when empty. */
@@ -176,14 +176,19 @@ export function applySectionEdit(song: FullSong, id: string, view: Song, scope: 
         });
         return shallowEqual(next, s) ? s : next;
     });
+    const nextParts = parts.length === song.parts.length && parts.every((p, i) => p === song.parts[i]) ? song.parts : parts;
+    const nextSections = sections.every((s, i) => s === song.sections[i]) ? song.sections : sections;
+    // nothing changed: the same song, so it isn't an undo step (picking what's already picked, say)
+    if (nextParts === song.parts && nextSections === song.sections && view.key === song.key && view.scale === song.scale
+        && view.bpm === song.bpm && view.timeSignature === song.timeSignature && view.space === song.space) return song;
     return {
         key: view.key,
         scale: view.scale,
         bpm: view.bpm,
         timeSignature: view.timeSignature,
         space: view.space,
-        parts: parts.length === song.parts.length && parts.every((p, i) => p === song.parts[i]) ? song.parts : parts,
-        sections: sections.every((s, i) => s === song.sections[i]) ? song.sections : sections,
+        parts: nextParts,
+        sections: nextSections,
         chain: song.chain,
     };
 }

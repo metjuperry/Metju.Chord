@@ -648,9 +648,12 @@ export function pasteNotes(notes: Note[], from: number, to: number, total: numbe
 
 // ---- song length ---------------------------------------------------------------------------------
 
-/** Where a part's own material ends: a melody's last note, one pass of a drum pattern. */
+/**
+ * Where a part's own material ends: a melody's last note, one pass of a drum pattern. A voice singing
+ * the chords follows the chord row: notes it still holds from when it sang its own don't count.
+ */
 const partEnd = (p: Part, barTicks: number) =>
-    hasNotes(p) ? p.notes.reduce((m, n) => Math.max(m, n.start + n.len), 0)
+    hasNotes(p) && writesNotes(p) ? p.notes.reduce((m, n) => Math.max(m, n.start + n.len), 0)
         : p.kind === 'drums' ? p.drums.bars * barTicks
             : 0;
 
