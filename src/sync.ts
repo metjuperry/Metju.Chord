@@ -1,7 +1,7 @@
 /**
  * Sync out for Pocket Operators (and anything else that follows an audio click on the left channel):
  * while it's on, the app's sound goes out on the right channel only and the left channel carries a
- * short pulse 2 times per quarter note (PO sync, SY4 on the PO). These settings belong to the device,
+ * pulse 2 times per quarter note (PO sync, SY4 on the PO). These settings belong to the device,
  * not the song: they're kept under their own key, so an opened file or share link never turns them on.
  */
 
@@ -11,6 +11,8 @@ export interface SyncOut {
     offset: number;
     /** Negative pulses instead of positive ones, for gear that wants the other polarity. */
     invert: boolean;
+    /** How long each pulse is high, in ms (one of PULSE_LENGTHS): some POs (the PO-33) miss short ones. */
+    length: number;
 }
 
 export const SYNC_KEY = 'metju.chord.sync';
@@ -18,10 +20,10 @@ export const SYNC_KEY = 'metju.chord.sync';
 export const SYNC_PPQN = 2;
 export const SYNC_OFFSET_MAX = 50;
 export const SYNC_OFFSET_STEP = 5;
-/** How long each pulse is high, in seconds. */
-export const PULSE_SECONDS = 0.005;
+/** The pulse lengths to pick from, in ms. */
+export const PULSE_LENGTHS = [5, 10, 20] as const;
 
-export const defaultSync = (): SyncOut => ({ on: false, offset: 0, invert: false });
+export const defaultSync = (): SyncOut => ({ on: false, offset: 0, invert: false, length: 20 });
 
 /** Sync settings from untrusted storage: anything missing or odd falls back to the default. */
 export function readSync(v: unknown): SyncOut {
@@ -35,6 +37,7 @@ export function readSync(v: unknown): SyncOut {
         on: typeof o.on === 'boolean' ? o.on : d.on,
         offset,
         invert: typeof o.invert === 'boolean' ? o.invert : d.invert,
+        length: (PULSE_LENGTHS as readonly unknown[]).includes(o.length) ? (o.length as number) : d.length,
     };
 }
 

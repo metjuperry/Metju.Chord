@@ -3,7 +3,7 @@ import './SettingsSheet.css';
 import { GearIcon } from './TopBar';
 import { useDialog } from './useDialog';
 import type { ThemeSetting } from '../song';
-import { SYNC_OFFSET_MAX, SYNC_OFFSET_STEP, SyncOut } from '../sync';
+import { PULSE_LENGTHS, SYNC_OFFSET_MAX, SYNC_OFFSET_STEP, SyncOut } from '../sync';
 
 interface SettingsSheetProps {
     open: boolean;
@@ -105,6 +105,17 @@ const SettingsSheet: React.FC<SettingsSheetProps> = p => {
                             <li>Set the PO's tempo to <b>{p.syncBpm} BPM</b>, press play on the PO, then ▶ here. ■ stops both.</li>
                         </ol>
                         {!p.syncMeterFits && <p className="section-note ss-warn">The song isn't in 4/4, so the PO's 16-step patterns won't line up with its bars.</p>}
+                        <div className="ss-row">
+                            <span className="ss-text">
+                                <span className="ss-title" id="ss-sync-length">Pulse length</span>
+                                <span className="section-note">if the PO passes the sound through but its pattern doesn't run, try another (the PO-33 wants long ones)</span>
+                            </span>
+                            <div className="segmented" role="group" aria-labelledby="ss-sync-length">
+                                {PULSE_LENGTHS.map(ms => (
+                                    <button key={ms} aria-pressed={p.sync.length === ms} onClick={() => p.onSync({ length: ms })}>{ms} ms</button>
+                                ))}
+                            </div>
+                        </div>
                         <div className="ss-row">
                             <span className="ss-text">
                                 <span className="ss-title" id="ss-sync-offset">Pulse timing</span>

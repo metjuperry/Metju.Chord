@@ -3,13 +3,15 @@ import { SYNC_OFFSET_MAX, defaultSync, pulseTime, readSync, windowPulses } from 
 
 describe('sync out settings', () => {
     it('is off by default', () => {
-        expect(defaultSync()).toEqual({ on: false, offset: 0, invert: false });
+        expect(defaultSync()).toEqual({ on: false, offset: 0, invert: false, length: 20 });
     });
 
     it('reads untrusted storage, falling back field by field', () => {
         expect(readSync(null)).toEqual(defaultSync());
         expect(readSync('on')).toEqual(defaultSync());
-        expect(readSync({ on: true, offset: 12.4, invert: true })).toEqual({ on: true, offset: 12, invert: true });
+        expect(readSync({ on: true, offset: 12.4, invert: true })).toEqual({ on: true, offset: 12, invert: true, length: 20 });
+        expect(readSync({ length: 5 }).length).toBe(5);
+        expect(readSync({ length: 7 }).length).toBe(20);
         expect(readSync({ on: 'yes', offset: 'late', invert: 1 })).toEqual(defaultSync());
         expect(readSync({ on: true, offset: 999 }).offset).toBe(SYNC_OFFSET_MAX);
         expect(readSync({ on: true, offset: -999 }).offset).toBe(-SYNC_OFFSET_MAX);
