@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import './Progression.css';
 import './SongMenu.css';
 import { Clip, clipAt, clipEnd } from '../progression';
-import { TIME_SIGNATURES, TimeSignature, isCompound, tsLabel } from '../song';
+import { CHORD_LENGTHS, ChordLength, TIME_SIGNATURES, TimeSignature, isCompound, tsLabel } from '../song';
 import { InstrumentId } from '../audio/instruments';
 import { DrumPattern, DrumVoice, hasHit } from '../drums';
 import { MenuAnchor, MenuItem, PopMenu } from './PopMenu';
@@ -92,6 +92,9 @@ interface ProgressionProps {
      * (the editor carries the `LaneBar` with "‹ Lanes" and the chord strip).
      */
     focus?: boolean;
+    /** How long chords recorded from the pads (and placed from the toolbar) are. */
+    chordLength: ChordLength;
+    onChordLength: (length: ChordLength) => void;
     /** The `LaneBar` over the full-height editor. */
     laneBar?: React.ReactNode;
 }
@@ -458,6 +461,14 @@ const Progression: React.FC<ProgressionProps> = props => {
                         <button className="chip-button" title="Make this a rest ( . )" onClick={props.onRest}>Rest</button>
                         <button className="chip-button" disabled={!selClip} title="Delete ( ⌫ )" onClick={props.onDelete}>Delete</button>
                         {props.repeatNote && <span className="section-note repeat-note">{props.repeatNote}</span>}
+                        <div className="chord-length" role="group" aria-label="Length of new chords">
+                            <span className="section-note">New</span>
+                            <div className="segmented">
+                                {CHORD_LENGTHS.map(l => (
+                                    <button key={l.id} aria-pressed={props.chordLength === l.id} title={`Chords you record or place are ${l.label} long`} onClick={() => props.onChordLength(l.id)}>{l.label}</button>
+                                ))}
+                            </div>
+                        </div>
                     </div>
                     {selClip?.rest && (
                         <div className="dock-row rest-parts" role="group" aria-label="Parts that keep playing through this rest">

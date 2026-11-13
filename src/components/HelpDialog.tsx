@@ -136,7 +136,8 @@ const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose }) => {
                 <h3 className="eyebrow">The chord row</h3>
                 <p className="section-note">
                     Each chord shows a dot where it's struck and a bar while it keeps ringing (held, not struck again); while playing, the part
-                    already played turns orange. Lengthen with the grip or <kbd>]</kbd>; a rest can let some parts play on through it (by default
+                    already played turns orange. New chords are as long as <b>New</b> next to the chord tools says (1 beat, 2 beats or 1 bar; also in ⚙).
+                    Lengthen with the grip or <kbd>]</kbd>: the chords after it move along while there's room at the end of the row; a rest can let some parts play on through it (by default
                     chords and bass stop, melody and drums carry on).
                 </p>
 

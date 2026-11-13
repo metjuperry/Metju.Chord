@@ -27,8 +27,8 @@ import ConfirmDialog from './components/ConfirmDialog';
 import HooktheoryDialog from './components/HooktheoryDialog';
 import { HtClip, ImportOptions, ImportSummary, importHooktheory } from './hooktheory';
 import {
-    BEFORE_SHARE_KEY, FullSong, LEGACY_STORAGE_KEY, PlaybackMode, STORAGE_KEY, SAVE_VERSION, SavedState, Song, ThemeSetting, decodeShare, defaultSettings, encodeShare,
-    isCompound, newFullSong, readSaved, stepsPerRow, ticksPerBar, ticksPerStep, transportBpm,
+    BEFORE_SHARE_KEY, CHORD_LENGTHS, ChordLength, FullSong, LEGACY_STORAGE_KEY, PlaybackMode, STORAGE_KEY, SAVE_VERSION, SavedState, Song, ThemeSetting, decodeShare, defaultSettings, encodeShare,
+    chordLengthSteps, isCompound, newFullSong, readSaved, stepsPerRow, ticksPerBar, ticksPerStep, transportBpm,
 } from './song';
 import {
     ChainSlot, addSection, appendToChain, applySectionEdit, chainCount, chainLayout, changeSongTimeSignature, cleanSlate, deleteSection,
@@ -220,6 +220,8 @@ const App: React.FC = () => {
     const [soundPreview, setSoundPreview] = useState(initial.soundPreview);
     const [shapeView, setShapeView] = useState(initial.shapeView);
     const [partsTab, setPartsTab] = useState(initial.partsTab);
+    /** How long a recorded or placed chord is: 1 or 2 beats, or a bar. */
+    const [chordLength, setChordLength] = useState<ChordLength>(initial.chordLength);
     /** Sync out for a Pocket Operator: this device's setting, not the song's (sync.ts). */
     const [syncOut, setSyncOutState] = useState<SyncOut>(loadSync);
     const setSyncOut = (patch: Partial<SyncOut>) => setSyncOutState(s => {
@@ -385,7 +387,7 @@ const App: React.FC = () => {
     // Latest state for Transport callbacks and the global key handler
     const liveState = {
         ts, stepTicks: T, barTicks, selectedKey, scale, voiceLeading, octave, inversion, stickDir, padPart, chords, parts, total, selected, loop, recording,
-        padMode, padMelody, melodyLen, melCursor, playing, clickAccent, full, view: song,
+        padMode, padMelody, melodyLen, melCursor, playing, clickAccent, full, view: song, chordLength,
     };
     const live = useRef(liveState);
     live.current = liveState;
@@ -537,11 +539,22 @@ const App: React.FC = () => {
                 setPlayhead(Math.floor(next / perStep));
             }
         } else if (params) {
-            const { scale: _scale, ...chord } = params;
-            setChords(place(s.chords, { start: s.selected * s.stepTicks, len: s.stepTicks, chord }));
-            setSelected(Math.min(s.selected + 1, s.total - 1));
-            setPlayhead(Math.min(s.selected + 1, s.total - 1));
+            recordChord(params);
         }
+    };
+
+    /**
+     * Write a chord at the cursor, as long as the Chord length setting (cut at the section's end), and move
+     * the cursor past it: one undo step. Recording from the pads and the chord toolbar's chords both use it.
+     */
+    const recordChord = (params: ChordParams, s = live.current) => {
+        const { scale: _scale, ...chord } = params;
+        const steps = Math.min(chordLengthSteps(s.chordLength, s.ts), s.total - s.selected);
+        setChords(place(s.chords, { start: s.selected * s.stepTicks, len: steps * s.stepTicks, chord }));
+        const next = Math.min(s.selected + steps, s.total - 1);
+        setSelected(next);
+        setPlayhead(next);
+        return { start: s.selected, len: steps };
     };
 
     const releasePad = (id: string) => {
@@ -1195,7 +1208,7 @@ const App: React.FC = () => {
     const snapshot = (): SavedState => ({
         version: SAVE_VERSION,
         song: full,
-        settings: { voiceLeading, octave, inversion, loop, theme, nextHint, padPart: padPartId, clickAccent, openSection: openKey, playMode, learnTab, chordMood: chordMoodOn, soundPreview, shapeView, partsTab },
+        settings: { voiceLeading, octave, inversion, loop, theme, nextHint, padPart: padPartId, clickAccent, openSection: openKey, playMode, learnTab, chordMood: chordMoodOn, soundPreview, shapeView, partsTab, chordLength },
     });
 
     // Autosave a moment after any change
@@ -1209,7 +1222,7 @@ const App: React.FC = () => {
         }, 400);
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [full, voiceLeading, octave, inversion, loop, theme, nextHint, padPartId, clickAccent, openKey, playMode, learnTab, chordMoodOn, soundPreview, shapeView, partsTab]);
+    }, [full, voiceLeading, octave, inversion, loop, theme, nextHint, padPartId, clickAccent, openKey, playMode, learnTab, chordMoodOn, soundPreview, shapeView, partsTab, chordLength]);
 
     /** Replace the song (undoable) and take over its saved settings. */
     const loadState = (state: SavedState, message: string) => {
@@ -1227,6 +1240,7 @@ const App: React.FC = () => {
         setChordMoodOn(st.chordMood);
         setSoundPreview(st.soundPreview);
         setShapeView(st.shapeView);
+        setChordLength(st.chordLength);
         setPadPartId(st.padPart);
         setSelectedLane(CHORD_LANE);
         setSelected(0);
@@ -1837,6 +1851,8 @@ const App: React.FC = () => {
     const progressionEl = (
         <Progression
             focus={laneFocus}
+            chordLength={chordLength}
+            onChordLength={setChordLength}
             laneBar={laneBar}
             compact={compact}
             songItems={songItems}
@@ -2136,6 +2152,8 @@ const App: React.FC = () => {
                 onChordMood={setChordMoodOn}
                 soundPreview={soundPreview}
                 onSoundPreview={setSoundPreview}
+                chordLength={chordLength}
+                onChordLength={setChordLength}
                 sync={syncOut}
                 onSync={setSyncOut}
                 syncBpm={transportBpm(bpm, ts)}

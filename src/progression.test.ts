@@ -20,10 +20,37 @@ describe('progression lane', () => {
         expect(span(place([chord(1, 1), chord(2, 1)], chord(0, 4)))).toEqual([[0, 4]]);
     });
 
-    it('lengthening pushes into the next clip and shortens it', () => {
+    it('lengthening pushes the following chords later when the row has room at the end', () => {
         const a = chord(0, 2);
         const b = chord(2, 2, 3);
-        expect(span(setLength([a, b], a, 3 * S, 8 * S))).toEqual([[0, 3], [3, 1]]);
+        const c = chord(4, 1, 4);
+        expect(span(setLength([a, b, c], a, 3 * S, 8 * S))).toEqual([[0, 3], [3, 2], [5, 1]]);
+        // the pushed chords are the same chords, only later
+        const out = setLength([a, b, c], a, 3 * S, 8 * S);
+        expect(out.map(x => !x.rest && x.chord.degree)).toEqual([0, 3, 4]);
+    });
+
+    it('a gap after the chord is filled first, and only what is still overlapped moves', () => {
+        const a = chord(0, 2);
+        const b = chord(3, 2, 3);
+        // into the gap: nothing moves
+        expect(span(setLength([a, b], a, 3 * S, 8 * S))).toEqual([[0, 3], [3, 2]]);
+        // two steps longer: the gap takes one, b moves one
+        expect(span(setLength([a, b], a, 4 * S, 8 * S))).toEqual([[0, 4], [4, 2]]);
+    });
+
+    it('lengthening without room at the end overwrites the next chord, as before', () => {
+        const a = chord(0, 2);
+        const b = chord(2, 2, 3);
+        expect(span(setLength([a, b], a, 3 * S, 4 * S))).toEqual([[0, 3], [3, 1]]);
+        // one step of room, two needed: overwrite
+        expect(span(setLength([a, b], a, 4 * S, 5 * S))).toEqual([[0, 4]]);
+    });
+
+    it('shortening leaves the following chords where they are', () => {
+        const a = chord(0, 3);
+        const b = chord(3, 2, 3);
+        expect(span(setLength([a, b], a, 2 * S, 8 * S))).toEqual([[0, 2], [3, 2]]);
     });
 
     it('never lengthens past the end or below one beat', () => {

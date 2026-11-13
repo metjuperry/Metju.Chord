@@ -172,7 +172,8 @@
 }
 
 .app.compact .length > button {
-    width: 44px;
+    flex: none;
+    width: 46px;
     height: 44px;
 }
 

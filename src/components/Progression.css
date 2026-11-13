@@ -993,3 +993,17 @@
         gap: 0;
     }
 }
+
+/* how long new chords are (recorded from the pads or placed from the toolbar) */
+.chord-length {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.chord-length .segmented > button {
+    min-height: 30px;
+    padding: 0 10px;
+    white-space: nowrap;
+}

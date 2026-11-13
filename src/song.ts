@@ -193,7 +193,19 @@ export interface Settings {
     shapeView: ShapeView;
     /** Parts on a phone: the selected part's last sub-tab (Sound, Shape or Effects). */
     partsTab: PartsTab;
+    /** How long a chord recorded from the pads (or placed from the chord toolbar) is: 1 or 2 steps, or a bar. */
+    chordLength: ChordLength;
 }
+
+/** A new chord's length: 1 or 2 steps (beats of the time signature), or a whole bar. */
+export type ChordLength = 1 | 2 | 'bar';
+export const CHORD_LENGTHS: { id: ChordLength; label: string }[] = [
+    { id: 1, label: '1 beat' },
+    { id: 2, label: '2 beats' },
+    { id: 'bar', label: '1 bar' },
+];
+/** A new chord's length in steps, in `ts`. */
+export const chordLengthSteps = (length: ChordLength, ts: TimeSignature) => (length === 'bar' ? ts.beats : length);
 
 export type ShapeView = 'simple' | 'advanced';
 
@@ -234,6 +246,7 @@ export const defaultSettings = (): Settings => ({
     voiceLeading: false, octave: 4, inversion: 0, loop: true, theme: 'dark', nextHint: true, padPart: '', clickAccent: true,
     openSection: '', playMode: 'loop', learnTab: 'progressions', chordMood: false, soundPreview: true, shapeView: 'simple',
     partsTab: 'sound',
+    chordLength: 'bar',
 });
 
 /** A part without its content: what a FullSong keeps song-wide. */
@@ -537,6 +550,7 @@ export function readSettings(v: unknown): Settings {
         soundPreview: bool(v.soundPreview, d.soundPreview),
         shapeView: oneOf<ShapeView>(v.shapeView, ['simple', 'advanced'], d.shapeView),
         partsTab: oneOf<PartsTab>(v.partsTab, ['sound', 'shape', 'effects'], d.partsTab),
+        chordLength: oneOf<ChordLength>(v.chordLength, CHORD_LENGTHS.map(l => l.id), d.chordLength),
     };
 }
 
