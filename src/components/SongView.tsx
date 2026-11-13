@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import './SongView.css';
 import { MenuAnchor, MenuItem, PopMenu, useLongPress } from './PopMenu';
-import { ChainSlot, PartState, chainCount, chainLayout, partStateIn, sectionBars } from '../sections';
+import { ChainSlot, PartState, chainCount, chainLayout, hasOwnSound, partStateIn, sectionBars } from '../sections';
 import { FullSong, MAX_CHAIN, MAX_SECTIONS, PlaybackMode, Section } from '../song';
 import { isChordClip } from '../progression';
 import { resolveClip } from '../parts';
@@ -101,11 +101,12 @@ const SectionTile: React.FC<{
     const bars = sectionBars(song.timeSignature, section);
     const states: { color: string; state: PartState; name: string }[] = song.parts.map(p => ({ color: p.color, state: partStateIn(song, section, p), name: p.name }));
     const playsLabel = states.filter(s => s.state === 'plays').map(s => s.name).join(', ') || 'nothing';
+    const own = hasOwnSound(section);
     return (
         <div className={`sec-tile ${open ? 'open' : ''} ${tag === 'playing' ? 'playing' : ''}`} data-section={section.id}>
             <button
                 className="sec-main"
-                aria-label={`Open ${section.name}, ${plural(bars, 'bar')}, ${chords.length ? `chords ${chords.join(' ')}` : 'no chords'}; playing: ${playsLabel}${tag === 'playing' ? '. Playing now' : tag === 'next' ? '. Next' : ''}. Long-press for options`}
+                aria-label={`Open ${section.name}, ${plural(bars, 'bar')}, ${chords.length ? `chords ${chords.join(' ')}` : 'no chords'}; playing: ${playsLabel}${own ? '; has its own sound' : ''}${tag === 'playing' ? '. Playing now' : tag === 'next' ? '. Next' : ''}. Long-press for options`}
                 {...press.handlers}
                 onClick={() => {
                     if (!press.wasLongPress()) onOpen();
@@ -114,6 +115,7 @@ const SectionTile: React.FC<{
                 <span className="sec-top">
                     <span className="sec-badge">{section.letter}</span>
                     <span className="sec-name">{section.name}</span>
+                    {own && <span className="sec-own" title="Sounds its own way: set in Parts while this section is open" aria-hidden="true">own sound</span>}
                 </span>
                 <ChipLine labels={chords} />
                 <span className="sec-foot">

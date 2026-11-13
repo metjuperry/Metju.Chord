@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import './PartsView.css';
 import './FxMatrix.css';
 import Knob from './Knob';
@@ -99,6 +99,37 @@ const KIND_HINT: { [k in PartKind]: string } = {
     drums: 'loops a beat',
 };
 
+// ---- a section's own sound: a small mark on what it sets its own way ----------------------------------
+
+/** While Song has a section open: the open section's name and what it sets its own way for this part. */
+const OwnContext = createContext<{ section: string; keys: Set<string> } | null>(null);
+
+/**
+ * A small dot on a control whose value the open section sets its own way ('instrument', 'fx.reverb'…),
+ * on the picked option only (`when`). Read out as "(Chorus only)".
+ */
+const Own: React.FC<{ k: string; when?: boolean }> = ({ k, when = true }) => {
+    const own = useContext(OwnContext);
+    if (!when || !own?.keys.has(k)) return null;
+    return (
+        <span className="own-dot" title={`Set for ${own.section} only`}>
+            <span className="visually-hidden"> ({own.section} only)</span>
+        </span>
+    );
+};
+
+/** Parts' scope: "Chorus only" while Song has a section open, "Whole song" otherwise; a tap switches. */
+const ScopeChip: React.FC<{ name: string; only: boolean; onToggle: () => void }> = ({ name, only, onToggle }) => (
+    <button
+        className={`chip-button scope-chip ${only ? 'only' : ''}`}
+        aria-label={only ? `Editing ${name} only. Switch to the whole song` : `Editing the whole song. Switch to ${name} only`}
+        title={only ? `Changes here are for ${name} only · tap for the whole song` : `Changes here reach every section · tap for ${name} only`}
+        onClick={onToggle}
+    >
+        {only ? (<><span className="scope-name">{name}</span>&nbsp;only</>) : 'Whole song'}
+    </button>
+);
+
 // ---- tone knobs ---------------------------------------------------------------------------------
 
 const TONE_LABELS: { [k in keyof PartTone]: string } = { pan: 'Pan' };
@@ -139,8 +170,11 @@ const KnobCell: React.FC<{
     bipolar?: boolean;
     onChange: (v: number) => void;
     onPointerDown?: () => void;
-}> = ({ label, aria, value, display, color, on, title, resetTo, offAtZero, bipolar, onChange, onPointerDown }) => (
+    /** The open section's key for this setting, to mark it when the section sets it its own way. */
+    own?: string;
+}> = ({ label, aria, value, display, color, on, title, resetTo, offAtZero, bipolar, onChange, onPointerDown, own }) => (
     <div className={`knob-tile ${on ? 'on' : ''}`} title={title} style={{ '--track': color } as React.CSSProperties} onPointerDownCapture={onPointerDown}>
+        {own && <Own k={own} />}
         <Knob value={value} onChange={onChange} color={color} label={aria} display={display} size={36} resetTo={resetTo} offAtZero={offAtZero} bipolar={bipolar} />
         <span className="knob-label">{label}</span>
         <span className="knob-value">{display}</span>
@@ -261,7 +295,7 @@ const VolumeBar: React.FC<{ value: number; color: string; name: string; onChange
  * "+ Part": a short menu of part kinds. A PopMenu, so it stays in the window (inside the parts list
  * it was cut off on a phone).
  */
-const AddPartMenu: React.FC<{ full: boolean; onAdd: (kind: PartKind) => void }> = ({ full, onAdd }) => {
+const AddPartMenu: React.FC<{ full: boolean; onAdd: (kind: PartKind) => void; short?: boolean }> = ({ full, onAdd, short }) => {
     const [anchor, setAnchor] = useState<MenuAnchor | null>(null);
     return (
         <div className="add-part">
@@ -271,11 +305,12 @@ const AddPartMenu: React.FC<{ full: boolean; onAdd: (kind: PartKind) => void }> 
                 aria-expanded={!!anchor}
                 disabled={full}
                 title={full ? `Up to ${MAX_PARTS} parts` : 'Add a part'}
+                aria-label={short ? 'Add a part' : undefined}
                 // while open, a press here only closes it (the menu's outside-press would close it and the click reopen it)
                 onPointerDown={e => anchor && e.stopPropagation()}
                 onClick={e => setAnchor(anchor ? null : { rect: e.currentTarget.getBoundingClientRect() })}
             >
-                + Part
+                {short ? '+' : '+ Part'}
             </button>
             {anchor && (
                 <PopMenu
@@ -353,21 +388,21 @@ const VoiceBlock: React.FC<{ part: VoicePart; onUpdate: (patch: Partial<VoicePar
             <span className="pd-label">Singers</span>
             <div className="pd-style voice-row">
                 <div className="segmented small-seg" role="group" aria-label="Singers">
-                    <button aria-pressed={part.singers === 'solo'} onClick={() => onUpdate({ singers: 'solo' })}>Solo</button>
-                    <button aria-pressed={part.singers === 'choir'} onClick={() => onUpdate({ singers: 'choir' })}>Choir</button>
+                    <button aria-pressed={part.singers === 'solo'} onClick={() => onUpdate({ singers: 'solo' })}>Solo<Own k="singers" when={part.singers === 'solo'} /></button>
+                    <button aria-pressed={part.singers === 'choir'} onClick={() => onUpdate({ singers: 'choir' })}>Choir<Own k="singers" when={part.singers === 'choir'} /></button>
                 </div>
                 <div className="segmented small-seg" role="group" aria-label="Voice range">
-                    <button aria-pressed={part.range === 'low'} title="men's voices" onClick={() => onUpdate({ range: 'low', octave: RANGE_OCTAVE.low })}>Low</button>
-                    <button aria-pressed={part.range === 'high'} title="women's voices" onClick={() => onUpdate({ range: 'high', octave: RANGE_OCTAVE.high })}>High</button>
+                    <button aria-pressed={part.range === 'low'} title="men's voices" onClick={() => onUpdate({ range: 'low', octave: RANGE_OCTAVE.low })}>Low<Own k="range" when={part.range === 'low'} /></button>
+                    <button aria-pressed={part.range === 'high'} title="women's voices" onClick={() => onUpdate({ range: 'high', octave: RANGE_OCTAVE.high })}>High<Own k="range" when={part.range === 'high'} /></button>
                 </div>
                 <span className="section-note voice-tag">sings</span>
                 <div className="segmented small-seg" role="group" aria-label="Sings">
-                    <button aria-pressed={part.sings === 'chords'} title="the chord row, like a chord part" onClick={() => onUpdate({ sings: 'chords' })}>Chords</button>
-                    <button aria-pressed={part.sings === 'notes'} title="its own notes: play them on the keys in Notes mode, or write them in Song" onClick={() => onUpdate({ sings: 'notes' })}>Notes</button>
+                    <button aria-pressed={part.sings === 'chords'} title="the chord row, like a chord part" onClick={() => onUpdate({ sings: 'chords' })}>Chords<Own k="sings" when={part.sings === 'chords'} /></button>
+                    <button aria-pressed={part.sings === 'notes'} title="its own notes: play them on the keys in Notes mode, or write them in Song" onClick={() => onUpdate({ sings: 'notes' })}>Notes<Own k="sings" when={part.sings === 'notes'} /></button>
                 </div>
                 <div className="segmented small-seg" role="group" aria-label="Octave">
                     {[2, 3, 4, 5].map(o => (
-                        <button key={o} aria-pressed={part.octave === o} onClick={() => onUpdate({ octave: o })}>C{o}</button>
+                        <button key={o} aria-pressed={part.octave === o} onClick={() => onUpdate({ octave: o })}>C{o}<Own k="octave" when={part.octave === o} /></button>
                     ))}
                 </div>
             </div>
@@ -375,7 +410,7 @@ const VoiceBlock: React.FC<{ part: VoicePart; onUpdate: (patch: Partial<VoicePar
             <div className="pd-style voice-row">
                 <div className="segmented small-seg vowel-seg" role="group" aria-label="Vowel">
                     {VOWELS.map(v => (
-                        <button key={v.id} aria-pressed={part.vowel === v.id} title={v.hint} onClick={() => onUpdate({ vowel: v.id })}>{v.label}</button>
+                        <button key={v.id} aria-pressed={part.vowel === v.id} title={v.hint} onClick={() => onUpdate({ vowel: v.id })}>{v.label}<Own k="vowel" when={part.vowel === v.id} /></button>
                     ))}
                 </div>
                 <span className="section-note">{vowel?.hint}</span>
@@ -390,6 +425,7 @@ const VoiceBlock: React.FC<{ part: VoicePart; onUpdate: (patch: Partial<VoicePar
                     color={part.color}
                     on={part.vibrato > 0}
                     resetTo={0.35}
+                    own="vibrato"
                     onChange={v => onUpdate({ vibrato: v })}
                 />
                 <KnobCell
@@ -401,6 +437,7 @@ const VoiceBlock: React.FC<{ part: VoicePart; onUpdate: (patch: Partial<VoicePar
                     color={part.color}
                     on={part.breath > 0}
                     resetTo={0.15}
+                    own="breath"
                     onChange={v => onUpdate({ breath: v })}
                 />
                 <KnobCell
@@ -412,6 +449,7 @@ const VoiceBlock: React.FC<{ part: VoicePart; onUpdate: (patch: Partial<VoicePar
                     color={part.color}
                     on
                     resetTo={0.3}
+                    own="vowelGlide"
                     onChange={v => onUpdate({ vowelGlide: v })}
                 />
             </div>
@@ -444,6 +482,8 @@ interface PartDetailProps {
     compact: boolean;
     tab: PartsTab;
     onTab: (tab: PartsTab) => void;
+    /** With a section open and this part sounding its own way there: back to the song's sound. */
+    onUseSongSound?: () => void;
 }
 
 const TAB_LABELS: { [t in PartsTab]: string } = { sound: 'Sound', shape: 'Shape', effects: 'Effects' };
@@ -489,7 +529,7 @@ const PartTabs: React.FC<{ id: string; tabs: PartsTab[]; tab: PartsTab; onTab: (
     );
 };
 
-const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onPadPart, onRemove, onUpdate, onTone, onShape, onShapeReset, shapeView, onShapeView, scope, onFx, onOpenBeat, compact, tab: tabSetting, onTab }) => {
+const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onPadPart, onRemove, onUpdate, onTone, onShape, onShapeReset, shapeView, onShapeView, scope, onFx, onOpenBeat, compact, tab: tabSetting, onTab, onUseSongSound }) => {
     // Effects stay on screen while you turn them (even down to 0) and after "+ Effect"; double-tap (0) takes one away
     const [pinned, setPinned] = useState<(keyof PartFx)[]>([]);
     useEffect(() => {
@@ -518,6 +558,16 @@ const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onP
                 <h2 className="pd-name">{part.name}</h2>
                 {compact ? <PartTabs id={part.id} tabs={tabs} tab={tab} onTab={onTab} /> : <span className="pd-kind">{KIND_TAG[part.kind]}</span>}
                 <span className="pd-space" />
+                {onUseSongSound && (
+                    <button
+                        className="chip-button pd-song-sound"
+                        title="Take back what this section sets its own way for this part (undoable)"
+                        aria-label={compact ? "Use the song's sound" : undefined}
+                        onClick={onUseSongSound}
+                    >
+                        {compact ? '↺ Song' : "Use the song's sound"}
+                    </button>
+                )}
                 {part.kind === 'chords' && (
                     <button
                         className="chip-button pd-pads"
@@ -549,6 +599,7 @@ const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onP
                             <button key={id} className="inst-tile" aria-pressed={part.instrument === id} onClick={() => onUpdate({ instrument: id } as Partial<Part>)}>
                                 <svg width="26" height="12" viewBox="0 0 26 12" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d={WAVES[id]} /></svg>
                                 <span>{label}</span>
+                                <Own k="instrument" when={part.instrument === id} />
                             </button>
                         ))}
                     </div>
@@ -575,12 +626,13 @@ const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onP
                                 <button key={s.id} role="radio" aria-checked={part.style === s.id} className="bass-tile" title={s.hint} onClick={() => onUpdate({ style: s.id } as Partial<Part>)}>
                                     <StylePreview style={s.id} />
                                     <span>{s.label}</span>
+                                    <Own k="style" when={part.style === s.id} />
                                 </button>
                             ))}
                         </div>
                         <div className="segmented small-seg" role="group" aria-label="Bass octave">
                             {[1, 2, 3].map(o => (
-                                <button key={o} aria-pressed={part.octave === o} onClick={() => onUpdate({ octave: o } as Partial<Part>)}>C{o}</button>
+                                <button key={o} aria-pressed={part.octave === o} onClick={() => onUpdate({ octave: o } as Partial<Part>)}>C{o}<Own k="octave" when={part.octave === o} /></button>
                             ))}
                         </div>
                     </div>
@@ -594,7 +646,7 @@ const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onP
                     <div className="pd-style">
                         <div className="segmented small-seg" role="group" aria-label="Melody octave">
                             {[3, 4, 5].map(o => (
-                                <button key={o} aria-pressed={part.octave === o} onClick={() => onUpdate({ octave: o } as Partial<Part>)}>C{o}</button>
+                                <button key={o} aria-pressed={part.octave === o} onClick={() => onUpdate({ octave: o } as Partial<Part>)}>C{o}<Own k="octave" when={part.octave === o} /></button>
                             ))}
                         </div>
                         <span className="section-note">two octaves of the key from C{part.octave} up · the notes are written in Song</span>
@@ -625,6 +677,7 @@ const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onP
                                     color={part.color}
                                     on={Math.abs(part.tone[k] - 0.5) > 0.01}
                                     resetTo={0.5}
+                                    own={`tone.${k}`}
                                     onChange={v => onTone(k, v)}
                                 />
                             ))}
@@ -637,6 +690,7 @@ const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onP
                                 color={part.color}
                                 on={part.fx.glide > 0}
                                 offAtZero
+                                own="fx.glide"
                                 onChange={v => onFx('glide', v)}
                             />
                         </div>
@@ -657,6 +711,7 @@ const PartDetail: React.FC<PartDetailProps> = ({ part, isPadPart, canRemove, onP
                                 color={part.color}
                                 on={part.fx[k] > 0}
                                 offAtZero
+                                own={`fx.${k}`}
                                 onPointerDown={() => setPinned(ps => (ps.includes(k) ? ps : [...ps, k]))}
                                 onChange={v => setFx(k, v)}
                             />
@@ -739,6 +794,7 @@ const ShapeBlock: React.FC<ShapeBlockProps> = ({ part, view, onView, onShape, on
             on={part.shape[k] !== undefined && Math.abs(toKnob(k, part.shape[k] as number) - toKnob(k, own[k] as number)) > 0.005}
             resetTo={toKnob(k, own[k] as number)}
             bipolar={k === 'envAmount'}
+            own={`shape.${k}`}
             onChange={v => onShape({ [k]: fromKnob(k, v) }, k)}
         />
     );
@@ -774,7 +830,7 @@ const ShapeBlock: React.FC<ShapeBlockProps> = ({ part, view, onView, onShape, on
                             <span className="shape-sub">Filter</span>
                             <div className="segmented small-seg" role="group" aria-label="Filter type">
                                 {FILTER_TYPES.map(t => (
-                                    <button key={t} aria-pressed={shape.filterType === t} title={FILTER_LABELS[t][1]} onClick={() => onShape({ filterType: t }, 'filterType')}>{FILTER_LABELS[t][0]}</button>
+                                    <button key={t} aria-pressed={shape.filterType === t} title={FILTER_LABELS[t][1]} onClick={() => onShape({ filterType: t }, 'filterType')}>{FILTER_LABELS[t][0]}<Own k="shape.filterType" when={shape.filterType === t} /></button>
                                 ))}
                             </div>
                             <div className="knob-row shape-knobs">{(['cutoff', 'resonance', 'envAmount'] as ShapeKnob[]).map(knob)}</div>
@@ -783,7 +839,7 @@ const ShapeBlock: React.FC<ShapeBlockProps> = ({ part, view, onView, onShape, on
                             <span className="shape-sub" title="LFO: a slow wave that sweeps the cutoff up and down, in time with the song">LFO</span>
                             <div className="segmented small-seg" role="group" aria-label="LFO rate">
                                 {LFO_RATES.map(r => (
-                                    <button key={r} aria-pressed={shape.lfoRate === r} title={`LFO Rate: one sweep per ${LFO_LABELS[r]} note`} onClick={() => onShape({ lfoRate: r }, 'lfoRate')}>{LFO_LABELS[r]}</button>
+                                    <button key={r} aria-pressed={shape.lfoRate === r} title={`LFO Rate: one sweep per ${LFO_LABELS[r]} note`} onClick={() => onShape({ lfoRate: r }, 'lfoRate')}>{LFO_LABELS[r]}<Own k="shape.lfoRate" when={shape.lfoRate === r} /></button>
                                 ))}
                             </div>
                             <div className="knob-row shape-knobs">{knob('lfoDepth')}</div>
@@ -792,7 +848,7 @@ const ShapeBlock: React.FC<ShapeBlockProps> = ({ part, view, onView, onShape, on
                             <span className="shape-sub">Drive</span>
                             <div className="segmented small-seg" role="group" aria-label="Drive type">
                                 {DRIVE_TYPES.map(t => (
-                                    <button key={t} aria-pressed={shape.driveType === t} title={DRIVE_LABELS[t][1]} onClick={() => onShape({ driveType: t }, 'driveType')}>{DRIVE_LABELS[t][0]}</button>
+                                    <button key={t} aria-pressed={shape.driveType === t} title={DRIVE_LABELS[t][1]} onClick={() => onShape({ driveType: t }, 'driveType')}>{DRIVE_LABELS[t][0]}<Own k="shape.driveType" when={shape.driveType === t} /></button>
                                 ))}
                             </div>
                             <div className="knob-row shape-knobs">{knob('drive')}</div>
@@ -814,7 +870,7 @@ const ChordStyleRow: React.FC<{ style: ChordStyle; onChange: (patch: Partial<Cho
             <div className="pd-style">
                 <div className="segmented small-seg" role="group" aria-label="Play as">
                     {(['Chord', 'Strum', 'Arp'] as PlayMode[]).map(m => (
-                        <button key={m} aria-pressed={style.playMode === m} onClick={() => onChange({ playMode: m })}>{m}</button>
+                        <button key={m} aria-pressed={style.playMode === m} onClick={() => onChange({ playMode: m })}>{m}<Own k="playMode" when={style.playMode === m} /></button>
                     ))}
                 </div>
                 {style.playMode === 'Chord' && <span className="section-note">chords ring for as long as they're held</span>}
@@ -825,17 +881,18 @@ const ChordStyleRow: React.FC<{ style: ChordStyle; onChange: (patch: Partial<Cho
                                 <button key={p.id} role="radio" aria-checked={style.strumPattern === p.id} className="bass-tile strum-tile" title={p.hint} onClick={() => onChange({ strumPattern: p.id })}>
                                     <StrumPreview strokes={p.strokes} />
                                     <span>{p.label}</span>
+                                    <Own k="strumPattern" when={style.strumPattern === p.id} />
                                 </button>
                             ))}
                         </div>
                         <div className="segmented small-seg" role="group" aria-label="Strum speed">
                             {STRUM_SPREADS.map((sp, i) => (
-                                <button key={sp} aria-pressed={Math.abs(style.strumSpread - sp) < 0.001} title={`${ms(sp)} from the low note to the high one`} onClick={() => onChange({ strumSpread: sp })}>{STRUM_SPREAD_LABELS[i]}</button>
+                                <button key={sp} aria-pressed={Math.abs(style.strumSpread - sp) < 0.001} title={`${ms(sp)} from the low note to the high one`} onClick={() => onChange({ strumSpread: sp })}>{STRUM_SPREAD_LABELS[i]}<Own k="strumSpread" when={Math.abs(style.strumSpread - sp) < 0.001} /></button>
                             ))}
                         </div>
                         <div className="segmented small-seg" role="group" aria-label={style.strumPattern === 'once' ? 'Strum direction' : 'Strum direction on the pads'}>
                             {STRUM_DIRECTIONS.map(d => (
-                                <button key={d} aria-pressed={style.strumDirection === d} title={STRUM_HINTS[d]} onClick={() => onChange({ strumDirection: d })}>{STRUM_LABELS[d]}</button>
+                                <button key={d} aria-pressed={style.strumDirection === d} title={STRUM_HINTS[d]} onClick={() => onChange({ strumDirection: d })}>{STRUM_LABELS[d]}<Own k="strumDirection" when={style.strumDirection === d} /></button>
                             ))}
                         </div>
                         <span className="section-note pd-hint">
@@ -848,17 +905,17 @@ const ChordStyleRow: React.FC<{ style: ChordStyle; onChange: (patch: Partial<Cho
                     <>
                         <div className="segmented small-seg" role="group" aria-label="Arp pattern">
                             {ARP_PATTERNS.map(p => (
-                                <button key={p.id} aria-pressed={style.arpPattern === p.id} onClick={() => onChange({ arpPattern: p.id })}>{p.label}</button>
+                                <button key={p.id} aria-pressed={style.arpPattern === p.id} onClick={() => onChange({ arpPattern: p.id })}>{p.label}<Own k="arpPattern" when={style.arpPattern === p.id} /></button>
                             ))}
                         </div>
                         <label className="pd-select">
-                            <span>Rate</span>
+                            <span>Rate<Own k="arpRate" /></span>
                             <select value={style.arpRate} onChange={e => onChange({ arpRate: e.target.value as ArpRate })}>
                                 {ARP_RATES.map(r => <option key={r.rate} value={r.rate}>{r.label}</option>)}
                             </select>
                         </label>
                         <label className="pd-select">
-                            <span>Length</span>
+                            <span>Length<Own k="noteLength" /></span>
                             <select value={style.noteLength} onChange={e => onChange({ noteLength: parseFloat(e.target.value) })}>
                                 {lengths.map(l => <option key={l} value={l}>{l.toFixed(2)} s</option>)}
                             </select>
@@ -931,6 +988,14 @@ interface PartsViewProps {
     onRemove: (id: string) => void;
     canRemove: (id: string) => boolean;
     onOpenBeat: (id: string) => void;
+    /** Where Parts' edits go: the open section's name, and whether they go there only (else the whole song). */
+    scopeName: string;
+    sectionOnly: boolean;
+    onScope: () => void;
+    /** With a section open: per part, what that section sets its own way (`ownSoundKeys`); null for the whole song. */
+    own: { [partId: string]: Set<string> } | null;
+    /** "Use the song's sound": the part's own sound in the open section goes. */
+    onUseSongSound: (id: string) => void;
 }
 
 /** What a part sounds like, in a word: its instrument, Solo or Choir for a voice, the kit for drums. */
@@ -947,12 +1012,14 @@ const PartsView: React.FC<PartsViewProps> = p => {
     const scopeOf = p.scope;
     const partId = part?.id ?? '';
     const scopeFor = useCallback(() => scopeOf(partId), [scopeOf, partId]);
+    const ownKeys = p.own?.[partId];
+    const ownHere = ownKeys?.size ? { section: p.scopeName, keys: ownKeys } : null;
     return (
         <div className="parts-view">
             <aside className="parts-list panel" aria-label="Parts and mixer">
                 <div className="pl-head">
-                    <span className="pd-label">Parts</span>
-                    <AddPartMenu full={p.parts.length >= MAX_PARTS} onAdd={p.onAdd} />
+                    <ScopeChip name={p.scopeName} only={p.sectionOnly} onToggle={p.onScope} />
+                    <AddPartMenu full={p.parts.length >= MAX_PARTS} onAdd={p.onAdd} short={p.compact} />
                 </div>
                 <div className="pl-rows">
                     {p.parts.map(x => {
@@ -965,6 +1032,11 @@ const PartsView: React.FC<PartsViewProps> = p => {
                                         <span className="track-dot" aria-hidden="true" />
                                         <span className="pl-name">{x.name}</span>
                                         <span className="pl-sub">{subLabel(x)}</span>
+                                        {!!p.own?.[x.id]?.size && (
+                                            <span className="own-dot pl-own" title={`Sounds its own way in ${p.scopeName}`}>
+                                                <span className="visually-hidden"> (own sound in {p.scopeName})</span>
+                                            </span>
+                                        )}
                                     </button>
                                     <VolumeBar value={x.volume} color={x.color} name={x.name} onChange={v => p.onUpdate(x.id, { volume: v })} />
                                 </div>
@@ -982,6 +1054,7 @@ const PartsView: React.FC<PartsViewProps> = p => {
             </aside>
 
             {part ? (
+                <OwnContext.Provider value={ownHere}>
                 <PartDetail
                     key={part.id}
                     part={part}
@@ -1001,7 +1074,9 @@ const PartsView: React.FC<PartsViewProps> = p => {
                     compact={p.compact}
                     tab={p.tab}
                     onTab={p.onTab}
+                    onUseSongSound={ownHere ? () => p.onUseSongSound(part.id) : undefined}
                 />
+                </OwnContext.Provider>
             ) : (
                 <MasterDetail parts={p.parts} space={p.space} onSpace={p.onSpace} onDryAll={p.onDryAll} onFx={p.onFx} onSelect={p.onSelect} />
             )}

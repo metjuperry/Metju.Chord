@@ -14,6 +14,66 @@
     color: var(--muted);
 }
 
+/* ---- where edits go: the scope chip, and marks on what the open section sets its own way --------- */
+
+.scope-chip {
+    min-width: 0;
+    max-width: 150px;
+    display: inline-flex;
+    align-items: center;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+/* a section only: a yellow edge, like anything picked */
+.scope-chip.only {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.scope-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* a small dot in the control's own text colour (dark on a picked yellow button), top right */
+.own-dot {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    pointer-events: none;
+}
+
+:is(.segmented > button, .inst-tile, .bass-tile, .knob-tile, .pd-select > span):has(> .own-dot) {
+    position: relative;
+}
+
+.pd-select > span:has(> .own-dot) {
+    padding-right: 9px;
+}
+
+.pd-select .own-dot {
+    top: 0;
+    right: 0;
+}
+
+/* in the list: after the instrument's name */
+.pl-own {
+    position: static;
+    flex: 0 0 auto;
+    color: var(--text);
+}
+
+.pd-song-sound {
+    min-height: 30px;
+    font-weight: 700;
+}
+
 /* ---- the list ----------------------------------------------------------------------------------- */
 
 .parts-list {
@@ -32,6 +92,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 6px;
     min-height: 26px;
     padding: 0 2px;
 }
@@ -571,7 +632,12 @@
 }
 
 .app.compact .pd-tabs > button {
-    padding: 0 12px;
+    padding: 0 10px;
+}
+
+.app.compact .pd-song-sound {
+    padding: 0 10px;
+    white-space: nowrap;
 }
 
 .app.compact .part-detail.tabbed .pd-head {
@@ -624,6 +690,20 @@
 
 .app.compact .master-detail :is(.fx-card-val, .master-note) {
     display: none;
+}
+
+/* the list's head on a phone: the scope chip takes what "+ Part" leaves */
+.app.compact .pl-head .scope-chip {
+    flex: 1 1 auto;
+    max-width: none;
+    justify-content: center;
+    padding: 0 8px;
+}
+
+.app.compact .pl-head .add-part .chip-button {
+    width: 44px;
+    padding: 0;
+    font-size: 18px;
 }
 
 /* portrait phone: the list on top, the part under it */

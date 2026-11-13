@@ -33,7 +33,7 @@ import {
 import {
     ChainSlot, addSection, appendToChain, applySectionEdit, chainCount, chainLayout, changeSongTimeSignature, cleanSlate, deleteSection,
     duplicateEntry, duplicateSection, engineStrips, findSection, isCleanSlate, moveEntry, removeEntry, renameSection, sectionView, setSectionMute, slotAt,
-    SoundScope, stripId,
+    SoundScope, clearSectionSound, ownSoundKeys, stripId,
 } from './sections';
 import { PREVIEW_TAIL_BEATS, previewSound } from './preview';
 import { slideIn, useSegmentThumbs, zoomSection } from './motion';
@@ -1939,6 +1939,14 @@ const App: React.FC = () => {
             }}
             onRemove={partActions.remove}
             canRemove={partActions.canRemove}
+            scopeName={openSec.name}
+            sectionOnly={soundScope === 'section'}
+            onScope={() => setSongZoom(z => (z === 'section' ? 'song' : 'section'))}
+            own={soundScope === 'section' ? Object.fromEntries(full.parts.map(p => [p.id, ownSoundKeys(full, openKey, p.id)])) : null}
+            onUseSongSound={id => {
+                editFull(f => clearSectionSound(f, openKey, id));
+                hearPart(id);
+            }}
             onOpenBeat={id => {
                 pickLane(id);
                 setSongZoom('section');
