@@ -55,6 +55,8 @@ import {
     sixteenthsPerBar, sixteenthsPerStep, toggleHit,
 } from './drums';
 import { CHORD_LANE, MiniNote, PartPatch } from './components/Progression';
+// last, so its compact sizes come after every component's own stylesheet
+import './touch.css';
 
 /**
  * Keys that play the pads (by physical position, so any layout works): the number row, the numpad,
