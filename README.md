@@ -17,7 +17,7 @@ Three modes, one rule: **Play** is the instrument; **Song** is *what* plays (cho
 
 ### Pads and stick
 
-- Seven pads play the diatonic chords of the song's key: **1** = I, **2** = ii … **7** = vii°. They sit like piano keys: 1 3 5 7 long along the bottom, 2 4 6 short over the gaps. Each pad shows the chord it will play with the stick where it is now.
+- Seven pads play the diatonic chords of the song's key: **1** = I, **2** = ii … **7** = vii°. They sit like piano keys: 1 3 5 7 long along the bottom, 2 4 6 short over the gaps. Each pad shows the chord it will play with the stick where it is now. A pad sounds as soon as it's touched (scheduled ~5 ms ahead, not behind playback's 100 ms look-ahead), and a note recorded while playing lands where you heard it.
 - The stick is a ring of eight wedges around a knob. Centre = triad, **↑** flip 3rd, **↗** dominant 7, **→** 7th, **↘** 9th, **↓** sus4, **↙** 6 (major) / sus2 (minor), **←** diminished, **↖** augmented. Each wedge shows the chord it gives on the current pad. Press and slide (thumb-stick), tap a direction to lock it, or hold **Q W E / A D / Z X C** while playing **1–7** (number row or numpad). On a computer **H U J I K O L** play the pads too, laid out like them (H J K L = 1 3 5 7, U I O = 2 4 6), so the left hand holds the stick and the right plays. Moving the stick while holding a pad re-voices the held chord.
 - All 12 keys in eight scales: major, minor, harmonic and melodic minor, Dorian, Phrygian, Lydian, Mixolydian. Flat keys are spelled with flats.
 - Inversions (root to 3rd), octave C2–C6, or **voice leading** (each chord takes the inversion that moves least from the last one; that voicing is what gets recorded).
