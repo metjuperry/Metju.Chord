@@ -181,6 +181,11 @@
     line-height: 44px;
 }
 
+.app.compact .chord-pick {
+    height: 44px;
+    min-width: 48px;
+}
+
 .app.compact .acc-group button {
     min-width: 48px;
 }

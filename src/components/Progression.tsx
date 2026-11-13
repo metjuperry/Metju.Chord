@@ -5,7 +5,8 @@ import { Clip, clipAt, clipEnd } from '../progression';
 import { CHORD_LENGTHS, ChordLength, TIME_SIGNATURES, TimeSignature, isCompound, tsLabel } from '../song';
 import { InstrumentId } from '../audio/instruments';
 import { DrumPattern, DrumVoice, hasHit } from '../drums';
-import { MenuAnchor, MenuItem, PopMenu } from './PopMenu';
+import { MenuAnchor, MenuItem, PopMenu, useLongPress } from './PopMenu';
+import type { StickDir } from '../theory';
 import { Part, outsideRests, playsThroughRest, restSpans, writesNotes } from '../parts';
 
 /** Which drums show on which line of a drum lane's miniature: cymbals, the backbeat, the kick. */
@@ -95,6 +96,15 @@ interface ProgressionProps {
     /** How long chords recorded from the pads (and placed from the toolbar) are. */
     chordLength: ChordLength;
     onChordLength: (length: ChordLength) => void;
+    /**
+     * The key's seven chords for the chord toolbar (Record off): a tap puts one at the cursor and moves on;
+     * long-press, or a second tap on the one just placed (`justPlaced`), opens its stick types.
+     */
+    chordPicks?: { degree: number; numeral: string; symbol: string }[];
+    chordTypes: (degree: number) => { dir: StickDir; symbol: string; label: string }[];
+    justPlaced?: number;
+    /** Place `degree` as the `dir` type at the cursor, or (`replace`) change the chord just placed to it. */
+    onPickChord: (degree: number, dir: StickDir, replace?: boolean) => void;
     /** The `LaneBar` over the full-height editor. */
     laneBar?: React.ReactNode;
 }
@@ -124,6 +134,8 @@ const Progression: React.FC<ProgressionProps> = props => {
     const silenced = (p: Part) => (anySolo ? !p.solo : p.mute) || mutedHere(p);
     const barsLabel = `${Math.round((total / beatsPerBar) * 10) / 10} bars`;
     const [more, setMore] = useState<MenuAnchor | null>(null);
+    /** The stick types menu of a toolbar chord: for which degree, and whether it changes the chord just placed. */
+    const [typesMenu, setTypesMenu] = useState<{ degree: number; replace: boolean; anchor: MenuAnchor } | null>(null);
     /** When "⋯" last closed: the press that closes it (outside the menu, on the button) must not open it again. */
     const moreClosed = useRef(0);
     const tsSelect = (
@@ -135,6 +147,18 @@ const Progression: React.FC<ProgressionProps> = props => {
         >
             {TIME_SIGNATURES.map(t => <option key={tsLabel(t)} value={tsLabel(t)}>{tsLabel(t)}</option>)}
         </select>
+    );
+
+    /** How long new chords are: next to the toolbar's chords, or (while recording) at the end of its first row. */
+    const lengthGroup = (
+        <div className="chord-length" role="group" aria-label="Length of new chords">
+            <span className="section-note">New</span>
+            <div className="segmented">
+                {CHORD_LENGTHS.map(l => (
+                    <button key={l.id} aria-pressed={props.chordLength === l.id} title={`Chords you record or place are ${l.label} long`} onClick={() => props.onChordLength(l.id)}>{l.label}</button>
+                ))}
+            </div>
+        </div>
     );
 
     /** The chord row within one sequencer row. A chord held past the end of a row continues in the next. */
@@ -461,15 +485,51 @@ const Progression: React.FC<ProgressionProps> = props => {
                         <button className="chip-button" title="Make this a rest ( . )" onClick={props.onRest}>Rest</button>
                         <button className="chip-button" disabled={!selClip} title="Delete ( ⌫ )" onClick={props.onDelete}>Delete</button>
                         {props.repeatNote && <span className="section-note repeat-note">{props.repeatNote}</span>}
-                        <div className="chord-length" role="group" aria-label="Length of new chords">
-                            <span className="section-note">New</span>
-                            <div className="segmented">
-                                {CHORD_LENGTHS.map(l => (
-                                    <button key={l.id} aria-pressed={props.chordLength === l.id} title={`Chords you record or place are ${l.label} long`} onClick={() => props.onChordLength(l.id)}>{l.label}</button>
+                        {!props.chordPicks && lengthGroup}
+                    </div>
+                    {props.chordPicks && (
+                        <div className="dock-row chord-picks" role="group" aria-label="Chords of the key: tap to place at the cursor, long-press for more types">
+                            {props.chordPicks.map(c => (
+                                <ChordPick
+                                    key={c.degree}
+                                    {...c}
+                                    just={props.justPlaced === c.degree}
+                                    open={typesMenu?.degree === c.degree}
+                                    onTap={rect => (props.justPlaced === c.degree
+                                        ? setTypesMenu({ degree: c.degree, replace: true, anchor: { rect } })
+                                        : props.onPickChord(c.degree, 'C'))}
+                                    onLong={anchor => setTypesMenu({ degree: c.degree, replace: false, anchor })}
+                                />
+                            ))}
+                            {lengthGroup}
+                        </div>
+                    )}
+                    {typesMenu && (
+                        <PopMenu
+                            anchor={typesMenu.anchor}
+                            label={typesMenu.replace ? 'Change the chord just placed to' : 'Place this chord as'}
+                            items={[]}
+                            onClose={() => setTypesMenu(null)}
+                        >
+                            <div className="type-grid">
+                                {props.chordTypes(typesMenu.degree).map(t => (
+                                    <button
+                                        key={t.dir}
+                                        role="menuitem"
+                                        className={t.dir === 'C' ? 'centre' : undefined}
+                                        aria-label={`${t.symbol}, ${t.label}`}
+                                        onClick={() => {
+                                            props.onPickChord(typesMenu.degree, t.dir, typesMenu.replace);
+                                            setTypesMenu(null);
+                                        }}
+                                    >
+                                        <b>{t.symbol}</b>
+                                        <span>{t.label}</span>
+                                    </button>
                                 ))}
                             </div>
-                        </div>
-                    </div>
+                        </PopMenu>
+                    )}
                     {selClip?.rest && (
                         <div className="dock-row rest-parts" role="group" aria-label="Parts that keep playing through this rest">
                             <span className="section-note">Plays through:</span>
@@ -493,6 +553,36 @@ const Progression: React.FC<ProgressionProps> = props => {
                 </div>
             )}
         </section>
+    );
+};
+
+/** One of the chord toolbar's chords: numeral and name like a pad. Tap places it; long-press opens its types. */
+const ChordPick: React.FC<{
+    degree: number;
+    numeral: string;
+    symbol: string;
+    /** It was just placed: the next tap opens its types instead of placing it again. */
+    just: boolean;
+    open: boolean;
+    onTap: (rect: DOMRect) => void;
+    onLong: (anchor: MenuAnchor) => void;
+}> = p => {
+    const press = useLongPress(p.onLong);
+    return (
+        <button
+            className={`chord-pick ${p.just ? 'just' : ''}`}
+            aria-label={p.just ? `${p.symbol}: other types for the chord just placed` : `Place ${p.symbol} (${p.numeral}) at the cursor`}
+            title={p.just ? 'Tap again for its other types (7th, sus…)' : 'Tap to place it at the cursor; long-press for its other types'}
+            aria-haspopup="menu"
+            aria-expanded={p.open}
+            {...press.handlers}
+            onClick={e => {
+                if (!press.wasLongPress()) p.onTap(e.currentTarget.getBoundingClientRect());
+            }}
+        >
+            <span className="pick-numeral">{p.numeral}</span>
+            <span className="pick-symbol">{p.symbol}</span>
+        </button>
     );
 };
 

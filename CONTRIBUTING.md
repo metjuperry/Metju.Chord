@@ -45,7 +45,8 @@ src/
   index.tsx              entry; registers the service worker
   pwa.ts                 service-worker registration and update reload, screen wake lock
   sw.js                  the service worker (plain JS; webpack fills in the build's file list and version)
-  App.tsx                owns all state: song (with undo), live settings, selection, playback, recording, the clipboard
+  App.tsx                owns all state: song (with undo), live settings, selection, playback, recording (recordChord:
+                         pads and the chord toolbar's chords write through it; placeChord), the clipboard
                          for chords / melody / drums; global keyboard shortcuts; lays out phones (one mode at a time)
                          and desktop (instrument left, Song | Parts tabs right)
   theory.ts              pure music theory: keys, scales, chord building (MIDI), inversions, naming and spelling,
@@ -87,9 +88,11 @@ src/
     Device               chord info (ChordInfo), play strip (PlayStrip), scale-key strip (desktop), stick, pads, Chords/Notes switch
     SongView             Song mode's top level: section tiles, the chain, Chain | Loop
     SectionSwitcher      "‹ Song" and ‹ [section ▾] › in a section's header
-    PopMenu              long-press / right-click menus (useLongPress)
-    Progression          sequencer: header, chord lane + part lanes (per-section M), docked chord toolbar
-    MelodyEditor, DrumEditor   the selected lane's editor under the sequencer (Copy / Paste / Clear; melody row ⋯ menus)
+    PopMenu              long-press / right-click menus (useLongPress), MoreMenu (a ⋯ button with its menu)
+    Progression          sequencer: header, chord lane + part lanes (per-section M), docked chord toolbar (with the key's
+                         seven chords and their stick types, Record off), LaneBar (phones' full-height lane editor)
+    MelodyEditor, DrumEditor   the selected lane's editor under the sequencer (Copy / Paste / Clear; melody row ⋯ menus);
+                         MelodyTools: the phone grid's octave, zoom and ⋯ in the lane bar
     PartsView            Parts mode: mixer (VolumeBar), the selected part (instrument, play-as/style, shape, tone, effects), Master;
                          on compact the part is in sub-tabs Sound · Shape · Effects (PartTabs, `partsTab` setting)
     ShapeGraphs          the envelope and filter pictures: read-only in Simple, draggable in Advanced (EnvelopeGraph, FilterGraph)

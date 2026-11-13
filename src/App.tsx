@@ -15,7 +15,7 @@ import LearnPanel, { HearEvent, UseHow } from './components/LearnPanel';
 import { LearnTab, Progression as LearnProgression, chordMood, fitProgression, insertProgression, progressionClips } from './learn';
 import {
     ChordParams, ChordType, KEYS, NoteTag, ResolvedChord, StickDir, scaleLabel,
-    STICK_DIRS, ScaleId, buildChordMidi, chordTags, keyPitchClass, resolveChord, romanNumeral, scalePitchClasses,
+    STICK_DIRS, STICK_LABELS, ScaleId, buildChordMidi, chordTags, keyPitchClass, resolveChord, romanNumeral, scalePitchClasses,
     nextChords, noteNames, spellNoteOctave, stickChordType, triadQuality, voiceLead,
 } from './theory';
 import { getEngine } from './audio/engine';
@@ -540,6 +540,7 @@ const App: React.FC = () => {
             }
         } else if (params) {
             recordChord(params);
+            setLastPlaced(null);
         }
     };
 
@@ -555,6 +556,40 @@ const App: React.FC = () => {
         setSelected(next);
         setPlayhead(next);
         return { start: s.selected, len: steps };
+    };
+
+    /** The chord the toolbar's chords just placed, while the cursor still sits right after it (a second tap opens its types). */
+    const [lastPlaced, setLastPlaced] = useState<{ degree: number; start: number; len: number; next: number } | null>(null);
+
+    /**
+     * The chord toolbar's chords (Song, Record off): put the chord on `degree` (the stick's `dir` type) at the
+     * cursor, as long as Chord length, and move the cursor on, like recording from the pads; or, with
+     * `replace`, change the chord just placed to that type. Voice leading moves from the chord before it in
+     * the row. One undo step; the chord sounds briefly.
+     */
+    const placeChord = (degree: number, dir: StickDir, replace = false) => {
+        const s = live.current;
+        const at = replace && lastPlaced ? lastPlaced.start : s.selected;
+        let params = paramsFor(degree, dir, s);
+        if (s.voiceLeading) {
+            const before = [...s.chords].reverse().find(c => !c.rest && c.start < at * s.stepTicks);
+            const prev = before && !before.rest ? resolveClip({ chords: s.chords, key: s.selectedKey, scale: s.scale }, before).midi : null;
+            const base = buildChordMidi(keyPitchClass(s.selectedKey), degree, params.type, params.octave, params.scale);
+            const v = voiceLead(base, prev);
+            params = { ...params, inversion: v.inversion, octave: params.octave + v.octaveShift };
+        }
+        const chord = resolveChord(s.selectedKey, params);
+        if (!s.playing) {
+            const stop = getEngine().attack(chord.midi);
+            window.setTimeout(stop, 450);
+        }
+        if (replace && lastPlaced) {
+            const { scale: _scale, ...c } = params;
+            setChords(place(s.chords, { start: lastPlaced.start * s.stepTicks, len: lastPlaced.len * s.stepTicks, chord: c }));
+            return;
+        }
+        const placed = recordChord(params, s);
+        setLastPlaced({ degree, ...placed, next: Math.min(placed.start + placed.len, s.total - 1) });
     };
 
     const releasePad = (id: string) => {
@@ -1848,8 +1883,27 @@ const App: React.FC = () => {
             onChange={vowels => setParts(ps => ps.map(p => (p.id === selPart.id && p.kind === 'voice' ? { ...p, vowels } : p)))}
         />
     ) : null;
+    // The chord toolbar's chords: the key's seven triads, in the pads' order; each one's stick types on demand
+    const chordPicks = [0, 1, 2, 3, 4, 5, 6].map(degree => ({
+        degree,
+        numeral: romanNumeral(degree, scale),
+        symbol: resolveChord(selectedKey, { degree, type: 'triad', inversion, octave, scale }).name.symbol,
+    }));
+    const chordTypes = (degree: number) => STICK_DIRS.map(dir => ({
+        dir,
+        symbol: resolveChord(selectedKey, { degree, type: stickChordType(dir, triadQuality(degree, scale)), inversion, octave, scale }).name.symbol,
+        label: STICK_LABELS[dir],
+    }));
+    // the chord just placed from the toolbar, while the cursor is still right after it and it's still there
+    const placedClip = lastPlaced ? clipAt(clips, lastPlaced.start * T) : undefined;
+    const justPlaced = lastPlaced && selected === lastPlaced.next && isChordClip(placedClip) && placedClip.start === lastPlaced.start * T && placedClip.chord.degree === lastPlaced.degree
+        ? lastPlaced.degree : undefined;
     const progressionEl = (
         <Progression
+            chordPicks={recording ? undefined : chordPicks}
+            chordTypes={chordTypes}
+            justPlaced={justPlaced}
+            onPickChord={placeChord}
             focus={laneFocus}
             chordLength={chordLength}
             onChordLength={setChordLength}
