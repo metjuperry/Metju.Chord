@@ -3,6 +3,10 @@
 Builds public/samples/ from the original sample libraries (not committed; see README "Samples").
 
   python3 scripts/samples/prepare.py <vsco-2-ce dir> <tonejs-audio dir> <fluidr3 dir>
+  python3 scripts/samples/prepare.py voice <musyngkite voice_oohs dir>   (just the Voice part's samples)
+
+<musyngkite voice_oohs dir> holds the MIDI.js MusyngKite "Voice Oohs" renders (MusyngKite/voice_oohs-mp3/<note>.mp3,
+CC BY-SA 3.0) for C, Eb, Gb, A of octaves 2..6.
 
 <fluidr3 dir> holds electric_piano_1/ and celesta/ with the MIDI.js FluidR3_GM mp3 renders
 (https://github.com/gleitz/midi-js-soundfonts, FluidR3_GM/<name>-mp3/<note>.mp3).
@@ -131,5 +135,21 @@ def main(vsco, tjaudio, fluid):
         json.dump(sets, f, separators=(',', ':'), sort_keys=True)
         f.write('\n')
 
+SAMPLES_JSON = os.path.join(os.path.dirname(__file__), '..', '..', 'src', 'audio', 'samples.json')
+
+def voice(oohs):
+    """The Voice part: MusyngKite Voice Oohs (General MIDI #54), minor thirds C2..A6, looped."""
+    names = {'C': 0, 'Eb': 3, 'Gb': 6, 'A': 9}
+    files = {12 * (o + 1) + pc: os.path.join(oohs, f'{n}{o}.mp3') for o in range(2, 7) for n, pc in names.items()}
+    with open(SAMPLES_JSON) as f:
+        sets = json.load(f)
+    sets['voice'] = build('voice', files, length=0, loop=(0.9, 2.9))
+    with open(SAMPLES_JSON, 'w') as f:
+        json.dump(sets, f, separators=(',', ':'), sort_keys=True)
+        f.write('\n')
+
 if __name__ == '__main__':
-    main(*sys.argv[1:4])
+    if sys.argv[1] == 'voice':
+        voice(sys.argv[2])
+    else:
+        main(*sys.argv[1:4])

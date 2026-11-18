@@ -190,10 +190,6 @@
     min-width: 48px;
 }
 
-.app.compact .vowel-cell {
-    min-height: 44px;
-}
-
 /* the melody grid on phones (PartEditors.css, .melody-editor.compact): its row menu sits in a 48 px label
    column over the row names, so the hit area reaches up and down over labels, never into cells */
 .app.compact .mel-row-menu::after {

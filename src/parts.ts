@@ -146,102 +146,25 @@ export interface MelodyPart extends PartBase {
     notes: Note[];
 }
 
-// ---- voice: singers -------------------------------------------------------------------------------
+// ---- voice -------------------------------------------------------------------------------------
 
-/** The vowel the singers sing. */
-export type Vowel = 'a' | 'e' | 'i' | 'o' | 'u';
-export const VOWELS: { id: Vowel; label: string; hint: string }[] = [
-    { id: 'a', label: 'A', hint: 'aah, as in "father"' },
-    { id: 'e', label: 'E', hint: 'eh, as in "bed"' },
-    { id: 'i', label: 'I', hint: 'ee, as in "see"' },
-    { id: 'o', label: 'O', hint: 'oh, as in "go"' },
-    { id: 'u', label: 'U', hint: 'ooh, as in "moon"' },
-];
-/** One singer, or a few singing together. */
-export type Singers = 'solo' | 'choir';
-/** Men's voices or women's. */
-export type VoiceRange = 'low' | 'high';
 /** What the voice sings: its own notes (played from the keys or written), or the chord row, like a chord part. */
 export type Sings = 'notes' | 'chords';
 
-/** How a voice sings, besides its shape: what the engine needs to build the singers. */
-export interface VoiceSettings {
-    singers: Singers;
-    range: VoiceRange;
-    vowel: Vowel;
-    /** Vibrato depth, 0..1. */
-    vibrato: number;
-    /** Breath noise, 0..1. */
-    breath: number;
-}
-
-/** A stretch of the section sung on one vowel (the vowel lane); outside every stretch the part's own vowel. */
-export interface VowelClip {
-    start: number;
-    len: number;
-    vowel: Vowel;
-}
-
-/** Singers: a solo voice or a choir, singing its own notes or the chords, on a vowel. */
-export interface VoicePart extends PartBase, VoiceSettings {
+/** A voice ("ooh", sampled): singing its own notes or the chords. */
+export interface VoicePart extends PartBase {
     kind: 'voice';
-    /** Always 'voice': the singers' own instrument (their shape's defaults come from it). */
+    /** Always 'voice': the Voice Oohs samples (not offered to other parts). */
     instrument: 'voice';
     tone: PartTone;
     shape: ShapeOverrides;
     sings: Sings;
     octave: number;
     notes: Note[];
-    /** The vowel lane: where the singers sing another vowel than `vowel` (section content, like `notes`). */
-    vowels: VowelClip[];
-    /** How quickly they move from one vowel to the next, 0..1 (see `vowelGlideSeconds`). */
-    vowelGlide: number;
 }
 
-/** Vowel glide in seconds: 0 snaps (20 ms), 1 is a slow morph (0.8 s). */
-export const vowelGlideSeconds = (g: number) => 0.02 + 0.78 * g * g;
-
-/** The vowel sung at `tick`: the lane's, or the part's own. */
-export const vowelAt = (p: VoicePart, tick: number): Vowel =>
-    p.vowels.find(c => tick >= c.start && tick < c.start + c.len)?.vowel ?? p.vowel;
-
-/**
- * The vowel lane from one vowel per step (null where the part's own vowel is sung): neighbouring steps
- * with the same vowel make one stretch. What the lane editor paints.
- */
-export function vowelClipsFromSteps(steps: (Vowel | null)[], stepTicks: number): VowelClip[] {
-    const out: VowelClip[] = [];
-    steps.forEach((v, i) => {
-        if (!v) return;
-        const last = out[out.length - 1];
-        if (last && last.vowel === v && last.start + last.len === i * stepTicks) last.len += stepTicks;
-        else out.push({ start: i * stepTicks, len: stepTicks, vowel: v });
-    });
-    return out;
-}
-
-/** The vowel lane as one vowel per step (null where the part's own vowel is sung): the step's vowel is the one at its start. */
-export const vowelSteps = (clips: VowelClip[], steps: number, stepTicks: number): (Vowel | null)[] =>
-    Array.from({ length: steps }, (_, i) => clips.find(c => i * stepTicks >= c.start && i * stepTicks < c.start + c.len)?.vowel ?? null);
-
-/** Clips that start before `total`, cut off at it (the section got shorter). */
-export const fitVowels = (clips: VowelClip[], total: number): VowelClip[] =>
-    clips.filter(c => c.start < total).map(c => (c.start + c.len > total ? { ...c, len: total - c.start } : c));
-
-/** The order "one vowel per chord" goes through: open, round, close, front, then again. */
-const PER_CHORD: Vowel[] = ['a', 'o', 'u', 'e', 'i'];
-
-/** One vowel per chord clip of the chord row (rests left to the part's own vowel), going round `PER_CHORD`. */
-export function vowelPerChord(chords: { start: number; len: number; rest?: boolean }[]): VowelClip[] {
-    let n = 0;
-    return chords.filter(c => !c.rest).sort((a, b) => a.start - b.start).map(c => ({ start: c.start, len: c.len, vowel: PER_CHORD[n++ % PER_CHORD.length] }));
-}
-
-export const voiceSettings = (p: VoicePart): VoiceSettings =>
-    ({ singers: p.singers, range: p.range, vowel: p.vowel, vibrato: p.vibrato, breath: p.breath });
-
-/** The octave a voice range sings in by default. */
-export const RANGE_OCTAVE: { [r in VoiceRange]: number } = { low: 3, high: 4 };
+/** The octave a new voice sings in. */
+export const VOICE_OCTAVE = 4;
 
 /** A drum pattern that loops under the song. */
 export interface DrumPart extends PartBase {
@@ -259,7 +182,7 @@ export const hasNotes = (p: Part | undefined): p is NotesPart => p?.kind === 'me
 export const writesNotes = (p: Part | undefined): boolean => p?.kind === 'melody' || (p?.kind === 'voice' && p.sings === 'notes');
 /** `p` as a part with notes to write, or null (see `writesNotes`). */
 export const noteWriter = (p: Part | undefined): NotesPart | null => (hasNotes(p) && writesNotes(p) ? p : null);
-/** Parts whose instrument is picked from the instrument list (a voice's is its singers). */
+/** Parts whose instrument is picked from the instrument list (a voice's is always its "ooh"). */
 export type PickedPart = ChordPart | BassPart | MelodyPart;
 export const picksInstrument = (p: Part): p is PickedPart => hasInstrument(p) && p.kind !== 'voice';
 
@@ -296,11 +219,10 @@ export function newPart(kind: PartKind, existing: Part[], drums?: DrumPattern): 
         case 'melody':
             return { ...base, kind, instrument: 'lead', tone: neutralTone(), shape: {}, octave: 4, notes: [] };
         case 'voice':
-            // a choir on "ooh", singing the chords: something to hear straight away
+            // "ooh" on the chords: something to hear straight away
             return {
                 ...base, kind, instrument: 'voice', tone: neutralTone(), shape: {}, fx: { ...noFx(), reverb: 0.2 },
-                singers: 'choir', range: 'low', vowel: 'u', vibrato: 0.35, breath: 0.15, sings: 'chords', octave: RANGE_OCTAVE.low, notes: [],
-                vowels: [], vowelGlide: 0.3,
+                sings: 'chords', octave: VOICE_OCTAVE, notes: [],
             };
         case 'drums':
             return { ...base, kind, drums: drums ?? { bars: 1, hits: {} } };

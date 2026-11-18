@@ -19,7 +19,7 @@ function fullSave() {
         content: {
             p3: { notes: [{ start: 0, len: 24, step: 3, acc: 1 as const }] },
             p4: { drums: { bars: 2 as const, hits: { kick: [0, 8], hat: [1, 2, 3] } } },
-            p5: { vowels: [{ start: 0, len: 96, vowel: 'a' as const }] },
+            p5: { notes: [{ start: 0, len: 24, step: 2 }] },
         },
         sound: { p1: { instrument: 'organ', shape: { attack: 0.2 } } },
     };

@@ -12,11 +12,6 @@ export const findSection = (song: FullSong, id: string): Section => song.section
 
 /** A part with its content for one section filled in (an empty melody / pattern when the section has none). */
 function fill(p: Part, c: PartContent | undefined): Part {
-    if (p.kind === 'voice') {
-        const notes = c?.notes ?? (p.notes.length ? [] : p.notes);
-        const vowels = c?.vowels ?? (p.vowels.length ? [] : p.vowels);
-        return notes === p.notes && vowels === p.vowels ? p : { ...p, notes, vowels };
-    }
     if (hasNotes(p)) return c?.notes ? { ...p, notes: c.notes } : p.notes.length ? { ...p, notes: [] } : p;
     if (p.kind === 'drums') return c?.drums ? { ...p, drums: c.drums } : p;
     return p;
@@ -52,7 +47,7 @@ function shallowEqual(a: object, b: object, skip: string[] = []): boolean {
 
 const sameContent = (a: Section['content'], b: Section['content']) =>
     shallowEqual(a, b) || (Object.keys(a).length === Object.keys(b).length
-        && Object.keys(a).every(k => b[k] && a[k].notes === b[k].notes && a[k].drums === b[k].drums && a[k].vowels === b[k].vowels));
+        && Object.keys(a).every(k => b[k] && a[k].notes === b[k].notes && a[k].drums === b[k].drums));
 
 /** `rec` without the keys that aren't parts any more (same object when nothing goes). */
 function onlyParts<T>(rec: { [id: string]: T }, ids: Set<string>): { [id: string]: T } {
@@ -144,7 +139,7 @@ export function applySectionEdit(song: FullSong, id: string, view: Song, scope: 
                 sounds.set(sid, nextAll);
             }
         }
-        return shallowEqual(old, next, ['notes', 'drums', 'vowels']) ? old : next;
+        return shallowEqual(old, next, ['notes', 'drums']) ? old : next;
     });
     const ids = new Set(parts.map(p => p.id));
     /** The section's own sound after the edit: same object when nothing changed, left out when empty. */
@@ -200,7 +195,7 @@ export const hasOwnSound = (sec: Section): boolean => !!sec.sound && Object.valu
 
 /**
  * What section `id` sets differently from the song for part `partId`, as keys: a plain setting by its
- * name ('instrument', 'playMode', 'vowel'…), an entry of effects, pan or shape as 'fx.reverb',
+ * name ('instrument', 'playMode', 'sings'…), an entry of effects, pan or shape as 'fx.reverb',
  * 'tone.pan', 'shape.cutoff'. Parts marks these while that section is open.
  */
 export function ownSoundKeys(song: FullSong, id: string, partId: string): Set<string> {
