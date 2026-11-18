@@ -886,16 +886,6 @@
     background: var(--panel);
 }
 
-.lane-focus .vowel-lane {
-    border-top: 1px solid var(--line);
-    padding-top: 8px;
-}
-
-.lane-focus .focus-body > .vowel-lane:first-child {
-    border-top: 0;
-    padding-top: 0;
-}
-
 /* the lane bar names the part already */
 .lane-focus :is(.melody-editor > .part-head, .drum-head) > .sel-label {
     display: none;

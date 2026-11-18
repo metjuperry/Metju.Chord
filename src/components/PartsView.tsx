@@ -10,7 +10,7 @@ import { ArpRate } from '../audio/engine';
 import { INSTRUMENTS, InstrumentId } from '../audio/instruments';
 import {
     BASS_STYLES, BassPart, BassStyle, FX_KEYS, Harmony, InstrumentPart, MAX_PARTS, PART_LABELS, Part, PartFx, PartKind, PartTone, PlayMode,
-    RANGE_OCTAVE, vowelGlideSeconds, STRUM_DIRECTIONS, STRUM_SPREADS, TONE_KEYS, VOWELS, VoicePart, bassNotes, fxAvailable, hasInstrument, shapePan,
+    STRUM_DIRECTIONS, STRUM_SPREADS, TONE_KEYS, VoicePart, bassNotes, fxAvailable, hasInstrument, shapePan,
 } from '../parts';
 import { PPQ } from '../progression';
 import { PartsTab, ShapeView, Space } from '../song';
@@ -95,7 +95,7 @@ const KIND_HINT: { [k in PartKind]: string } = {
     chords: 'plays the chords',
     bass: 'follows the roots',
     melody: 'your notes',
-    voice: 'singers: a solo or a choir',
+    voice: 'a voice singing "ooh": the chords, or its own notes',
     drums: 'loops a beat',
 };
 
@@ -380,22 +380,11 @@ function useScrollToPressed(dep: unknown) {
     return ref;
 }
 
-/** The Voice part's singers: who sings, how high, what (their own notes or the chords), the vowel, vibrato and breath. */
-const VoiceBlock: React.FC<{ part: VoicePart; onUpdate: (patch: Partial<VoicePart>) => void }> = ({ part, onUpdate }) => {
-    const vowel = VOWELS.find(v => v.id === part.vowel);
-    return (
+/** The Voice part: what it sings (its own notes or the chords) and in which octave. */
+const VoiceBlock: React.FC<{ part: VoicePart; onUpdate: (patch: Partial<VoicePart>) => void }> = ({ part, onUpdate }) => (
         <div className="pd-block voice-block">
-            <span className="pd-label">Singers</span>
+            <span className="pd-label">Sings</span>
             <div className="pd-style voice-row">
-                <div className="segmented small-seg" role="group" aria-label="Singers">
-                    <button aria-pressed={part.singers === 'solo'} onClick={() => onUpdate({ singers: 'solo' })}>Solo<Own k="singers" when={part.singers === 'solo'} /></button>
-                    <button aria-pressed={part.singers === 'choir'} onClick={() => onUpdate({ singers: 'choir' })}>Choir<Own k="singers" when={part.singers === 'choir'} /></button>
-                </div>
-                <div className="segmented small-seg" role="group" aria-label="Voice range">
-                    <button aria-pressed={part.range === 'low'} title="men's voices" onClick={() => onUpdate({ range: 'low', octave: RANGE_OCTAVE.low })}>Low<Own k="range" when={part.range === 'low'} /></button>
-                    <button aria-pressed={part.range === 'high'} title="women's voices" onClick={() => onUpdate({ range: 'high', octave: RANGE_OCTAVE.high })}>High<Own k="range" when={part.range === 'high'} /></button>
-                </div>
-                <span className="section-note voice-tag">sings</span>
                 <div className="segmented small-seg" role="group" aria-label="Sings">
                     <button aria-pressed={part.sings === 'chords'} title="the chord row, like a chord part" onClick={() => onUpdate({ sings: 'chords' })}>Chords<Own k="sings" when={part.sings === 'chords'} /></button>
                     <button aria-pressed={part.sings === 'notes'} title="its own notes: play them on the keys in Notes mode, or write them in Song" onClick={() => onUpdate({ sings: 'notes' })}>Notes<Own k="sings" when={part.sings === 'notes'} /></button>
@@ -406,61 +395,13 @@ const VoiceBlock: React.FC<{ part: VoicePart; onUpdate: (patch: Partial<VoicePar
                     ))}
                 </div>
             </div>
-            <span className="pd-label">Vowel</span>
-            <div className="pd-style voice-row">
-                <div className="segmented small-seg vowel-seg" role="group" aria-label="Vowel">
-                    {VOWELS.map(v => (
-                        <button key={v.id} aria-pressed={part.vowel === v.id} title={v.hint} onClick={() => onUpdate({ vowel: v.id })}>{v.label}<Own k="vowel" when={part.vowel === v.id} /></button>
-                    ))}
-                </div>
-                <span className="section-note">{vowel?.hint}</span>
-            </div>
-            <div className="knob-row voice-knobs">
-                <KnobCell
-                    label="Vibrato"
-                    aria={`${part.name} Vibrato`}
-                    title="how much the pitch wavers, as singers do on a held note"
-                    value={part.vibrato}
-                    display={`${Math.round(part.vibrato * 100)}%`}
-                    color={part.color}
-                    on={part.vibrato > 0}
-                    resetTo={0.35}
-                    own="vibrato"
-                    onChange={v => onUpdate({ vibrato: v })}
-                />
-                <KnobCell
-                    label="Breath"
-                    aria={`${part.name} Breath`}
-                    title="air in the voice: from clear to whispery"
-                    value={part.breath}
-                    display={`${Math.round(part.breath * 100)}%`}
-                    color={part.color}
-                    on={part.breath > 0}
-                    resetTo={0.15}
-                    own="breath"
-                    onChange={v => onUpdate({ breath: v })}
-                />
-                <KnobCell
-                    label="Vowel glide"
-                    aria={`${part.name} Vowel glide`}
-                    title="how quickly the singers move to the next vowel in the vowel lane (in Song): from a snap to a slow morph"
-                    value={part.vowelGlide}
-                    display={`${Math.round(vowelGlideSeconds(part.vowelGlide) * 1000)} ms`}
-                    color={part.color}
-                    on
-                    resetTo={0.3}
-                    own="vowelGlide"
-                    onChange={v => onUpdate({ vowelGlide: v })}
-                />
-            </div>
             <p className="section-note pd-hint">
                 {part.sings === 'notes'
                     ? 'Sings its own notes: switch the pads to Notes to sing them live, or write them in Song.'
                     : 'Sings every chord in the chord row.'}
             </p>
         </div>
-    );
-};
+);
 
 interface PartDetailProps {
     part: Part;
@@ -998,8 +939,8 @@ interface PartsViewProps {
     onUseSongSound: (id: string) => void;
 }
 
-/** What a part sounds like, in a word: its instrument, Solo or Choir for a voice, the kit for drums. */
-export const subLabel = (p: Part) => (p.kind === 'voice' ? (p.singers === 'choir' ? 'Choir' : 'Solo') : hasInstrument(p) ? instrumentLabel((p as InstrumentPart).instrument) : '808/909');
+/** What a part sounds like, in a word: its instrument, "Ooh" for a voice, the kit for drums. */
+export const subLabel = (p: Part) => (p.kind === 'voice' ? 'Ooh' : hasInstrument(p) ? instrumentLabel((p as InstrumentPart).instrument) : '808/909');
 
 /**
  * Parts mode: how the song sounds. On the left every part as a mixer row (volume, mute, solo) plus

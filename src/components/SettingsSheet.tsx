@@ -192,16 +192,14 @@ export const CreditsDialog: React.FC<{ open: boolean; onClose: () => void }> = (
                             <td><a href="https://github.com/sgossner/VSCO-2-CE" target="_blank" rel="noreferrer">VSCO-2 Community Edition</a> by Versilian Studios (organ: Simon Dalzell / Ivy Audio)</td>
                             <td><a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noreferrer">CC0 1.0</a></td>
                         </tr>
+                        <tr>
+                            <td>Voice</td>
+                            <td>"Voice Oohs" from the Musyng Kite soundfont (rendered by <a href="https://github.com/gleitz/midi-js-soundfonts" target="_blank" rel="noreferrer">gleitz/midi-js-soundfonts</a>), looped and level-matched</td>
+                            <td><a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noreferrer">CC BY-SA 3.0</a></td>
+                        </tr>
                     </tbody>
                 </table>
                 <p className="section-note">The synths and the 808/909-style drum kit are made in the app with Tone.js.</p>
-                <p className="section-note">
-                    The Voice part's singers are measured (not sampled) from the long tones of{' '}
-                    <a href="https://doi.org/10.5281/zenodo.1442513" target="_blank" rel="noreferrer">VocalSet: A Singing Voice Dataset</a>{' '}
-                    by Julia Wilkins, Prem Seetharaman, Alison Wahl and Bryan Pardo (Northwestern University, 2018),{' '}
-                    <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>:
-                    each singer's voice colour and where each vowel's resonances sit. No recording is included.
-                </p>
             </div>
         </div>
     );
