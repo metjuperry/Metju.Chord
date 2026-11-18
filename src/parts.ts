@@ -237,6 +237,9 @@ export function vowelPerChord(chords: { start: number; len: number; rest?: boole
     return chords.filter(c => !c.rest).sort((a, b) => a.start - b.start).map(c => ({ start: c.start, len: c.len, vowel: PER_CHORD[n++ % PER_CHORD.length] }));
 }
 
+/** A new Voice part's singers: one clear, steady voice on "ah", high (the band-limited pop voice in audio/voice.ts). */
+export const DEFAULT_VOICE: VoiceSettings = { singers: 'solo', range: 'high', vowel: 'a', vibrato: 0, breath: 0 };
+
 export const voiceSettings = (p: VoicePart): VoiceSettings =>
     ({ singers: p.singers, range: p.range, vowel: p.vowel, vibrato: p.vibrato, breath: p.breath });
 
@@ -299,7 +302,7 @@ export function newPart(kind: PartKind, existing: Part[], drums?: DrumPattern): 
             // a choir on "ooh", singing the chords: something to hear straight away
             return {
                 ...base, kind, instrument: 'voice', tone: neutralTone(), shape: {}, fx: { ...noFx(), reverb: 0.2 },
-                singers: 'choir', range: 'low', vowel: 'u', vibrato: 0.35, breath: 0.15, sings: 'chords', octave: RANGE_OCTAVE.low, notes: [],
+                ...DEFAULT_VOICE, sings: 'chords', octave: RANGE_OCTAVE[DEFAULT_VOICE.range], notes: [],
                 vowels: [], vowelGlide: 0.3,
             };
         case 'drums':

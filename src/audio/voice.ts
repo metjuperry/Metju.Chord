@@ -1,7 +1,8 @@
 import * as Tone from 'tone';
 import type { Adsr } from '../sound';
 import { SYNTH_ENVELOPES } from '../sound';
-import type { VoiceRange, VoiceSettings, Vowel } from '../parts';
+import type { Singers, VoiceRange, VoiceSettings, Vowel } from '../parts';
+import { DEFAULT_VOICE } from '../parts';
 import type { Glide, Instrument } from './instruments';
 import { FORMANTS, SINGERS, VOWEL_TRIM } from './voiceData';
 
@@ -44,6 +45,15 @@ const PEAK_MAX_DB = [24, 20, 15, 15];
 const AIR_HZ = 2500;
 const AIR_DB = 18;
 const peakDb = (hz: number, bw: number, k: number) => Math.min(PEAK_MAX_DB[k], Math.max(3, 20 * Math.log10(hz / bw)));
+/** The band (see `lowCut`, `top`, `buzz` in the instrument): fitted by ear and by spectrum to a Bandle voice line. */
+const LOW_CUT_HZ = 450;
+const LOW_CUT_DB = -12;
+const BUZZ_HZ = 4300;
+const BUZZ_DB = -6;
+/** Makes the low range and a choir as loud as a high solo voice (measured, A-weighted, after the band). */
+const MAKEUP_DB: { [r in VoiceRange]: { [s in Singers]: number } } = { low: { solo: 4.7, choir: 7.8 }, high: { solo: 0, choir: 1.6 } };
+/** Where the cliff sits for a vowel: 1.5 kHz, or above its F2 for the bright vowels (E, I), which would lose themselves under it. */
+export const bandTop = (formants: [number, number, number][]) => Math.max(1500, formants[1][0] * 1.3);
 /** Breath's level against the singing (the Breath knob scales it). */
 const BREATH_LEVEL = 0.12;
 
@@ -79,20 +89,35 @@ export class VoiceInstrument implements Instrument {
      * formants (a note right on F1 rings out), so the same vowel jumps a few dB from chord to chord;
      * singers even that out by ear, this does it for them.
      */
-    private readonly even = new Tone.Compressor({ threshold: -34, ratio: 3, knee: 12, attack: 0.04, release: 0.3 }).connect(this.output);
+    private readonly even = new Tone.Compressor({ threshold: -34, ratio: 3, knee: 12, attack: 0.04, release: 0.3 });
+    /**
+     * The band the voice lives in, after the mouths: the lows under the fundamental's octave thinned
+     * (a hollow, heady voice rather than a chesty one), a steep cliff above the vowel (`bandTop`), and
+     * a faint buzz high up so it doesn't sound like a pillow. This is what makes it read as a sung
+     * voice in a mix rather than a synth: the pop "voice" lines of games like Bandle are made this way.
+     */
+    /** Evens out range and singers after the leveller (MAKEUP_DB). */
+    private readonly makeup = new Tone.Gain(1);
+    private readonly lowCut = new Tone.Filter({ type: 'lowshelf', frequency: LOW_CUT_HZ, gain: LOW_CUT_DB });
+    private readonly top = new Tone.Filter({ type: 'lowpass', frequency: 1500, rolloff: -96, Q: 0.7 });
+    private readonly buzz = new Tone.Filter({ type: 'bandpass', frequency: BUZZ_HZ, Q: 0.8 });
+    private readonly buzzLevel = new Tone.Gain(Tone.dbToGain(BUZZ_DB));
     readonly ready = Promise.resolve();
     private readonly ctx = Tone.getContext().rawContext as AudioContext;
     private readonly mouths: Mouth[];
     private readonly noise = new Tone.Noise('pink').start();
     private readonly breathTone = new Tone.Filter({ type: 'highpass', frequency: 900, Q: 0.5 });
     private readonly breathOut = new Tone.Gain(BREATH_LEVEL);
-    private settings: VoiceSettings = { singers: 'choir', range: 'low', vowel: 'u', vibrato: 0.35, breath: 0.15 };
+    private settings: VoiceSettings = { ...DEFAULT_VOICE };
     private waves = new Map<string, PeriodicWave>();
     private notes: Sung[] = [];
     private readonly preset: Adsr = SYNTH_ENVELOPES.voice;
     private env: Adsr = { ...SYNTH_ENVELOPES.voice };
 
     constructor() {
+        this.even.chain(this.makeup, this.lowCut);
+        this.lowCut.chain(this.top, this.output);
+        this.lowCut.chain(this.buzz, this.buzzLevel, this.output);
         this.breathTone.connect(this.breathOut);
         this.mouths = PLACES.map(place => {
             const input = new Tone.Gain(1);
@@ -128,6 +153,7 @@ export class VoiceInstrument implements Instrument {
             m.drift.min = -d;
             m.drift.max = d;
         });
+        this.makeup.gain.rampTo(Tone.dbToGain(MAKEUP_DB[next.range][next.singers]), 0.05);
         this.vowel(next.vowel, Tone.now(), VOWEL_GLIDE);
     }
 
@@ -152,6 +178,10 @@ export class VoiceInstrument implements Instrument {
             m.trim.gain.setValueAtTime(m.trim.gain.getValueAtTime(time), time);
             m.trim.gain.linearRampToValueAtTime(trim, end);
         });
+        const top = this.top.frequency;
+        top.cancelScheduledValues(time);
+        top.setValueAtTime(top.getValueAtTime(time), time);
+        top.exponentialRampToValueAtTime(bandTop(shape), end);
     }
 
     restVowel() {
@@ -285,7 +315,7 @@ export class VoiceInstrument implements Instrument {
             this.noise.dispose();
             this.breathTone.dispose();
             this.breathOut.dispose();
-            this.even.dispose();
+            [this.even, this.makeup, this.lowCut, this.top, this.buzz, this.buzzLevel].forEach(x => x.dispose());
             this.output.dispose();
         }, 50);
     }

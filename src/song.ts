@@ -6,7 +6,7 @@ import { DRUM_VOICES, DrumPattern, PATTERN_BARS, PatternBars, TICKS_PER_SIXTEENT
 import type { LearnTab } from './learn';
 import { STRUM_PATTERN_IDS, StrumPattern, nearestSpread } from './strum';
 import { legacyShape, readShape } from './sound';
-import { BASS_STYLES, BassStyle, FX_KEYS, MAX_PARTS, MELODY_STEPS, Note, PART_COLORS, Part, PartFx, PartKind, PartTone, PlayMode, RANGE_OCTAVE, STRUM_DIRECTIONS, Singers, Sings, TONE_KEYS, VOWELS, VoiceRange, Vowel, VowelClip, fxAvailable, hasNotes, neutralTone, newPart } from './parts';
+import { BASS_STYLES, BassStyle, DEFAULT_VOICE, FX_KEYS, MAX_PARTS, MELODY_STEPS, Note, PART_COLORS, Part, PartFx, PartKind, PartTone, PlayMode, RANGE_OCTAVE, STRUM_DIRECTIONS, Singers, Sings, TONE_KEYS, VOWELS, VoiceRange, Vowel, VowelClip, fxAvailable, hasNotes, neutralTone, newPart } from './parts';
 
 // ---- the song: everything undo/redo, saving and sharing cover ---------------------------
 
@@ -481,15 +481,15 @@ function readPart(v: unknown, index: number, existing: Part[], maxTick: number, 
         case 'melody':
             return { ...common, kind, instrument: instrument(), tone, shape, octave: int(v.octave, 3, 5, 4), notes: readNotes(v.notes, maxTick) };
         case 'voice': {
-            const range = oneOf<VoiceRange>(v.range, ['low', 'high'], 'low');
+            const range = oneOf<VoiceRange>(v.range, ['low', 'high'], DEFAULT_VOICE.range);
             return {
                 ...common, kind, instrument: 'voice', tone,
                 shape: isObj(v.shape) ? readShape(v.shape) : {},
-                singers: oneOf<Singers>(v.singers, ['solo', 'choir'], 'choir'),
+                singers: oneOf<Singers>(v.singers, ['solo', 'choir'], DEFAULT_VOICE.singers),
                 range,
-                vowel: oneOf<Vowel>(v.vowel, VOWELS.map(x => x.id), 'u'),
-                vibrato: num(v.vibrato, 0, 1, 0.35),
-                breath: num(v.breath, 0, 1, 0.15),
+                vowel: oneOf<Vowel>(v.vowel, VOWELS.map(x => x.id), DEFAULT_VOICE.vowel),
+                vibrato: num(v.vibrato, 0, 1, DEFAULT_VOICE.vibrato),
+                breath: num(v.breath, 0, 1, DEFAULT_VOICE.breath),
                 sings: oneOf<Sings>(v.sings, ['notes', 'chords'], 'chords'),
                 octave: int(v.octave, 2, 5, RANGE_OCTAVE[range]),
                 notes: readNotes(v.notes, maxTick),

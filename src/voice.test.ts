@@ -5,6 +5,7 @@ import { Clip, TICKS_PER_STEP as S } from './progression';
 import { fromSingleSection, readFullSong, readSong } from './song';
 import { applySectionEdit, engineStrips, sectionView } from './sections';
 import { FORMANTS, SINGERS, VOWEL_TRIM } from './audio/voiceData';
+import { bandTop } from './audio/voice';
 
 const chord = (start: number, len: number, degree: number): Clip => ({
     start: start * S, len: len * S, chord: { degree, type: 'triad', inversion: 0, octave: 4 },
@@ -16,13 +17,13 @@ const groove = { beatTicks: S };
 const voice = (patch: Partial<VoicePart> = {}, others: Part[] = []): VoicePart => ({ ...(newPart('voice', others) as VoicePart), ...patch });
 
 describe('a Voice part', () => {
-    it('starts as a low choir on "ooh", singing the chords with some reverb', () => {
-        expect(voice()).toMatchObject({ kind: 'voice', name: 'Voice', instrument: 'voice', singers: 'choir', range: 'low', vowel: 'u', sings: 'chords', octave: 3, notes: [] });
+    it('starts as one steady high voice on "ah", singing the chords with some reverb', () => {
+        expect(voice()).toMatchObject({ kind: 'voice', name: 'Voice', instrument: 'voice', singers: 'solo', range: 'high', vowel: 'a', vibrato: 0, breath: 0, sings: 'chords', octave: 4, notes: [] });
         expect(voice().fx.reverb).toBeGreaterThan(0);
     });
 
     it('sings the chord row moved into its range', () => {
-        const notes = partNotes(voice(), song, groove);
+        const notes = partNotes(voice({ octave: 3 }), song, groove);
         expect(notes.map(n => [n.start / S, n.len / S])).toEqual([[0, 4], [4, 4]]);
         expect(notes[0].midi.map(named)).toEqual(['C3', 'E3', 'G3']);
         expect(partNotes(voice({ octave: 4 }), song, groove)[1].midi.map(named)).toEqual(['A4', 'C5', 'E5']);
@@ -69,16 +70,16 @@ describe('a Voice part in a song', () => {
         const full = withVoice();
         const view = sectionView(full, 's1');
         const id = view.parts[1].id;
-        const next = applySectionEdit(full, 's1', { ...view, parts: view.parts.map(p => (p.id === id ? { ...p, vowel: 'a' } as Part : p)) });
-        expect(next.sections[0].sound).toEqual({ [id]: { vowel: 'a' } });
-        expect(engineStrips(next).find(x => x.id === `${id}@s1`)?.part).toMatchObject({ vowel: 'a' });
+        const next = applySectionEdit(full, 's1', { ...view, parts: view.parts.map(p => (p.id === id ? { ...p, vowel: 'o' } as Part : p)) });
+        expect(next.sections[0].sound).toEqual({ [id]: { vowel: 'o' } });
+        expect(engineStrips(next).find(x => x.id === `${id}@s1`)?.part).toMatchObject({ vowel: 'o' });
     });
 
     it('survives a save and repairs junk', () => {
         const full = withVoice();
         const raw = JSON.parse(JSON.stringify({ ...full, parts: full.parts.map(p => (p.kind === 'voice' ? { ...p, vowel: 'y', singers: 'band', range: 'mid', vibrato: 7, breath: -1, sings: 'lyrics', octave: 9, instrument: 'piano' } : p)) }));
         const back = readFullSong(raw)!;
-        expect(back.parts[1]).toMatchObject({ kind: 'voice', instrument: 'voice', vowel: 'u', singers: 'choir', range: 'low', vibrato: 1, breath: 0, sings: 'chords', octave: 5 });
+        expect(back.parts[1]).toMatchObject({ kind: 'voice', instrument: 'voice', vowel: 'a', singers: 'solo', range: 'high', vibrato: 1, breath: 0, sings: 'chords', octave: 5 });
         expect(readFullSong(JSON.parse(JSON.stringify(full)))!.parts[1]).toEqual(full.parts[1]);
     });
 });
@@ -97,6 +98,13 @@ describe('voice data', () => {
                 });
                 expect(Math.abs(VOWEL_TRIM[range][v])).toBeLessThan(20);
             }
+        }
+    });
+
+    it('keeps the bright vowels above the band\'s cliff', () => {
+        for (const range of ['low', 'high'] as const) {
+            expect(bandTop(FORMANTS[range].a)).toBeLessThan(1700);
+            for (const v of ['e', 'i'] as const) expect(bandTop(FORMANTS[range][v])).toBeGreaterThan(FORMANTS[range][v][1][0]);
         }
     });
 
