@@ -72,6 +72,15 @@
     background: var(--panel-2);
 }
 
+.pop-menu.song-menu-pop {
+    min-width: 230px;
+}
+
+/* desktop: as wide as its minimum (the note wraps), not as wide as its longest line */
+.app:not(.compact) .pop-menu.song-menu-pop {
+    width: min-content;
+}
+
 .song-note {
     margin: 4px 10px 6px;
     font-size: 11px;

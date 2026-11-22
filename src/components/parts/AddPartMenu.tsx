@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { MenuAnchor, PopMenu } from '../PopMenu';
+import React from 'react';
+import { PopMenu, useMenuOpener } from '../PopMenu';
 import { MAX_PARTS, PART_LABELS, PartKind } from '../../parts';
 import { KIND_HINT } from './labels';
 
@@ -8,7 +8,7 @@ import { KIND_HINT } from './labels';
  * it was cut off on a phone).
  */
 export const AddPartMenu: React.FC<{ full: boolean; onAdd: (kind: PartKind) => void; short?: boolean }> = ({ full, onAdd, short }) => {
-    const [anchor, setAnchor] = useState<MenuAnchor | null>(null);
+    const { anchor, open, close } = useMenuOpener();
     return (
         <div className="add-part">
             <button
@@ -18,9 +18,7 @@ export const AddPartMenu: React.FC<{ full: boolean; onAdd: (kind: PartKind) => v
                 disabled={full}
                 title={full ? `Up to ${MAX_PARTS} parts` : 'Add a part'}
                 aria-label={short ? 'Add a part' : undefined}
-                // while open, a press here only closes it (the menu's outside-press would close it and the click reopen it)
-                onPointerDown={e => anchor && e.stopPropagation()}
-                onClick={e => setAnchor(anchor ? null : { rect: e.currentTarget.getBoundingClientRect() })}
+                onClick={e => open(e.currentTarget)}
             >
                 {short ? '+' : '+ Part'}
             </button>
@@ -28,7 +26,7 @@ export const AddPartMenu: React.FC<{ full: boolean; onAdd: (kind: PartKind) => v
                 <PopMenu
                     anchor={anchor}
                     label="Add a part"
-                    onClose={() => setAnchor(null)}
+                    onClose={close}
                     items={(['chords', 'bass', 'melody', 'voice', 'drums'] as PartKind[]).map(k => ({ label: PART_LABELS[k], note: KIND_HINT[k], onSelect: () => onAdd(k) }))}
                 />
             )}
