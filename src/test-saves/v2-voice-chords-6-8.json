@@ -1,0 +1,6 @@
+{ "version": 2, "song": { "key": "D", "scale": "dorian", "bpm": 140, "steps": 12, "timeSignature": { "beats": 6, "unit": 8 },
+  "chords": [ { "start": 0, "len": 288, "chord": { "degree": 1, "type": "minor", "inversion": 0, "octave": 4 } }, { "start": 288, "len": 144, "rest": true, "plays": { "p2": true } } ],
+  "parts": [
+    { "id": "p2", "kind": "voice", "name": "Ooh", "sings": "chords", "octave": 4, "singers": 5, "vowel": "ah", "notes": [ { "start": 0, "len": 24, "step": 1 } ], "vowels": [ { "start": 0, "len": 48, "vowel": "ah" } ] },
+    { "id": "p3", "kind": "drums", "drums": { "bars": 1, "hits": { "kick": [0, 6, 11, 12], "rim": [3] } } }
+  ] } }

@@ -1,0 +1,24 @@
+{
+  "version": 3,
+  "song": {
+    "key": "H", "scale": "nope", "bpm": 999, "timeSignature": { "beats": 7, "unit": 8 },
+    "parts": [
+      { "id": "__proto__", "kind": "melody", "notes": [] },
+      { "id": "p1@s1", "kind": "voice", "sings": "notes" },
+      { "id": "p1@s1", "kind": "bass", "style": "nope", "octave": 9 },
+      { "id": "toString", "kind": "drums", "drums": { "bars": 2, "hits": { "kick": [0, 27, 28, -1, 1.5] } } },
+      { "id": "ok_id-1", "kind": "chords", "instrument": "voice", "playMode": "Chord" },
+      { "id": "x", "kind": "guitar" },
+      { "id": "late", "kind": "melody" }
+    ],
+    "sections": [
+      { "id": "__proto__", "name": "Intro", "steps": 0, "chords": "x", "content": { "p1": { "notes": [ { "start": 0, "len": 24, "step": 0 } ] } } },
+      { "id": "s1", "name": "Verse", "steps": 1000, "content": {}, "mutes": {} },
+      { "id": "s1", "name": "Dup", "steps": 7, "content": {} },
+      "junk",
+      { "name": "No id", "steps": 7, "content": {}, "sound": { "p2": { "octave": 99, "sings": "bogus" }, "p4": { "fx": { "reverb": 5, "chorus": 1 } } } }
+    ],
+    "chain": []
+  },
+  "settings": "junk"
+}

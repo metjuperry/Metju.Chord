@@ -1,0 +1,61 @@
+{
+  "version": 3,
+  "song": {
+    "key": "E", "scale": "major", "bpm": 120, "timeSignature": { "beats": 4, "unit": 4 },
+    "space": { "reverb": { "size": 2, "ret": 0.5 }, "delay": { "time": "4n", "feedback": 0.2, "ret": 0.3 }, "out": { "level": 1 } },
+    "parts": [
+      { "id": "p1", "kind": "chords", "name": "Keys", "color": "#4fd1c5", "volume": 0, "mute": false, "solo": false, "instrument": "epiano",
+        "fx": { "chorus": 0, "tremolo": 0, "glide": 0, "reverb": 0.2, "delay": 0 }, "tone": { "pan": 0.5 }, "shape": { "attack": 0.01 },
+        "playMode": "Arp", "arpPattern": "random", "arpRate": "8t", "noteLength": 0.4, "strumSpread": 0.035, "strumDirection": "down", "strumPattern": "pop" },
+      { "id": "p2", "kind": "bass", "name": "Bass", "color": "#ff7aa8", "volume": 0, "mute": false, "solo": false, "instrument": "bass",
+        "fx": { "chorus": 0, "tremolo": 0, "glide": 0, "reverb": 0, "delay": 0 }, "tone": { "pan": 0.5 }, "shape": {}, "style": "kick", "octave": 1 },
+      { "id": "p3", "kind": "melody", "name": "Melody", "color": "#7fb4ff", "volume": 0, "mute": false, "solo": false, "instrument": "lead",
+        "fx": { "chorus": 0, "tremolo": 0, "glide": 0, "reverb": 0, "delay": 0 }, "tone": { "pan": 0.5 }, "shape": {}, "octave": 4, "notes": [ { "start": 0, "len": 24, "step": 9 } ] },
+      { "id": "p4", "kind": "drums", "name": "Drums", "color": "#d38cff", "volume": 0, "mute": false, "solo": false,
+        "fx": { "chorus": 0, "tremolo": 0, "glide": 0, "reverb": 0.1, "delay": 0 }, "drums": { "bars": 2, "hits": { "kick": [0] } } },
+      { "id": "p5", "kind": "voice", "name": "Voice", "color": "#c8e06e", "volume": 0, "mute": false, "solo": false, "instrument": "voice",
+        "fx": { "chorus": 0, "tremolo": 0, "glide": 0, "reverb": 0.2, "delay": 0 }, "tone": { "pan": 0.5 }, "shape": {}, "sings": "chords", "octave": 4, "notes": [],
+        "singers": 2, "vowel": "oh" },
+      { "id": "p6", "kind": "drums", "name": "Perc", "color": "#e8b98a", "volume": -6, "mute": false, "solo": false,
+        "fx": { "chorus": 0, "tremolo": 0, "glide": 0, "reverb": 0, "delay": 0 }, "drums": { "bars": 1, "hits": {} } }
+    ],
+    "sections": [
+      { "id": "s1", "name": "Verse", "letter": "V", "steps": 16,
+        "chords": [
+          { "start": 0, "len": 384, "chord": { "degree": 0, "type": "triad", "inversion": 0, "octave": 4 } },
+          { "start": 384, "len": 384, "rest": true, "plays": { "p2": true, "p4": false, "p5": true } },
+          { "start": 768, "len": 768, "chord": { "degree": 4, "type": "diatonic7", "inversion": 0, "octave": 4 } }
+        ],
+        "content": {
+          "p3": { "notes": [ { "start": 0, "len": 96, "step": 7 }, { "start": 96, "len": 48, "step": 8, "acc": -1 }, { "start": 120, "len": 48, "step": 9 }, { "start": 1530, "len": 96, "step": 1 } ] },
+          "p4": { "drums": { "bars": 1, "hits": { "kick": [0, 8], "snare": [4, 12], "hat": [0, 2, 4, 6, 8, 10, 12, 14] } } },
+          "p5": { "notes": [ { "start": 0, "len": 384, "step": 4 } ], "vowels": [ { "start": 0, "len": 384, "vowel": "oo" } ] },
+          "p6": { "drums": { "bars": 1, "hits": {} } },
+          "p9": { "notes": [ { "start": 0, "len": 24, "step": 0 } ] },
+          "p1": { "notes": [ { "start": 0, "len": 24, "step": 0 } ] }
+        },
+        "mutes": { "p2": true, "p3": false, "p9": true },
+        "sound": {
+          "p1": { "instrument": "organ", "playMode": "Strum", "fx": { "reverb": 0.6 }, "shape": { "attack": 0.2, "cutoff": 2000 }, "name": "Nope", "id": "p7", "mute": true },
+          "p2": { "style": "kick", "octave": 3, "volume": -6, "instrument": "not-an-instrument" },
+          "p3": { "instrument": "piano", "octave": 5, "notes": [ { "start": 0, "len": 24, "step": 1 } ], "tone": { "pan": 0.2 } },
+          "p4": { "volume": 4, "fx": { "chorus": 0.9, "delay": 0.3 }, "drums": { "bars": 4, "hits": {} } },
+          "p5": { "sings": "notes", "octave": 3, "singers": 4, "vowel": "ee", "range": "bass", "breath": 0.5 },
+          "p9": { "volume": 3 }
+        } },
+      { "id": "s2", "name": "Chorus", "steps": 8,
+        "chords": [ { "start": 0, "len": 768, "chord": { "degree": 3, "type": "triad", "inversion": 2, "octave": 4 } }, { "start": 700, "len": 50, "chord": { "degree": 1, "type": "bogus", "inversion": 0, "octave": 4 } } ],
+        "content": {
+          "p3": { "notes": [] },
+          "p4": { "drums": { "bars": 4, "hits": { "kick": [0, 16, 32, 48, 63, 64], "clap": [8, 24, 40, 56] } } },
+          "p5": { "notes": [ { "start": 0, "len": 96, "step": 2 } ] },
+          "p6": { "drums": { "bars": 2, "hits": {} } }
+        },
+        "mutes": {},
+        "sound": { "p5": { "sings": "chords" }, "p1": { "fx": { "reverb": 0.2 } } } },
+      { "id": "s3", "name": "  ", "steps": 4, "chords": [], "content": { "p4": { "drums": { "bars": 3, "hits": { "snare": [1, 2] } } }, "p6": { "drums": "junk" } }, "mutes": [], "sound": [] }
+    ],
+    "chain": [ { "sectionId": "s1" }, { "sectionId": "s1" }, { "sectionId": "s2" }, { "sectionId": "nope" }, { "sectionId": "s3" }, "junk" ]
+  },
+  "settings": { "openSection": "s2", "playMode": "chain", "theme": "auto", "shapeView": "advanced", "partsTab": "effects", "learnTab": "melody" }
+}

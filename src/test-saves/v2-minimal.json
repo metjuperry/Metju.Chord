@@ -1,0 +1,1 @@
+{ "version": 2, "song": { "chords": [], "parts": [ { "kind": "melody", "notes": [ { "start": 0, "len": 24, "step": 20 } ] }, { "kind": "drums", "drums": { "bars": 4, "hits": { "kick": [0, 63, 64] } } }, { "kind": "drums" } ] } }
