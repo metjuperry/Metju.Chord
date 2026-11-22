@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import './SongView.css';
 import { MenuAnchor, MenuItem, PopMenu, useLongPress } from './PopMenu';
 import { ChainSlot, PartState, chainCount, chainLayout, hasOwnSound, partStateIn, sectionBars } from '../sections';
@@ -90,10 +90,10 @@ const SectionTile: React.FC<{
     section: Section;
     open: boolean;
     tag: 'playing' | 'next' | null;
-    onOpen: () => void;
-    onMenu: (anchor: MenuAnchor) => void;
-}> = ({ song, section, open, tag, onOpen, onMenu }) => {
-    const press = useLongPress(onMenu);
+    onOpen: (id: string) => void;
+    onMenu: (id: string, anchor: MenuAnchor) => void;
+}> = memo(function SectionTile({ song, section, open, tag, onOpen, onMenu }) {
+    const press = useLongPress(anchor => onMenu(section.id, anchor));
     const harmony = { key: song.key, scale: song.scale, chords: section.chords };
     const chords = section.chords.filter(isChordClip).map(c => resolveClip(harmony, c).name.symbol);
     const bars = sectionBars(song.timeSignature, section);
@@ -107,7 +107,7 @@ const SectionTile: React.FC<{
                 aria-label={`Open ${section.name}, ${plural(bars, 'bar')}, ${chords.length ? `chords ${chords.join(' ')}` : 'no chords'}; playing: ${playsLabel}${own ? '; has its own sound' : ''}${tag === 'playing' ? '. Playing now' : tag === 'next' ? '. Next' : ''}. Long-press for options`}
                 {...press.handlers}
                 onClick={() => {
-                    if (!press.wasLongPress()) onOpen();
+                    if (!press.wasLongPress()) onOpen(section.id);
                 }}
             >
                 <span className="sec-top">
@@ -125,21 +125,19 @@ const SectionTile: React.FC<{
                             : <span className="sec-bars">{plural(bars, 'bar')}</span>}
                 </span>
             </button>
-            <button className="sec-more" aria-label={`${section.name}: options`} aria-haspopup="menu" onClick={e => onMenu({ rect: e.currentTarget.getBoundingClientRect() })}>⋯</button>
+            <button className="sec-more" aria-label={`${section.name}: options`} aria-haspopup="menu" onClick={e => onMenu(section.id, { rect: e.currentTarget.getBoundingClientRect() })}>⋯</button>
         </div>
     );
-};
+});
 
 const ChainBlock: React.FC<{
     slot: ChainSlot;
     open: boolean;
     state: 'playing' | 'done' | null;
-    /** 0..1 through the block while it plays. */
-    progress: number;
-    onPick: () => void;
-    onMenu: (anchor: MenuAnchor) => void;
-}> = ({ slot, open, state, progress, onPick, onMenu }) => {
-    const press = useLongPress(onMenu);
+    onPick: (slot: ChainSlot) => void;
+    onMenu: (index: number, anchor: MenuAnchor) => void;
+}> = memo(function ChainBlock({ slot, open, state, onPick, onMenu }) {
+    const press = useLongPress(anchor => onMenu(slot.index, anchor));
     return (
         <div className={`chain-slot ${open ? 'open' : ''} ${state ?? ''}`}>
             <button
@@ -150,22 +148,39 @@ const ChainBlock: React.FC<{
                 data-index={slot.index}
                 {...press.handlers}
                 onClick={() => {
-                    if (!press.wasLongPress()) onPick();
+                    if (!press.wasLongPress()) onPick(slot);
                 }}
             >
                 <span className="cb-bar">{slot.startBar}</span>
                 <span className="cb-name">{slot.section.name}</span>
-                {state === 'playing' && <span className="cb-head" style={{ left: `${progress * 100}%` }} aria-hidden="true" />}
+                {state === 'playing' && <ChainHead slot={slot} />}
             </button>
             <button
                 className="cb-more"
                 aria-label={`${slot.section.name} from bar ${slot.startBar}: options`}
                 aria-haspopup="menu"
-                onClick={e => onMenu({ rect: e.currentTarget.getBoundingClientRect() })}
+                onClick={e => onMenu(slot.index, { rect: e.currentTarget.getBoundingClientRect() })}
             >
                 ⋯
             </button>
         </div>
+    );
+});
+
+/** The playhead in the chain block playing: it follows the song tick itself (once a 1/16). */
+const ChainHead: React.FC<{ slot: ChainSlot }> = ({ slot }) => {
+    const progress = usePlay(s => (s.chain ? Math.max(0, Math.min(1, (s.chain.tick - slot.start) / slot.len)) : 0));
+    return <span className="cb-head" style={{ left: `${progress * 100}%` }} aria-hidden="true" />;
+};
+
+/** "bar 5 / 12 · Verse · next Chorus" while the chain plays: it re-renders once a bar. */
+const ChainStatus: React.FC<{ cur: ChainSlot; next?: ChainSlot; totalBars: number }> = ({ cur, next, totalBars }) => {
+    const bar = usePlay(s => (s.chain ? cur.startBar + Math.floor((s.chain.tick - cur.start) / (cur.len / Math.max(1, cur.bars))) : cur.startBar));
+    return (
+        <>
+            <b>bar {Math.min(bar, totalBars)} / {totalBars}</b>
+            <span className="section-note"> · {cur.section.name}{next ? ` · next ${next.section.name}` : ''}</span>
+        </>
     );
 };
 
@@ -190,34 +205,38 @@ const RenameBox: React.FC<{ name: string; onSave: (name: string) => void }> = ({
  * Song mode's top level: the sections as tiles (tap one to open it), and the chain, the running
  * order, as blocks as wide as they are long. While the chain plays it follows the playhead.
  */
-const SongView: React.FC<SongViewProps> = p => {
+const SongView: React.FC<SongViewProps> = memo(function SongView(p) {
     const { song } = p;
-    const layout = chainLayout(song);
+    const layout = useMemo(() => chainLayout(song), [song]);
     const totalBars = layout.reduce((m, s) => m + s.bars, 0);
     const [menu, setMenu] = useState<{ anchor: MenuAnchor; kind: 'section'; id: string; renaming?: boolean } | { anchor: MenuAnchor; kind: 'slot'; index: number } | null>(null);
     const chainRow = useRef<HTMLDivElement>(null);
 
-    const chainPos = usePlay(s => s.chain);
+    // which chain slot plays (not where in it: ChainHead and ChainStatus follow that), the section looping, the one queued
+    const chainIndex = usePlay(s => (s.chain ? s.chain.index : -1));
     const playingSection = usePlay(s => s.section);
     const queued = usePlay(s => s.queued);
-    const chainPlaying = p.playing && p.playMode === 'chain' && chainPos !== null;
-    const cur = chainPlaying ? layout[chainPos!.index] : undefined;
+    const chainPlaying = p.playing && p.playMode === 'chain' && chainIndex >= 0;
+    const cur = chainPlaying ? layout[chainIndex] : undefined;
     const nextSlot = cur ? layout[cur.index + 1] : undefined;
     const playingId = chainPlaying ? cur?.section.id : p.playing ? playingSection : null;
     const nextId = chainPlaying ? nextSlot?.section.id : queued;
 
     // keep the playing block in view
+    const curIndex = cur ? cur.index : -1;
     useEffect(() => {
         const row = chainRow.current;
-        if (!row || !cur) return;
-        const el = row.querySelector<HTMLElement>(`[data-index="${cur.index}"]`);
+        if (!row || curIndex < 0) return;
+        const el = row.querySelector<HTMLElement>(`[data-index="${curIndex}"]`);
         if (!el) return;
         const left = el.offsetLeft - row.offsetLeft;
         if (left < row.scrollLeft + 8 || left + el.offsetWidth > row.scrollLeft + row.clientWidth - 8) {
             row.scrollTo({ left: Math.max(0, left - 24), behavior: 'smooth' });
         }
-    }, [cur?.index]);
+    }, [curIndex]);
 
+    const sectionMenu = useCallback((id: string, anchor: MenuAnchor) => setMenu({ anchor, kind: 'section', id }), []);
+    const slotMenu = useCallback((index: number, anchor: MenuAnchor) => setMenu({ anchor, kind: 'slot', index }), []);
     const sectionItems = (id: string): MenuItem[] => {
         const sec = song.sections.find(s => s.id === id);
         return [
@@ -237,13 +256,7 @@ const SongView: React.FC<SongViewProps> = p => {
 
     let status: React.ReactNode;
     if (chainPlaying && cur) {
-        const bar = cur.startBar + Math.floor((chainPos!.tick - cur.start) / (cur.len / Math.max(1, cur.bars)));
-        status = (
-            <>
-                <b>bar {Math.min(bar, totalBars)} / {totalBars}</b>
-                <span className="section-note"> · {cur.section.name}{nextSlot ? ` · next ${nextSlot.section.name}` : ''}</span>
-            </>
-        );
+        status = <ChainStatus cur={cur} next={nextSlot} totalBars={totalBars} />;
     } else if (p.playing && p.playMode === 'loop' && playingSection) {
         const name = (id: string | null) => song.sections.find(s => s.id === id)?.name ?? '';
         status = (
@@ -281,8 +294,8 @@ const SongView: React.FC<SongViewProps> = p => {
                         section={sec}
                         open={sec.id === p.openId}
                         tag={sec.id === playingId ? 'playing' : sec.id === nextId ? 'next' : null}
-                        onOpen={() => p.onOpen(sec.id)}
-                        onMenu={anchor => setMenu({ anchor, kind: 'section', id: sec.id })}
+                        onOpen={p.onOpen}
+                        onMenu={sectionMenu}
                     />
                 ))}
                 <button className="sec-new" disabled={song.sections.length >= MAX_SECTIONS} onClick={p.onNew} aria-label="New section">
@@ -304,9 +317,8 @@ const SongView: React.FC<SongViewProps> = p => {
                             slot={slot}
                             open={slot.section.id === p.openId}
                             state={state}
-                            progress={state === 'playing' ? Math.min(1, (chainPos!.tick - slot.start) / slot.len) : 0}
-                            onPick={() => p.onPickSlot(slot)}
-                            onMenu={anchor => setMenu({ anchor, kind: 'slot', index: slot.index })}
+                            onPick={p.onPickSlot}
+                            onMenu={slotMenu}
                         />
                     );
                 })}
@@ -329,6 +341,6 @@ const SongView: React.FC<SongViewProps> = p => {
             )}
         </section>
     );
-};
+});
 
 export default SongView;

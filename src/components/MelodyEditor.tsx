@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { memo, useCallback, useMemo, useState } from 'react';
 import { MenuAnchor, MoreMenu, PopMenu } from './PopMenu';
 import './PartEditors.css';
 import { TICKS_PER_SIXTEENTH } from '../drums';
@@ -6,6 +6,7 @@ import { Harmony, MELODY_STEPS, NotesPart, chordAt, melodyMidi, resolveClip } fr
 import { noteNames, spellNoteOctave } from '../theory';
 import { labelShade } from '../shades';
 import { usePlay } from '../playhead';
+import { useStable } from '../useStable';
 
 /** Note lengths offered for new notes, in 1/16 steps. */
 const LENGTHS: { sixteenths: number; label: string }[] = [
@@ -63,9 +64,9 @@ export const higherOctave = (notes: { step: number }[]) =>
  * The notes of the chord under each column are shaded, so you can see where a melody will sit
  * well before you hear it.
  */
-const MelodyEditor: React.FC<MelodyEditorProps> = p => {
+const MelodyEditor: React.FC<MelodyEditorProps> = memo(function MelodyEditor(p) {
     const { part, harmony, len } = p;
-    const names = noteNames(harmony.key, harmony.scale);
+    const names = useMemo(() => noteNames(harmony.key, harmony.scale), [harmony.key, harmony.scale]);
     const compact = !!p.compact;
     /** 1/16s per column: 1/8 columns on phones unless zoomed in. */
     const res = compact && !p.fine && p.perBeat % 2 === 0 ? 2 : 1;
@@ -133,28 +134,8 @@ const MelodyEditor: React.FC<MelodyEditorProps> = p => {
         return { up, down };
     }, [part.notes, res, p.high, compact]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // the playhead's column (-1 when stopped), straight from playback
-    const now = usePlay(s => (s.sixteenth >= 0 ? Math.floor(s.sixteenth / res) : -1));
     const cursor = p.cursor >= 0 ? Math.floor(p.cursor / res) : -1;
     const barCols = p.beatsPerBar * perBeatCols;
-
-    const renderChordRibbon = (from: number, to: number) => {
-        const labels: React.ReactNode[] = [];
-        for (const clip of harmony.chords) {
-            if (clip.rest) continue;
-            const c0 = Math.round(clip.start / TICKS_PER_SIXTEENTH / res);
-            const c1 = Math.round((clip.start + clip.len) / TICKS_PER_SIXTEENTH / res);
-            if (c1 <= from || c0 >= to) continue;
-            const a = Math.max(c0, from);
-            const b = Math.min(c1, to);
-            labels.push(
-                <span key={clip.start} className="mel-chord" style={{ gridColumn: `${a - from + 2} / span ${b - a}` }}>
-                    {c0 < from ? '↳ ' : ''}{resolveClip(harmony, clip).name.symbol}
-                </span>,
-            );
-        }
-        return labels;
-    };
 
     const cols = `var(--mel-label) repeat(${blockCols}, minmax(var(--mel-cell), 1fr))`;
     /** The open row menu: which row (block) and where it opened. */
@@ -164,6 +145,12 @@ const MelodyEditor: React.FC<MelodyEditorProps> = p => {
         const to = Math.min(from + blockCols, totalCols);
         return { from, to, label: `${b * p.stepsPerRow + 1}–${Math.min((b + 1) * p.stepsPerRow, p.totalSteps)}` };
     };
+    const openMenu = useCallback((block: number, rect: DOMRect) => setRowMenu({ block, anchor: { rect } }), []);
+    // one handler for every cell: the cell says which row and which 1/16 a tap means
+    const tapCell = useStable((e: React.MouseEvent<HTMLButtonElement>) => {
+        const d = e.currentTarget.dataset;
+        p.onTap(Number(d.step), Number(d.s16), len);
+    });
     const rowItems = (b: number) => {
         const { from, to } = blockRange(b);
         const t0 = from * res * TICKS_PER_SIXTEENTH, t1 = to * res * TICKS_PER_SIXTEENTH;
@@ -207,73 +194,189 @@ const MelodyEditor: React.FC<MelodyEditorProps> = p => {
             </div>
 
             <div className="mel-blocks" {...(compact && { role: 'group', 'aria-label': `${part.name}, ${p.high ? 'upper' : 'lower'} octave` })}>
-                {Array.from({ length: blocks }, (_, b) => {
-                    const from = b * blockCols;
-                    const to = Math.min(from + blockCols, totalCols);
-                    return (
-                        <div key={b} className="mel-scroll">
-                            <div className="mel-block" role="grid" aria-label={`Steps ${b * p.stepsPerRow + 1} to ${b * p.stepsPerRow + p.stepsPerRow}`} style={{ '--mel-cols': blockCols } as React.CSSProperties}>
-                                <div className="mel-chords" style={{ gridTemplateColumns: cols }}>
-                                    <span className="mel-row-tools">
-                                        <button
-                                            className="mel-row-menu"
-                                            aria-label={`Steps ${blockRange(b).label}: copy, cut, paste or clear`}
-                                            aria-haspopup="menu"
-                                            aria-expanded={rowMenu?.block === b}
-                                            onClick={e => setRowMenu({ block: b, anchor: { rect: e.currentTarget.getBoundingClientRect() } })}
-                                        >⋯</button>
-                                    </span>
-                                    {renderChordRibbon(from, to)}
-                                </div>
-                                {rows.map((row, ri) => (
-                                    <div key={row.step} className="mel-row" role="row" style={{ gridTemplateColumns: cols }}>
-                                        <span className={`mel-name ${row.tonic ? 'tonic' : ''}`} style={row.style}>{row.label}</span>
-                                        {Array.from({ length: to - from }, (_, j) => {
-                                            const c = from + j;
-                                            const col = columns[c];
-                                            const cover = covered.get(`${row.step}:${c}`);
-                                            const tone = col ? (col.root === row.pc ? 'root' : col.pcs.has(row.pc) ? 'tone' : '') : '';
-                                            const s16 = c * res;
-                                            const beat = Math.floor(s16 / p.perBeat);
-                                            const sub = s16 % p.perBeat;
-                                            const top = ri === 0, bottom = ri === rows.length - 1;
-                                            return (
-                                                <button
-                                                    key={c}
-                                                    role="gridcell"
-                                                    className={[
-                                                        'mel-cell', tone,
-                                                        c % barCols === 0 ? 'bar' : c % perBeatCols === 0 ? 'beat' : '',
-                                                        beat % 2 ? 'alt' : '',
-                                                        cover ? 'on' : '', cover?.head ? 'head' : '', cover?.tail ? 'tail' : '',
-                                                        cover?.sel ? 'sel' : '',
-                                                        c === now ? 'now' : '',
-                                                        c === cursor ? 'cursor' : '',
-                                                        top && peek.up.has(c) ? 'peek-up' : '',
-                                                        bottom && peek.down.has(c) ? 'peek-down' : '',
-                                                    ].filter(Boolean).join(' ')}
-                                                    aria-pressed={!!cover}
-                                                    aria-current={cover?.sel && cover.head ? 'true' : undefined}
-                                                    aria-label={`${cover ? cover.label : row.label}, beat ${beat + 1}${sub ? `, 1/16 ${sub + 1}` : ''}${cover?.sel ? ', selected' : ''}${top && peek.up.has(c) ? ', more notes above' : ''}${bottom && peek.down.has(c) ? ', more notes below' : ''}`}
-                                                    onClick={() => p.onTap(row.step, cover ? cover.start16 : s16, len)}
-                                                >
-                                                    {cover?.head && <span className="mel-acc" aria-hidden="true">{cover.name}</span>}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    );
-                })}
+                {Array.from({ length: blocks }, (_, b) => (
+                    <MelodyBlock
+                        key={b}
+                        from={b * blockCols}
+                        to={Math.min(b * blockCols + blockCols, totalCols)}
+                        title={`Steps ${b * p.stepsPerRow + 1} to ${b * p.stepsPerRow + p.stepsPerRow}`}
+                        menuLabel={`Steps ${blockRange(b).label}: copy, cut, paste or clear`}
+                        block={b}
+                        blockCols={blockCols}
+                        cols={cols}
+                        harmony={harmony}
+                        rows={rows}
+                        columns={columns}
+                        covered={covered}
+                        peek={peek}
+                        cursor={cursor}
+                        res={res}
+                        perBeat={p.perBeat}
+                        perBeatCols={perBeatCols}
+                        barCols={barCols}
+                        menuOpen={rowMenu?.block === b}
+                        onMenu={openMenu}
+                        onTap={tapCell}
+                    />
+                ))}
             </div>
             {rowMenu && (
                 <PopMenu anchor={rowMenu.anchor} label={`Steps ${blockRange(rowMenu.block).label}`} items={rowItems(rowMenu.block)} onClose={() => setRowMenu(null)} />
             )}
         </div>
     );
-};
+});
+
+interface MelodyRow {
+    step: number;
+    pc: number;
+    label: string;
+    tonic: boolean;
+    style: React.CSSProperties;
+}
+interface Cover { head: boolean; tail: boolean; acc: number; sel: boolean; label: string; name: string; start16: number }
+
+/**
+ * One row block of the grid (a sequencer row's worth of columns, every pitch). It follows the playhead
+ * itself, and only while the playhead is in it, so playing re-renders one block a 1/16, and in it only
+ * the cells that gain or lose the "now" mark (`MelodyCell` is memoised).
+ */
+const MelodyBlock: React.FC<{
+    from: number;
+    to: number;
+    block: number;
+    title: string;
+    menuLabel: string;
+    blockCols: number;
+    cols: string;
+    harmony: Harmony;
+    rows: MelodyRow[];
+    columns: ({ root: number; pcs: Set<number> } | null)[];
+    covered: Map<string, Cover>;
+    peek: { up: Set<number>; down: Set<number> };
+    cursor: number;
+    res: number;
+    perBeat: number;
+    perBeatCols: number;
+    barCols: number;
+    menuOpen: boolean;
+    onMenu: (block: number, rect: DOMRect) => void;
+    onTap: (e: React.MouseEvent<HTMLButtonElement>) => void;
+}> = memo(function MelodyBlock(p) {
+    const { from, to, res, harmony } = p;
+    // the playhead's column while it is in this block, else -1
+    const now = usePlay(s => {
+        const c = s.sixteenth >= 0 ? Math.floor(s.sixteenth / res) : -1;
+        return c >= from && c < to ? c : -1;
+    });
+    const labels: React.ReactNode[] = [];
+    for (const clip of harmony.chords) {
+        if (clip.rest) continue;
+        const c0 = Math.round(clip.start / TICKS_PER_SIXTEENTH / res);
+        const c1 = Math.round((clip.start + clip.len) / TICKS_PER_SIXTEENTH / res);
+        if (c1 <= from || c0 >= to) continue;
+        const a = Math.max(c0, from);
+        const b = Math.min(c1, to);
+        labels.push(
+            <span key={clip.start} className="mel-chord" style={{ gridColumn: `${a - from + 2} / span ${b - a}` }}>
+                {c0 < from ? '↳ ' : ''}{resolveClip(harmony, clip).name.symbol}
+            </span>,
+        );
+    }
+    return (
+        <div className="mel-scroll">
+            <div className="mel-block" role="grid" aria-label={p.title} style={{ '--mel-cols': p.blockCols } as React.CSSProperties}>
+                <div className="mel-chords" style={{ gridTemplateColumns: p.cols }}>
+                    <span className="mel-row-tools">
+                        <button
+                            className="mel-row-menu"
+                            aria-label={p.menuLabel}
+                            aria-haspopup="menu"
+                            aria-expanded={p.menuOpen}
+                            onClick={e => p.onMenu(p.block, e.currentTarget.getBoundingClientRect())}
+                        >⋯</button>
+                    </span>
+                    {labels}
+                </div>
+                {p.rows.map((row, ri) => {
+                    const top = ri === 0, bottom = ri === p.rows.length - 1;
+                    return (
+                        <div key={row.step} className="mel-row" role="row" style={{ gridTemplateColumns: p.cols }}>
+                            <span className={`mel-name ${row.tonic ? 'tonic' : ''}`} style={row.style}>{row.label}</span>
+                            {Array.from({ length: to - from }, (_, j) => {
+                                const c = from + j;
+                                return (
+                                    <MelodyCell
+                                        key={c}
+                                        c={c}
+                                        row={row}
+                                        col={p.columns[c]}
+                                        cover={p.covered.get(`${row.step}:${c}`)}
+                                        now={c === now}
+                                        cursor={c === p.cursor}
+                                        peekUp={top && p.peek.up.has(c)}
+                                        peekDown={bottom && p.peek.down.has(c)}
+                                        res={res}
+                                        perBeat={p.perBeat}
+                                        perBeatCols={p.perBeatCols}
+                                        barCols={p.barCols}
+                                        onTap={p.onTap}
+                                    />
+                                );
+                            })}
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+});
+
+/** One cell of the melody grid: a 1/16 (or 1/8) of one scale row. A tap says its row and 1/16 through data attributes. */
+const MelodyCell: React.FC<{
+    c: number;
+    row: MelodyRow;
+    col: { root: number; pcs: Set<number> } | null;
+    cover: Cover | undefined;
+    now: boolean;
+    cursor: boolean;
+    peekUp: boolean;
+    peekDown: boolean;
+    res: number;
+    perBeat: number;
+    perBeatCols: number;
+    barCols: number;
+    onTap: (e: React.MouseEvent<HTMLButtonElement>) => void;
+}> = memo(function MelodyCell({ c, row, col, cover, now, cursor, peekUp, peekDown, res, perBeat, perBeatCols, barCols, onTap }) {
+    const tone = col ? (col.root === row.pc ? 'root' : col.pcs.has(row.pc) ? 'tone' : '') : '';
+    const s16 = c * res;
+    const beat = Math.floor(s16 / perBeat);
+    const sub = s16 % perBeat;
+    return (
+        <button
+            role="gridcell"
+            className={[
+                'mel-cell', tone,
+                c % barCols === 0 ? 'bar' : c % perBeatCols === 0 ? 'beat' : '',
+                beat % 2 ? 'alt' : '',
+                cover ? 'on' : '', cover?.head ? 'head' : '', cover?.tail ? 'tail' : '',
+                cover?.sel ? 'sel' : '',
+                now ? 'now' : '',
+                cursor ? 'cursor' : '',
+                peekUp ? 'peek-up' : '',
+                peekDown ? 'peek-down' : '',
+            ].filter(Boolean).join(' ')}
+            aria-pressed={!!cover}
+            aria-current={cover?.sel && cover.head ? 'true' : undefined}
+            aria-label={`${cover ? cover.label : row.label}, beat ${beat + 1}${sub ? `, 1/16 ${sub + 1}` : ''}${cover?.sel ? ', selected' : ''}${peekUp ? ', more notes above' : ''}${peekDown ? ', more notes below' : ''}`}
+            data-step={row.step}
+            data-s16={cover ? cover.start16 : s16}
+            onClick={onTap}
+        >
+            {cover?.head && <span className="mel-acc" aria-hidden="true">{cover.name}</span>}
+        </button>
+    );
+});
 
 /**
  * The melody grid's tools on phones, in the lane bar: which octave shows (Low / High), 1/8 or 1/16
