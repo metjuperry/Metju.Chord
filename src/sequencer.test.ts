@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // A Transport that only remembers the repeating callback, so a test can run scheduler passes by hand.
-const fake = vi.hoisted(() => ({ pass: null as ((time: number) => void) | null, ticks: 0 }));
+const fake = vi.hoisted(() => ({ pass: null as ((time: number) => void) | null, ticks: 0, ticksAt: null as ((time: number) => number) | null }));
 vi.mock('tone', () => ({
     getTransport: () => ({
         PPQ: 96,
         get ticks() { return fake.ticks; },
         scheduleRepeat: (cb: (time: number) => void) => { fake.pass = cb; return 1; },
         clear: () => { fake.pass = null; },
-        getTicksAtTime: () => fake.ticks,
+        getTicksAtTime: (time: number) => (fake.ticksAt ? fake.ticksAt(time) : fake.ticks),
     }),
     getDraw: () => ({ schedule: (cb: () => void) => cb() }),
     Time: (v: string) => ({ toSeconds: () => parseInt(v, 10) / 192 }),
@@ -17,7 +17,7 @@ vi.mock('./audio/engine', () => ({
     getEngine: () => ({ quantizedStart: () => 0, acquireTransport: () => undefined, releaseTransport: () => undefined }),
 }));
 
-import { SeqEvent, SeqOptions, SequencerPlayer } from './audio/sequencer';
+import { SeqEvent, SeqEvents, SeqOptions, SequencerPlayer } from './audio/sequencer';
 
 const WINDOW = 24;
 const BAR = 384;
@@ -26,7 +26,7 @@ const beats = (name: string, bars: number): SeqEvent<string>[] =>
     Array.from({ length: bars * 4 }, (_, i) => ({ tick: i * 96, duration: 96, data: `${name}${i}` }));
 
 /** A player looping `first`; `run(n)` runs n passes and returns what played. */
-function setup(first: { events: SeqEvent<string>[]; opts: SeqOptions }) {
+function setup(first: { events: SeqEvents<string>; opts: SeqOptions }) {
     const state = { now: first };
     const played: string[] = [];
     const player = new SequencerPlayer<string>(() => state.now, e => played.push(e.data), () => played.push('END'));
@@ -46,6 +46,7 @@ describe('SequencerPlayer', () => {
     beforeEach(() => {
         fake.pass = null;
         fake.ticks = 0;
+        fake.ticksAt = null;
     });
 
     it('loops: after the last beat comes the first again', () => {
@@ -92,5 +93,41 @@ describe('SequencerPlayer', () => {
         run(2);
         player.queueJump(player.cursorTick, 2 * BAR);
         expect(run(8)).toEqual(['a8', 'a9']);
+    });
+
+    it('live recording: the position at the audio time a live note sounds is the tick heard then', () => {
+        // a Transport running since audio time 0 at 192 ticks a second (Time() above is 192 ticks/s);
+        // Tone calls each pass `LOOK` seconds before its time, so the Transport's own `ticks` are ahead
+        const LOOK = 0.1;
+        fake.ticksAt = t => t * 192;
+        const state = { now: looping('a', 1) };
+        const heard: { tick: number; time: number }[] = [];
+        const player = new SequencerPlayer<string>(() => state.now, (e, time) => heard.push({ tick: e.tick, time }), () => undefined);
+        player.start(0);
+        for (let k = 0; k < 40; k++) {
+            const time = (k * WINDOW) / 192;
+            fake.ticks = (time - LOOK) * 192 + WINDOW; // the next window is due
+            fake.pass?.(time);
+            if (k === 20) player.queueJump(player.cursorTick, 2 * 96); // a jump, like a section switch
+        }
+        // every beat heard in the last 40 windows (past a loop wrap and the jump): a pad pressed on it records it
+        const recent = heard.filter(h => h.time >= (40 - 60) * WINDOW / 192);
+        expect(recent.length).toBeGreaterThan(8);
+        for (const h of recent) expect(player.position(h.time)).toBeCloseTo(h.tick, 6);
+        // and halfway through a beat, half a beat on
+        const mid = recent[recent.length - 2];
+        expect(player.position(mid.time + 0.25)).toBeCloseTo(mid.tick + 48, 6);
+    });
+
+    it('plays slots (a chain) like the same events in one list, over the loop end too', () => {
+        // a 1-bar section, then a 2-bar one, from tick 384: each slot's beats counted from its start
+        const slots = { slots: [{ start: 0, events: beats('a', 1) }, { start: BAR, events: beats('b', 2) }] };
+        const { run } = setup({ events: slots, opts: { loop: true, loopEnd: 3 * BAR, end: 3 * BAR } });
+        expect(run(64)).toEqual(['a0', 'a1', 'a2', 'a3', 'b0', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7', 'a0', 'a1', 'a2', 'a3']);
+    });
+
+    it('plays a list in any order', () => {
+        const { run } = setup({ events: [...beats('a', 1)].reverse(), opts: { loop: false, loopEnd: BAR, end: BAR } });
+        expect(run(16)).toEqual(['a0', 'a1', 'a2', 'a3']);
     });
 });

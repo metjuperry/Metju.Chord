@@ -16,7 +16,60 @@ export interface SeqOptions {
     end: number;
 }
 
-export type SeqSource<T> = () => { events: SeqEvent<T>[]; opts: SeqOptions };
+/** Events in slots (a chain's sections): each slot's events tick-sorted, in ticks from its `start`, all before the next slot's start. */
+export interface SeqSlot<T> {
+    start: number;
+    events: SeqEvent<T>[];
+}
+
+/** What to play: one list of events in any order, or slots. */
+export type SeqEvents<T> = SeqEvent<T>[] | { slots: SeqSlot<T>[] };
+
+export type SeqSource<T> = () => { events: SeqEvents<T>; opts: SeqOptions };
+
+const byTick = (a: SeqEvent<unknown>, b: SeqEvent<unknown>) => a.tick - b.tick;
+/** A plain list as one slot, sorted once per list (the source hands the same list back until something changes). */
+const asSlots = new WeakMap<SeqEvent<unknown>[], SeqSlot<unknown>[]>();
+
+function slotsOf<T>(events: SeqEvents<T>): SeqSlot<T>[] {
+    if (!Array.isArray(events)) return events.slots;
+    let slots = asSlots.get(events) as SeqSlot<T>[] | undefined;
+    if (!slots) {
+        const sorted = events.every((e, i) => i === 0 || events[i - 1].tick <= e.tick) ? events : [...events].sort(byTick);
+        slots = [{ start: 0, events: sorted }];
+        asSlots.set(events, slots as SeqSlot<unknown>[]);
+    }
+    return slots;
+}
+
+/** The first index in `list` (sorted by `key`) whose key is at least `x`, or with `after`, above `x` (`list.length` if none). */
+function bound<E>(list: E[], x: number, key: (e: E) => number, after = false): number {
+    let lo = 0;
+    let hi = list.length;
+    while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        const k = key(list[mid]);
+        if (k < x || (after && k === x)) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo;
+}
+
+/**
+ * Every event with `lo <= tick < hi`, in tick order, with its tick counted from 0 (not from its slot),
+ * found by binary search: a pass costs what it plays, not the size of the song.
+ */
+export function eventsIn<T>(events: SeqEvents<T>, lo: number, hi: number, visit: (e: SeqEvent<T>) => void) {
+    const slots = slotsOf(events);
+    // the last slot starting at or before lo (an earlier one ends before it starts)
+    for (let i = Math.max(0, bound(slots, lo, s => s.start, true) - 1); i < slots.length && slots[i].start < hi; i++) {
+        const { start, events: list } = slots[i];
+        for (let k = bound(list, lo - start, e => e.tick); k < list.length && list[k].tick + start < hi; k++) {
+            const e = list[k];
+            visit(start === 0 ? e : { ...e, tick: e.tick + start });
+        }
+    }
+}
 
 /** How much song time each scheduler pass covers: a 1/16 note. */
 const WINDOW = PPQ / 4;
@@ -29,7 +82,7 @@ export const ticksToSeconds = (ticks: number) => Tone.Time(toneTicks(ticks)).toS
 /**
  * Lookahead scheduler on the shared Transport. Every 1/16 note (Tone calls back ahead of time,
  * with the exact audio time of that 1/16), it asks `source` for the current events and schedules
- * those that start inside the next 1/16, each at its exact time. Because it reads the events
+ * those that start inside the next 1/16, each at its exact time (found by binary search, `eventsIn`). Because it reads the events
  * fresh on every pass, edits made while playing are heard as soon as playback reaches them.
  * Events can sit anywhere in tick time, not only on grid steps.
  */
@@ -101,10 +154,15 @@ export class SequencerPlayer<T> {
         getEngine().releaseTransport('sequencer');
     }
 
-    /** Where playback is now, in ticks, or null when stopped. */
-    position(): number | null {
+    /**
+     * Where playback is, in ticks, or null when stopped: at audio time `time`, or by default at the
+     * Transport's now, which is Tone's look-ahead (0.1 s) ahead of what is heard. Live recording asks at
+     * the time the live note sounds (`liveTime`), so a note lands where the player heard it.
+     */
+    position(time?: number): number | null {
         if (this.repeatId === null) return null;
-        const now = Tone.getTransport().ticks;
+        const transport = Tone.getTransport();
+        const now = time === undefined ? transport.ticks : transport.getTicksAtTime(time);
         let mark = this.marks[0];
         for (const m of this.marks) if (m[0] <= now) mark = m;
         const pos = mark[1] + Math.max(0, now - mark[0]) / ratio();
@@ -132,11 +190,8 @@ export class SequencerPlayer<T> {
         if (this.marks.length > 64) this.marks.splice(0, this.marks.length - 64);
 
         const to = from + WINDOW;
-        const fire = (lo: number, hi: number, offset: number, list = events) => {
-            for (const e of list) {
-                if (e.tick >= lo && e.tick < hi) this.onEvent(e, time + ticksToSeconds(e.tick - lo + offset));
-            }
-        };
+        const fire = (lo: number, hi: number, offset: number, list = events) =>
+            eventsIn(list, lo, hi, e => this.onEvent(e, time + ticksToSeconds(e.tick - lo + offset)));
 
         // A queued jump inside this window: play up to it, switch, then the rest of the window from the target
         const jump = this.jump;

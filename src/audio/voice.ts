@@ -89,6 +89,7 @@ export class VoiceInstrument implements Instrument {
     private settings: VoiceSettings = { singers: 'choir', range: 'low', vowel: 'u', vibrato: 0.35, breath: 0.15 };
     private waves = new Map<string, PeriodicWave>();
     private notes: Sung[] = [];
+    private disposed = false;
     private readonly preset: Adsr = SYNTH_ENVELOPES.voice;
     private env: Adsr = { ...SYNTH_ENVELOPES.voice };
 
@@ -256,12 +257,28 @@ export class VoiceInstrument implements Instrument {
         const stop = at + Math.max(0.01, release) * 1.6 + 0.05;
         n.oscs.forEach(o => o.stop(stop));
         const wait = Math.max(0, stop - this.ctx.currentTime) * 1000 + 100;
-        setTimeout(() => {
-            n.oscs.forEach(o => o.disconnect());
-            n.gains.forEach(g => g.disconnect());
-            n.breath?.disconnect();
-            this.notes = this.notes.filter(x => x !== n);
-        }, wait);
+        setTimeout(() => this.drop(n), wait);
+    }
+
+    /**
+     * Unhook a finished note. The singers' vibrato and drift LFOs and the breath noise run for the whole
+     * instrument and feed every note, so those connections are undone too: otherwise each LFO keeps
+     * driving (and holding on to) every oscillator it was ever connected to.
+     */
+    private drop(n: Sung) {
+        this.notes = this.notes.filter(x => x !== n);
+        // once disposed, the LFOs and the noise are gone and so are their connections
+        if (this.disposed) return;
+        n.oscs.forEach((o, i) => {
+            Tone.disconnect(this.mouths[i].vibrato, o.detune);
+            Tone.disconnect(this.mouths[i].drift, o.detune);
+            o.disconnect();
+        });
+        n.gains.forEach(g => g.disconnect());
+        if (n.breath) {
+            Tone.disconnect(this.noise, n.breath);
+            n.breath.disconnect();
+        }
     }
 
     release(midi: number[], time: number) {
@@ -278,6 +295,7 @@ export class VoiceInstrument implements Instrument {
     dispose() {
         this.releaseAll(Tone.now());
         setTimeout(() => {
+            this.disposed = true;
             this.notes.forEach(n => n.oscs.forEach(o => o.disconnect()));
             this.mouths.forEach(m => {
                 [m.input, m.pan, m.air, m.trim, m.vibrato, m.drift, ...m.filters].forEach(x => x.dispose());
