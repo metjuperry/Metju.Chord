@@ -8,6 +8,7 @@ import { DrumPattern, DrumVoice, hasHit } from '../drums';
 import { MenuAnchor, MenuItem, PopMenu, useLongPress } from './PopMenu';
 import type { StickDir } from '../theory';
 import { Part, outsideRests, playsThroughRest, restSpans, writesNotes } from '../parts';
+import { usePlayhead } from '../playhead';
 
 /** Which drums show on which line of a drum lane's miniature: cymbals, the backbeat, the kick. */
 const MINI_LINES: DrumVoice[][] = [['hat', 'openhat', 'rim'], ['snare', 'clap', 'tomhi', 'tomlo'], ['kick']];
@@ -38,7 +39,7 @@ interface ProgressionProps {
     /** `CHORD_LANE` or a part id. */
     selectedLane: string;
     selected: number;
-    /** Step under the playhead. */
+    /** The playhead while stopped (the cursor); while playing, the step comes from `playStore`. */
     playhead: number;
     playing: boolean;
     loop: boolean;
@@ -119,7 +120,8 @@ const Icon = {
 };
 
 const Progression: React.FC<ProgressionProps> = props => {
-    const { total, chords, parts, selectedLane, selected, playhead, playing, loop, recording, canPaste, describe } = props;
+    const { total, chords, parts, selectedLane, selected, playing, loop, recording, canPaste, describe } = props;
+    const playhead = usePlayhead(props.playhead, playing);
     const onChords = selectedLane === CHORD_LANE;
     const selPart = parts.find(p => p.id === selectedLane);
     const selClip = clipAt(chords, selected);
@@ -597,7 +599,7 @@ export const LaneBar: React.FC<{
     chords: Clip[];
     total: number;
     beatsPerBar: number;
-    /** Step under the playhead, or -1. */
+    /** The playhead while stopped; while playing, the step comes from `playStore` (-1: another section plays). */
     playhead: number;
     playing: boolean;
     describe: (clip: Clip) => { symbol: string; numeral: string };
@@ -605,6 +607,7 @@ export const LaneBar: React.FC<{
     /** The editor's own tools, at the end of the bar (the melody grid's octave and zoom). */
     tools?: React.ReactNode;
 }> = p => {
+    const playhead = usePlayhead(p.playhead, p.playing);
     const pct = (steps: number) => `${(steps / p.total) * 100}%`;
     const back = useRef<HTMLButtonElement>(null);
     useEffect(() => {
@@ -620,13 +623,13 @@ export const LaneBar: React.FC<{
                     <i key={i} className="strip-bar" style={{ left: pct((i + 1) * p.beatsPerBar) }} />
                 ))}
                 {p.chords.map(c => (
-                    <span key={c.start} className={`strip-chip ${c.rest ? 'rest' : ''} ${p.playing && p.playhead >= c.start && p.playhead < clipEnd(c) ? 'here' : ''}`} style={{ left: pct(c.start), width: pct(c.len) }}>
+                    <span key={c.start} className={`strip-chip ${c.rest ? 'rest' : ''} ${p.playing && playhead >= c.start && playhead < clipEnd(c) ? 'here' : ''}`} style={{ left: pct(c.start), width: pct(c.len) }}>
                         {c.rest ? '' : p.describe(c).symbol}
                     </span>
                 ))}
-                {p.playing && p.playhead >= 0 && (
+                {p.playing && playhead >= 0 && (
                     // App writes the exact position (--pp, in steps) on every .playhead each frame while playing
-                    <span className="playhead strip-head" style={{ '--step': p.playhead, left: `calc(var(--pp, var(--step)) / ${p.total} * 100%)` } as React.CSSProperties} />
+                    <span className="playhead strip-head" style={{ '--step': playhead, left: `calc(var(--pp, var(--step)) / ${p.total} * 100%)` } as React.CSSProperties} />
                 )}
             </div>
             {p.tools}

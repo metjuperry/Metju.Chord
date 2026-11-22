@@ -5,18 +5,15 @@ import { ChainSlot, PartState, chainCount, chainLayout, hasOwnSound, partStateIn
 import { FullSong, MAX_CHAIN, MAX_SECTIONS, PlaybackMode, Section } from '../song';
 import { isChordClip } from '../progression';
 import { resolveClip } from '../parts';
+import { usePlay } from '../playhead';
 
 interface SongViewProps {
     song: FullSong;
     openId: string;
     playMode: PlaybackMode;
     onPlayMode: (m: PlaybackMode) => void;
+    /** While playing, the chain position, the section looping and the one queued come from `playStore`. */
     playing: boolean;
-    /** Chain mode while playing: the slot playing and the song tick. */
-    chainPos: { index: number; tick: number } | null;
-    /** Loop mode while playing: the section playing, and the one queued for the next bar. */
-    playingSection: string | null;
-    queued: string | null;
     /** Tap a section tile: open it (zoom into its sequencer). */
     onOpen: (id: string) => void;
     /** Tap a chain block: make its section the open one (and while the chain plays, jump there). */
@@ -200,11 +197,14 @@ const SongView: React.FC<SongViewProps> = p => {
     const [menu, setMenu] = useState<{ anchor: MenuAnchor; kind: 'section'; id: string; renaming?: boolean } | { anchor: MenuAnchor; kind: 'slot'; index: number } | null>(null);
     const chainRow = useRef<HTMLDivElement>(null);
 
-    const chainPlaying = p.playing && p.playMode === 'chain' && p.chainPos !== null;
-    const cur = chainPlaying ? layout[p.chainPos!.index] : undefined;
+    const chainPos = usePlay(s => s.chain);
+    const playingSection = usePlay(s => s.section);
+    const queued = usePlay(s => s.queued);
+    const chainPlaying = p.playing && p.playMode === 'chain' && chainPos !== null;
+    const cur = chainPlaying ? layout[chainPos!.index] : undefined;
     const nextSlot = cur ? layout[cur.index + 1] : undefined;
-    const playingId = chainPlaying ? cur?.section.id : p.playing ? p.playingSection : null;
-    const nextId = chainPlaying ? nextSlot?.section.id : p.queued;
+    const playingId = chainPlaying ? cur?.section.id : p.playing ? playingSection : null;
+    const nextId = chainPlaying ? nextSlot?.section.id : queued;
 
     // keep the playing block in view
     useEffect(() => {
@@ -237,19 +237,19 @@ const SongView: React.FC<SongViewProps> = p => {
 
     let status: React.ReactNode;
     if (chainPlaying && cur) {
-        const bar = cur.startBar + Math.floor((p.chainPos!.tick - cur.start) / (cur.len / Math.max(1, cur.bars)));
+        const bar = cur.startBar + Math.floor((chainPos!.tick - cur.start) / (cur.len / Math.max(1, cur.bars)));
         status = (
             <>
                 <b>bar {Math.min(bar, totalBars)} / {totalBars}</b>
                 <span className="section-note"> · {cur.section.name}{nextSlot ? ` · next ${nextSlot.section.name}` : ''}</span>
             </>
         );
-    } else if (p.playing && p.playMode === 'loop' && p.playingSection) {
+    } else if (p.playing && p.playMode === 'loop' && playingSection) {
         const name = (id: string | null) => song.sections.find(s => s.id === id)?.name ?? '';
         status = (
             <>
-                <b>looping {name(p.playingSection)}</b>
-                {p.queued && <span className="section-note"> · next {name(p.queued)} at the bar line</span>}
+                <b>looping {name(playingSection)}</b>
+                {queued && <span className="section-note"> · next {name(queued)} at the bar line</span>}
             </>
         );
     } else {
@@ -304,7 +304,7 @@ const SongView: React.FC<SongViewProps> = p => {
                             slot={slot}
                             open={slot.section.id === p.openId}
                             state={state}
-                            progress={state === 'playing' ? Math.min(1, (p.chainPos!.tick - slot.start) / slot.len) : 0}
+                            progress={state === 'playing' ? Math.min(1, (chainPos!.tick - slot.start) / slot.len) : 0}
                             onPick={() => p.onPickSlot(slot)}
                             onMenu={anchor => setMenu({ anchor, kind: 'slot', index: slot.index })}
                         />

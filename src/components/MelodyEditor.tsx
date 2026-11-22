@@ -5,6 +5,7 @@ import { TICKS_PER_SIXTEENTH } from '../drums';
 import { Harmony, MELODY_STEPS, NotesPart, chordAt, melodyMidi, resolveClip } from '../parts';
 import { noteNames, spellNoteOctave } from '../theory';
 import { labelShade } from '../shades';
+import { usePlay } from '../playhead';
 
 /** Note lengths offered for new notes, in 1/16 steps. */
 const LENGTHS: { sixteenths: number; label: string }[] = [
@@ -23,8 +24,6 @@ interface MelodyEditorProps {
     beatsPerBar: number;
     /** 1/16 steps per beat. */
     perBeat: number;
-    /** Playhead in 1/16 steps, or -1 when stopped. */
-    playSixteenth: number;
     /** Tap on a cell: add a note of `len` 1/16s there, select the note covering it, or (selected) remove it. */
     onTap: (step: number, sixteenth: number, len: number) => void;
     /** Start tick of the selected note, if any (it gets a yellow edge; its ♭ ♮ ♯ are in the docked toolbar). */
@@ -134,7 +133,8 @@ const MelodyEditor: React.FC<MelodyEditorProps> = p => {
         return { up, down };
     }, [part.notes, res, p.high, compact]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const now = p.playSixteenth >= 0 ? Math.floor(p.playSixteenth / res) : -1;
+    // the playhead's column (-1 when stopped), straight from playback
+    const now = usePlay(s => (s.sixteenth >= 0 ? Math.floor(s.sixteenth / res) : -1));
     const cursor = p.cursor >= 0 ? Math.floor(p.cursor / res) : -1;
     const barCols = p.beatsPerBar * perBeatCols;
 

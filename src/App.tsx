@@ -54,6 +54,7 @@ import {
     sixteenthsPerBar, sixteenthsPerStep, toggleHit,
 } from './drums';
 import { CHORD_LANE, LaneBar, MiniNote, PartPatch } from './components/Progression';
+import { IDLE, playStore, usePlay } from './playhead';
 // last, so its compact sizes come after every component's own stylesheet
 import './touch.css';
 
@@ -195,6 +196,12 @@ function noteScaleTags(pcs: number[], names: string[], playedPc: number, degree:
     if (acc) tags.splice(degree + (acc > 0 ? 1 : 0), 0, { name: symbol.replace(/-?\d+$/, ''), role: 'added' });
     return tags;
 }
+
+/** The section switcher, with NEXT on the section queued for the next bar line (read from `playStore`). */
+const QueuedSwitcher: React.FC<Omit<React.ComponentProps<typeof SectionSwitcher>, 'queued'>> = React.memo(props => {
+    const queued = usePlay(s => s.queued);
+    return <SectionSwitcher {...props} queued={queued} />;
+});
 
 const App: React.FC = () => {
     // ---- settings ---------------------------------------------------------------
@@ -378,9 +385,11 @@ const App: React.FC = () => {
     };
     const clips = chords;
     const [selected, setSelected] = useState(0);
-    const [playhead, setPlayhead] = useState(0);
-    /** The playhead in 1/16 steps from the top of the song, for the drum grid. */
-    const [playSixteenth, setPlaySixteenth] = useState(-1);
+    /**
+     * The cursor: where the playhead stands while stopped and where Play starts (after a pause, where it
+     * stopped). While playing, the moving position is in `playStore` (playhead.ts), not React state.
+     */
+    const [cursor, setCursor] = useState(0);
     const [playing, setPlaying] = useState(false);
     const [loop, setLoop] = useState(initial.loop);
     const [recording, setRecording] = useState(false);
@@ -398,7 +407,6 @@ const App: React.FC = () => {
 
     // ---- metronome ------------------------------------------------------------------
     const [metronomeOn, setMetronomeOn] = useState(false);
-    const [metBeat, setMetBeat] = useState<number | null>(null);
 
     // Latest state for Transport callbacks and the global key handler
     const liveState = {
@@ -558,7 +566,7 @@ const App: React.FC = () => {
                 const next = Math.min(s.melCursor + s.melodyLen, total16 - 1);
                 setMelCursor(next);
                 setSelected(Math.floor(next / perStep));
-                setPlayhead(Math.floor(next / perStep));
+                setCursor(Math.floor(next / perStep));
             }
         } else if (params) {
             recordChord(params);
@@ -576,7 +584,7 @@ const App: React.FC = () => {
         setChords(place(s.chords, { start: s.selected * s.stepTicks, len: steps * s.stepTicks, chord }));
         const next = Math.min(s.selected + steps, s.total - 1);
         setSelected(next);
-        setPlayhead(next);
+        setCursor(next);
         return { start: s.selected, len: steps };
     };
 
@@ -660,12 +668,7 @@ const App: React.FC = () => {
      * a section switch in Loop mode waits for the next bar line (and a mode change for the next 1/16).
      */
     const transport = useRef<{ mode: PlaybackMode; section: string }>({ mode: initial.playMode, section: openKey });
-    /** Loop mode: the section playing (it can lag the open one until a queued switch lands). */
-    const [playingSection, setPlayingSection] = useState<string | null>(null);
-    /** Loop mode: the section waiting for the next bar line. */
-    const [queued, setQueued] = useState<string | null>(null);
-    /** Chain mode: the chain slot playing and the song tick, for the Song view. */
-    const [chainPos, setChainPos] = useState<{ index: number; tick: number } | null>(null);
+    // the section playing, the one queued and the chain position are in `playStore`: only what shows them re-renders
     const scheduleCache = useRef<{ full: FullSong; mode: PlaybackMode; section: string; loop: boolean; result: { events: SeqEvents<Scheduled>; opts: SeqOptions } } | null>(null);
 
     /**
@@ -715,11 +718,12 @@ const App: React.FC = () => {
     const rewound = useRef(false);
 
     const stopPlayback = useCallback(() => {
-        player.current?.stop();
+        const p = player.current;
+        // a pause keeps the place: the cursor takes the step the playhead was on, and Play carries on from there
+        if (p?.playing) setCursor(playStore.get().step);
+        p?.stop();
         setPlaying(false);
-        setQueued(null);
-        setChainPos(null);
-        setPlayingSection(null);
+        playStore.set({ queued: null, chain: null, section: null });
     }, []);
 
     const startPlayback = async () => {
@@ -732,7 +736,7 @@ const App: React.FC = () => {
         const { opts } = schedule();
         if (!opts.loop && opts.end === 0) return;
         const limit = opts.loop ? opts.loopEnd : opts.end;
-        const local = Math.max(0, playhead) * T;
+        const local = Math.max(0, cursor) * T;
         let from = local < limit ? local : 0;
         if (t.mode === 'chain') {
             // from the cursor in the open section's first place in the chain (or the top, if it isn't in it)
@@ -747,7 +751,7 @@ const App: React.FC = () => {
         });
         player.current.start(from);
         setPlaying(true);
-        setPlayingSection(t.mode === 'loop' ? t.section : null);
+        playStore.set({ section: t.mode === 'loop' ? t.section : null });
     };
 
     /** The next bar line at or after song tick `tick`. */
@@ -771,22 +775,19 @@ const App: React.FC = () => {
             setOpenId(id);
             setSelected(0);
             setMelCursor(0);
-            if (!playing) setPlayhead(0);
+            if (!playing) setCursor(0);
         }
         const p = player.current;
         if (!p?.playing || transport.current.mode !== 'loop') return;
         if (id === transport.current.section) {
             p.cancelJump();
-            setQueued(null);
+            playStore.set({ queued: null });
             return;
         }
-        setQueued(id);
+        playStore.set({ queued: id });
         p.queueJump(nextBar(p.cursorTick), 0, time => {
             transport.current.section = id;
-            Tone.getDraw().schedule(() => {
-                setQueued(null);
-                setPlayingSection(id);
-            }, time);
+            Tone.getDraw().schedule(() => playStore.set({ queued: null, section: id }), time);
         });
     };
 
@@ -813,14 +814,13 @@ const App: React.FC = () => {
             p.queueJump(slot ? cur : nextBar(cur), slot ? slot.start + Math.min(cur, slot.len - 1) : 0, () => {
                 t.mode = 'chain';
             });
-            setQueued(null);
-            setPlayingSection(null);
+            playStore.set({ queued: null, section: null });
         } else {
             const slot = slotAt(layout, cur);
             p.queueJump(cur, cur - slot.start, time => {
                 t.mode = 'loop';
                 t.section = slot.section.id;
-                Tone.getDraw().schedule(() => setPlayingSection(slot.section.id), time);
+                Tone.getDraw().schedule(() => playStore.set({ section: slot.section.id }), time);
             });
             if (slot.section.id !== openKey) openSection(slot.section.id);
         }
@@ -846,17 +846,21 @@ const App: React.FC = () => {
         stopPlayback();
         setSelected(0);
         setMelCursor(0);
-        setPlayhead(0);
+        setCursor(0);
         rewound.current = true;
     };
 
-    // The playhead follows the Transport position, read once per frame
+    // The playhead follows the Transport position, read once per frame. It goes into `playStore`, so only
+    // what draws a playhead or a "now" mark re-renders (on a new step or 1/16), not App.
     useEffect(() => {
         if (!playing) return;
         let frame = 0;
-        let last = -1;
-        let lastSixteenth = -1;
         let lastGlobal = -1;
+        // the chain's layout, worked out again only when the song changes
+        let laidOut: FullSong | null = null;
+        let layout: ChainSlot[] = [];
+        // a live list: playheads that appear (a new row, the lane bar) are in it without asking again
+        const heads = document.getElementsByClassName('playhead') as HTMLCollectionOf<HTMLElement>;
         const draw = () => {
             const pos = player.current?.position();
             if (pos !== null && pos !== undefined) {
@@ -865,41 +869,39 @@ const App: React.FC = () => {
                 let sec = t.section;
                 if (t.mode === 'chain') {
                     // the chain's song tick → which slot, and where in its section
-                    const slot = slotAt(chainLayout(live.current.full), pos);
+                    if (laidOut !== live.current.full) {
+                        laidOut = live.current.full;
+                        layout = chainLayout(laidOut);
+                    }
+                    const slot = slotAt(layout, pos);
                     local = pos - slot.start;
                     sec = slot.section.id;
                     const g = Math.floor(pos / TICKS_PER_SIXTEENTH);
                     if (g !== lastGlobal) {
                         lastGlobal = g;
-                        setChainPos({ index: slot.index, tick: pos });
+                        playStore.set({ chain: { index: slot.index, tick: pos } });
                     }
                 }
                 // the sequencer and editors show the playhead only while their section is the one playing
                 const here = sec === openRef.current;
                 // the sequencer's playhead glides: its exact place, in steps, every frame
                 const exact = here ? String(local / live.current.stepTicks) : '';
-                document.querySelectorAll<HTMLElement>('.playhead').forEach(el => {
+                for (const el of heads) {
                     if (exact) el.style.setProperty('--pp', exact);
                     else el.style.removeProperty('--pp');
+                }
+                playStore.set({
+                    step: here ? Math.floor(local / live.current.stepTicks) : -1,
+                    sixteenth: here ? Math.floor(local / TICKS_PER_SIXTEENTH) : -1,
                 });
-                const step = here ? Math.floor(local / live.current.stepTicks) : -1;
-                if (step !== last) {
-                    last = step;
-                    setPlayhead(step);
-                }
-                const sixteenth = here ? Math.floor(local / TICKS_PER_SIXTEENTH) : -1;
-                if (sixteenth !== lastSixteenth) {
-                    lastSixteenth = sixteenth;
-                    setPlaySixteenth(sixteenth);
-                }
             }
             frame = requestAnimationFrame(draw);
         };
         frame = requestAnimationFrame(draw);
         return () => {
             cancelAnimationFrame(frame);
-            setPlaySixteenth(-1);
-            document.querySelectorAll<HTMLElement>('.playhead').forEach(el => el.style.removeProperty('--pp'));
+            playStore.set({ step: IDLE.step, sixteenth: IDLE.sixteenth, chain: null });
+            for (const el of heads) el.style.removeProperty('--pp');
         };
     }, [playing]);
 
@@ -925,7 +927,7 @@ const App: React.FC = () => {
             // Downbeat high; in 6/8, 9/8 and 12/8 every third beat gets a middle accent (unless accents are off)
             const note = !live.current.clickAccent ? 'C4' : beat === 0 ? 'C5' : compound && beat % 3 === 0 ? 'G4' : 'C4';
             click.triggerAttackRelease(note, '32n', time);
-            Tone.getDraw().schedule(() => setMetBeat(beat), time);
+            Tone.getDraw().schedule(() => playStore.set({ metBeat: beat }), time);
         }, beatNote);
         const startAt = engine.quantizedStart(beatNote);
         engine.acquireTransport('metronome');
@@ -935,7 +937,7 @@ const App: React.FC = () => {
             metLoop.dispose();
             engine.releaseTransport('metronome');
             click.dispose();
-            setMetBeat(null);
+            playStore.set({ metBeat: null });
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [metronomeOn, audioReady, ts.beats, ts.unit]);
@@ -1005,7 +1007,7 @@ const App: React.FC = () => {
         setSelected(step);
         setMelCursor(step * sixteenthsPerStep(ts));
         if (lane) pickLane(lane);
-        if (!playing) setPlayhead(step);
+        if (!playing) setCursor(step);
     };
     const onChordLane = selectedLane === CHORD_LANE || !selPart;
     const partActions = {
@@ -1224,7 +1226,7 @@ const App: React.FC = () => {
                 parts: sg.parts.map(p => (hasNotes(p) ? { ...p, notes: fitNotes(p.notes, next * T) } : p)),
             }));
             setSelected(Math.min(selected, next - 1));
-            setPlayhead(Math.min(playhead, next - 1));
+            setCursor(c => Math.min(c, next - 1));
         },
         /** The time signature is song-wide: every section moves to it. */
         timeSignature: (next: Song['timeSignature']) => {
@@ -1232,7 +1234,7 @@ const App: React.FC = () => {
             editFull(() => changed);
             const steps = findSection(changed, openKey).steps;
             setSelected(sel => Math.min(sel, steps - 1));
-            setPlayhead(ph => Math.min(ph, steps - 1));
+            setCursor(ph => Math.min(ph, steps - 1));
         },
         first: () => select(0),
         prev: () => {
@@ -1298,7 +1300,7 @@ const App: React.FC = () => {
         setPadPartId(st.padPart);
         setSelectedLane(CHORD_LANE);
         setSelected(0);
-        setPlayhead(0);
+        setCursor(0);
         flash(message, { undo: true });
     };
 
@@ -1388,7 +1390,7 @@ const App: React.FC = () => {
             setSongZoom('song');
             setSelectedLane(CHORD_LANE);
             setSelected(0);
-            setPlayhead(0);
+            setCursor(0);
             flash('New song.', { undo: true });
         },
         save: () => {
@@ -1666,7 +1668,6 @@ const App: React.FC = () => {
         return out;
     }, [parts, harmony, T, ts, total]);
 
-    const beatDot = metronomeOn ? metBeat : playing ? playhead % ts.beats : null;
 
     /** The start tap: ring a chord from the song's key and fade from the intro into the app. */
     const begin = async () => {
@@ -1693,7 +1694,6 @@ const App: React.FC = () => {
                 pattern={selPart.drums}
                 perBar={sixteenthsPerBar(ts)}
                 perBeat={sixteenthsPerStep(ts)}
-                playSixteenth={playSixteenth}
                 presets={presetsFor(ts)}
                 padTrack={padPart.name}
                 onToggle={drumActions.toggle}
@@ -1713,7 +1713,6 @@ const App: React.FC = () => {
                 stepsPerRow={rowSteps}
                 beatsPerBar={ts.beats}
                 perBeat={sixteenthsPerStep(ts)}
-                playSixteenth={playSixteenth}
                 onTap={melodyActions.tap}
                 selectedStart={selNote?.start}
                 len={melodyLen}
@@ -1870,7 +1869,7 @@ const App: React.FC = () => {
             chords={chords.map(c => ({ ...c, start: c.start / T, len: c.len / T }))}
             total={total}
             beatsPerBar={ts.beats}
-            playhead={playhead}
+            playhead={cursor}
             playing={playing}
             describe={describe}
             tools={melodyPart ? (
@@ -1945,7 +1944,7 @@ const App: React.FC = () => {
             }
             partDock={compact && focusKind && !laneFocus ? undefined : noteDock}
             selected={selected}
-            playhead={playhead}
+            playhead={cursor}
             playing={playing}
             loop={loop}
             recording={recording}
@@ -1968,12 +1967,11 @@ const App: React.FC = () => {
             onDelete={edit.del}
             songMenu={songMenuEl}
             sectionHeader={(
-                <SectionSwitcher
+                <QueuedSwitcher
                     sections={full.sections}
                     openId={openKey}
                     timeSignature={ts}
                     counts={Object.fromEntries(full.sections.map(sec => [sec.id, chainCount(full, sec.id)]))}
-                    queued={queued}
                     onBack={() => zoomSection(openKey, () => setSongZoom('song'))}
                     onPick={openSection}
                 />
@@ -1992,9 +1990,6 @@ const App: React.FC = () => {
             playMode={playMode}
             onPlayMode={setPlayMode}
             playing={playing}
-            chainPos={chainPos}
-            playingSection={playingSection}
-            queued={queued}
             onOpen={id => zoomSection(id, () => {
                 openSection(id);
                 setSongZoom('section');
@@ -2140,7 +2135,7 @@ const App: React.FC = () => {
                 bpm={bpm}
                 playing={playing}
                 recording={recording}
-                beat={beatDot}
+                beatFrom={metronomeOn ? 'click' : playing ? 'play' : null}
                 beats={ts.beats}
                 onMode={setMode}
                 onKeyChange={setSelectedKey}
@@ -2256,7 +2251,7 @@ const App: React.FC = () => {
                     setSelectedLane(CHORD_LANE);
                     setSelected(0);
                     setMelCursor(0);
-                    setPlayhead(0);
+                    setCursor(0);
                     flash('Cleared.', { undo: true });
                 }}
             >

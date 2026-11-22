@@ -1,6 +1,7 @@
 import React from 'react';
 import './DrumEditor.css';
 import { DRUM_LABELS, DRUM_ROWS, DrumPattern, DrumVoice, PATTERN_BARS, PatternBars, hasHit, isEmptyPattern } from '../drums';
+import { usePlay } from '../playhead';
 
 interface DrumEditorProps {
     name: string;
@@ -9,8 +10,6 @@ interface DrumEditorProps {
     /** 1/16 steps per bar and per beat for the time signature. */
     perBar: number;
     perBeat: number;
-    /** Playhead in 1/16 steps from the top of the song, or -1 when stopped. */
-    playSixteenth: number;
     presets: { id: string; label: string }[];
     /** The chord track the pads still play through while the drums are selected. */
     padTrack: string;
@@ -29,7 +28,8 @@ interface DrumEditorProps {
 /** The step grid for a drum track: one row per drum, one cell per 1/16, one block per bar. */
 const DrumEditor: React.FC<DrumEditorProps> = p => {
     const length = p.pattern.bars * p.perBar;
-    const now = p.playSixteenth >= 0 ? p.playSixteenth % length : -1;
+    // the playhead in 1/16s from the section's top (-1 when stopped), straight from playback
+    const now = usePlay(s => (s.sixteenth >= 0 ? s.sixteenth % length : -1));
     const cols = { gridTemplateColumns: `var(--drum-label) repeat(${p.perBar}, minmax(var(--drum-cell), 1fr))` };
 
     return (
