@@ -469,16 +469,16 @@ class SampledInstrument implements Instrument {
     constructor(id: SampledId) {
         this.standIn = new SynthInstrument(STAND_IN[id]);
         this.standIn.output.connect(this.output);
-        const use = (bank: Bank) => {
+        const adopt = (bank: Bank) => {
             if (this.disposed || this.player) return;
             this.player = new SamplePlayer(bank, SAMPLE_VOLUMES[id], SAMPLE_ENVELOPES[id]);
             this.player.shape(this.shaped);
             this.player.output.connect(this.output);
         };
         const ready = decoded.get(id);
-        if (ready) use(ready);
+        if (ready) adopt(ready);
         this.ready = loadBank(id).then(
-            use,
+            adopt,
             // no samples (offline before they were ever cached): the stand-in keeps playing
             () => undefined,
         );
