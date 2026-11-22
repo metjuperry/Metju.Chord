@@ -23,14 +23,6 @@ export interface Opts {
 const NOTE_RECORDER = () => {
     const w = window as unknown as { __notes: { midi: number; t: number; w: number }[] };
     w.__notes = [];
-    // and the oscillator waveforms the engine sets up: each synth voice sets its type once, when its strip is built
-    const types: string[] = ((w as unknown as { __types: string[] }).__types = []);
-    const typeDesc = Object.getOwnPropertyDescriptor(OscillatorNode.prototype, 'type')!;
-    Object.defineProperty(OscillatorNode.prototype, 'type', {
-        configurable: true,
-        get() { return typeDesc.get!.call(this); },
-        set(v) { types.push(v); typeDesc.set!.call(this, v); },
-    });
     const orig = AudioParam.prototype.setValueAtTime;
     AudioParam.prototype.setValueAtTime = function (value: number, time: number) {
         const midi = 69 + 12 * Math.log2(value / 440);
@@ -81,7 +73,6 @@ export const notes = (page: Page) => page.evaluate(() => {
     const w = window as unknown as { __notes: { midi: number; t: number; w: number }[]; __mark?: number };
     return w.__notes.filter(n => n.t > 0 && n.w >= (w.__mark ?? 0)).sort((a, b) => a.t - b.t);
 });
-export const oscTypes = (page: Page) => page.evaluate(() => [...(window as unknown as { __types: string[] }).__types]);
 export const clearNotes = (page: Page) => page.evaluate(() => { (window as unknown as { __mark: number }).__mark = performance.now(); });
 
 /** MIDI numbers in time order with repeats collapsed: the bass roots as a chord sequence. */
