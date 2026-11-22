@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { pid, sid, strip } from './testing';
+import { PartId, SectionId, partStrip } from './ids';
 import {
     FullSong, SAVE_VERSION, SavedState, Song, defaultSettings, encodeShare, decodeShare, fromSingleSection, newFullSong, newSong, readFullSong, readSaved, stepsPerRow,
 } from './song';
@@ -22,8 +24,8 @@ const v2Song = (): Song => {
     return song;
 };
 
-const melodyId = (s: { parts: { id: string; kind: string }[] }) => s.parts.find(p => p.kind === 'melody')!.id;
-const drumsId = (s: { parts: { id: string; kind: string }[] }) => s.parts.find(p => p.kind === 'drums')!.id;
+const melodyId = (s: { parts: { id: PartId; kind: string }[] }) => s.parts.find(p => p.kind === 'melody')!.id;
+const drumsId = (s: { parts: { id: PartId; kind: string }[] }) => s.parts.find(p => p.kind === 'drums')!.id;
 
 describe('save format v3: migrating a v2 song', () => {
     it('becomes one section "A" with all its chords, notes and drums, chained once', () => {
@@ -53,7 +55,7 @@ describe('save format v3: migrating a v2 song', () => {
 
     it('the projection of the migrated section is the old song', () => {
         const old = v2Song();
-        const view = sectionView(fromSingleSection(old), 's1');
+        const view = sectionView(fromSingleSection(old), sid('s1'));
         expect(view).toEqual(old);
     });
 
@@ -112,7 +114,7 @@ describe('save format v3: reading untrusted songs', () => {
         raw.sections[0].content[mel].notes.push({ start: 99999, len: 24, step: 1 });
         raw.sections[0].mutes = { ghost: true, [mel]: true, [drumsId(song)]: 'yes' };
         const read = readFullSong(raw)!;
-        expect(read.sections[0].content.ghost).toBeUndefined();
+        expect(read.sections[0].content[pid('ghost')]).toBeUndefined();
         expect(read.sections[0].content[mel].notes).toHaveLength(2);
         expect(read.sections[0].mutes).toEqual({ [mel]: true });
     });
@@ -129,7 +131,7 @@ describe('the section projection', () => {
         let song = fromSingleSection(v2Song());
         const added = addSection(song);
         song = added.song;
-        const b = added.id;
+        const b = added.id!;
         const view = sectionView(song, b);
         expect(view.chords).toEqual([]);
         expect(view.parts.find(p => p.kind === 'melody')!.kind === 'melody' && (view.parts.find(p => p.kind === 'melody') as { notes: unknown[] }).notes).toEqual([]);
@@ -161,7 +163,7 @@ describe('the section projection', () => {
     it('removing a part through a view removes its content and mutes everywhere', () => {
         let song = fromSingleSection(v2Song());
         const mel = melodyId(song);
-        song = setSectionMute(song, 's1', mel, true);
+        song = setSectionMute(song, sid('s1'), mel, true);
         song = addSection(song).song;
         const view = sectionView(song, song.sections[1].id);
         const next = applySectionEdit(song, song.sections[1].id, { ...view, parts: view.parts.filter(p => p.id !== mel) });
@@ -187,27 +189,27 @@ describe('sections and the chain', () => {
         const b = addSection(song);
         song = b.song;
         expect(song.sections[1]).toMatchObject({ name: 'B', letter: 'B', steps: 8, chords: [] });
-        song = renameSection(song, b.id, 'Chorus');
+        song = renameSection(song, b.id!, 'Chorus');
         expect(song.sections[1]).toMatchObject({ name: 'Chorus', letter: 'C' });
-        const copy = duplicateSection(song, b.id);
+        const copy = duplicateSection(song, b.id!);
         expect(copy.song.sections.map(s => s.name)).toEqual(['A', 'Chorus', 'Chorus 2']);
-        song = appendToChain(copy.song, b.id);
-        song = deleteSection(song, b.id);
+        song = appendToChain(copy.song, b.id!);
+        song = deleteSection(song, b.id!);
         expect(song.sections.map(s => s.name)).toEqual(['A', 'Chorus 2']);
-        expect(song.chain.every(e => e.sectionId !== b.id)).toBe(true);
+        expect(song.chain.every(e => e.sectionId !== b.id!)).toBe(true);
         // the last section can't go
-        expect(deleteSection(deleteSection(song, song.sections[1].id), 's1').sections).toHaveLength(1);
+        expect(deleteSection(deleteSection(song, song.sections[1].id), sid('s1')).sections).toHaveLength(1);
     });
 
     it('moves, duplicates and removes chain entries, never emptying the chain', () => {
         let song = base();
         const b = addSection(song);
-        song = appendToChain(b.song, b.id);
-        expect(song.chain.map(e => e.sectionId)).toEqual(['s1', b.id]);
+        song = appendToChain(b.song, b.id!);
+        expect(song.chain.map(e => e.sectionId)).toEqual([sid('s1'), b.id!]);
         song = moveEntry(song, 1, -1);
-        expect(song.chain.map(e => e.sectionId)).toEqual([b.id, 's1']);
+        expect(song.chain.map(e => e.sectionId)).toEqual([b.id!, sid('s1')]);
         song = duplicateEntry(song, 0);
-        expect(song.chain.map(e => e.sectionId)).toEqual([b.id, b.id, 's1']);
+        expect(song.chain.map(e => e.sectionId)).toEqual([b.id!, b.id!, sid('s1')]);
         song = removeEntry(removeEntry(removeEntry(song, 0), 0), 0);
         expect(song.chain).toHaveLength(1);
     });
@@ -215,27 +217,27 @@ describe('sections and the chain', () => {
     it('lays the chain out in ticks and bars', () => {
         let song = base(); // A: 16 steps, music for the first 2 bars
         const b = addSection(song); // B: 8 steps, empty
-        song = appendToChain(appendToChain(b.song, b.id), 's1');
+        song = appendToChain(appendToChain(b.song, b.id!), sid('s1'));
         const layout = chainLayout(song);
         // each section for as long as it plays (where its music ends, a bar at least), like Loop mode
         expect(layout.map(s => [s.startBar, s.bars, s.start])).toEqual([[1, 2, 0], [3, 1, 8 * S], [4, 2, 12 * S]]);
-        expect(slotAt(layout, 9 * S).section.id).toBe(b.id);
+        expect(slotAt(layout, 9 * S).section.id).toBe(b.id!);
     });
 
     it('plays a section in the chain as long as Loop mode loops it, not its whole length', () => {
         // a 16-bar section whose chords stop after 12 bars
         let song = base();
-        const view = sectionView(song, 's1');
-        song = applySectionEdit(song, 's1', {
+        const view = sectionView(song, sid('s1'));
+        song = applySectionEdit(song, sid('s1'), {
             ...view,
             steps: 64,
             chords: [{ start: 0, len: 48 * S, chord: { degree: 0, type: 'triad', inversion: 0, octave: 4 } }],
             parts: view.parts.map(p => (p.kind === 'melody' ? { ...p, notes: [] } : p.kind === 'drums' ? { ...p, drums: { bars: 1, hits: {} } } : p)),
         });
-        song = appendToChain(song, 's1');
+        song = appendToChain(song, sid('s1'));
         const layout = chainLayout(song);
         expect(layout.map(s => s.bars)).toEqual([12, 12]);
-        expect(playedTicks(song, song.sections[0])).toBe(sectionLoopLength(sectionView(song, 's1')));
+        expect(playedTicks(song, song.sections[0])).toBe(sectionLoopLength(sectionView(song, sid('s1'))));
         expect(chainEvents(song).length).toBe(2 * 48 * S);
         // and never longer than the section: music running past its end is cut there
         expect(playedTicks({ ...song, sections: [{ ...song.sections[0], steps: 32 }] }, { ...song.sections[0], steps: 32 })).toBe(32 * S);
@@ -245,7 +247,7 @@ describe('sections and the chain', () => {
         let song = base();
         const mel = song.parts.find(p => p.kind === 'melody')!;
         expect(partStateIn(song, song.sections[0], mel)).toBe('plays');
-        song = setSectionMute(song, 's1', mel.id, true);
+        song = setSectionMute(song, sid('s1'), mel.id, true);
         expect(partStateIn(song, song.sections[0], song.parts.find(p => p.id === mel.id)!)).toBe('muted');
         song = addSection(song).song;
         expect(partStateIn(song, song.sections[1], song.parts[0])).toBe('silent');
@@ -263,16 +265,16 @@ describe('chain playback', () => {
         // the A pattern (kicks on 1/16 0 and 8 of each bar) for its 2 bars, then B's own pattern from its top (kick on 0 only)
         expect(kicks).toEqual([0, 192, 384, 576, 8 * S, 12 * S]);
         const mel = song.parts.find(p => p.kind === 'melody')!.id;
-        const last = events.filter(e => e.data.part === mel).pop()!;
+        const last = events.filter(e => e.data.part === partStrip(mel)).pop()!;
         expect(last.tick + last.duration).toBe(16 * S);
         song = setSectionMute(song, song.sections[1].id, mel, true);
-        expect(chainEvents(song).events.some(e => e.data.part === mel && e.tick >= 8 * S)).toBe(false);
+        expect(chainEvents(song).events.some(e => e.data.part === partStrip(mel) && e.tick >= 8 * S)).toBe(false);
     });
 
     it('a section on its own plays like the v2 song did', () => {
         const old = v2Song();
         const song = fromSingleSection(old);
-        const a = sectionEvents(sectionView(song, 's1'), song.sections[0], 16 * S, 0, false);
+        const a = sectionEvents(sectionView(song, sid('s1')), song.sections[0], 16 * S, 0, false);
         expect(a.length).toBeGreaterThan(10);
         expect(a.filter(e => e.data.drum).length).toBe(4 * 6);
     });
@@ -282,9 +284,9 @@ describe('chain playback', () => {
 function base2(): FullSong {
     let song = fromSingleSection(v2Song());
     const b = addSection(song);
-    song = appendToChain(b.song, b.id);
-    const view = sectionView(song, b.id);
-    return applySectionEdit(song, b.id, {
+    song = appendToChain(b.song, b.id!);
+    const view = sectionView(song, b.id!);
+    return applySectionEdit(song, b.id!, {
         ...view,
         chords: [{ start: 0, len: 8 * S, chord: { degree: 3, type: 'triad', inversion: 0, octave: 4 } }],
         parts: view.parts.map(p => (p.kind === 'drums' ? { ...p, drums: { bars: 1, hits: { kick: [0] } } }
@@ -304,7 +306,7 @@ describe('melody accidentals in saves and links', () => {
     const notesOf = (song: FullSong | null) => song!.sections[0].content[melodyId(song!)].notes!;
 
     it('round-trips through JSON files and share links (same save version)', async () => {
-        const state: SavedState = { version: 3, song: fromSingleSection(withAccs()), settings: { ...defaultSettings(), openSection: 's1' } };
+        const state: SavedState = { version: 3, song: fromSingleSection(withAccs()), settings: { ...defaultSettings(), openSection: sid('s1') } };
         expect(SAVE_VERSION).toBe(3);
         expect(readSaved(JSON.parse(JSON.stringify(state)))).toEqual(state);
         expect(readSaved(await decodeShare(await encodeShare(state)))).toEqual(state);
@@ -344,13 +346,13 @@ describe('melody accidentals in saves and links', () => {
 
     it('plays the altered pitch: F♯5 and B♭4 in A minor', () => {
         const song = fromSingleSection(withAccs());
-        const view = sectionView(song, 's1');
+        const view = sectionView(song, sid('s1'));
         const mel = melodyId(song);
-        const midi = sectionEvents(view, song.sections[0], 16 * S, 0, false).filter(e => e.data.part === mel).map(e => (e.data.midi ? e.data.midi[0] : -1));
+        const midi = sectionEvents(view, song.sections[0], 16 * S, 0, false).filter(e => e.data.part === partStrip(mel)).map(e => (e.data.midi ? e.data.midi[0] : -1));
         // A minor from A4 (part octave 4): step 2 = C5, step 5 + ♯ = F♯5, step 1 + ♭ = B♭4
         expect(midi).toEqual([72, 78, 70]);
         // and in the whole chain
-        expect(chainEvents(song).events.filter(e => e.data.part === mel).map(e => (e.data.midi ? e.data.midi[0] : -1))).toEqual([72, 78, 70]);
+        expect(chainEvents(song).events.filter(e => e.data.part === partStrip(mel)).map(e => (e.data.midi ? e.data.midi[0] : -1))).toEqual([72, 78, 70]);
     });
 });
 
@@ -417,88 +419,88 @@ describe('Parts edits what Song has open: a section, or the whole song', () => {
     /** A song with two sections, A and its copy B, a Keys part and a beat. */
     const twoSections = () => {
         const one = fromSingleSection(v2Song());
-        return duplicateSection(one, 's1').song;
+        return duplicateSection(one, sid('s1')).song;
     };
     const keysId = (s: FullSong) => s.parts.find(p => p.kind === 'chords')!.id;
-    const keysIn = (s: FullSong, sec: string, own = true) => sectionView(s, sec, own).parts.find(p => p.kind === 'chords')! as import('./parts').ChordPart;
+    const keysIn = (s: FullSong, sec: SectionId, own = true) => sectionView(s, sec, own).parts.find(p => p.kind === 'chords')! as import('./parts').ChordPart;
     /** Edit the Keys part as Parts would, with `scope`. */
-    const editKeys = (s: FullSong, sec: string, scope: 'section' | 'song', patch: object) => {
+    const editKeys = (s: FullSong, sec: SectionId, scope: 'section' | 'song', patch: object) => {
         const view = sectionView(s, sec, scope === 'section');
         return applySectionEdit(s, sec, { ...view, parts: view.parts.map(p => (p.kind === 'chords' ? { ...p, ...patch } as typeof p : p)) }, scope);
     };
 
     it('an edit with a section open changes that section only', () => {
-        const song = editKeys(twoSections(), 's2', 'section', { playMode: 'Arp' });
-        const b = song.sections.find(s => s.id === 's2')!;
-        expect(keysIn(song, 's2').playMode).toBe('Arp');
-        expect(keysIn(song, 's1').playMode).toBe('Chord');
+        const song = editKeys(twoSections(), sid('s2'), 'section', { playMode: 'Arp' });
+        const b = song.sections.find(s => s.id === sid('s2'))!;
+        expect(keysIn(song, sid('s2')).playMode).toBe('Arp');
+        expect(keysIn(song, sid('s1')).playMode).toBe('Chord');
         expect(song.parts.find(p => p.kind === 'chords')).toMatchObject({ playMode: 'Chord' });
         expect(b.sound).toEqual({ [keysId(song)]: { playMode: 'Arp' } });
     });
 
     it('setting a section back to the song’s value keeps nothing of its own', () => {
-        let song = editKeys(twoSections(), 's2', 'section', { playMode: 'Arp' });
-        song = editKeys(song, 's2', 'section', { playMode: 'Chord' });
-        expect(song.sections.find(s => s.id === 's2')!.sound).toBeUndefined();
+        let song = editKeys(twoSections(), sid('s2'), 'section', { playMode: 'Arp' });
+        song = editKeys(song, sid('s2'), 'section', { playMode: 'Chord' });
+        expect(song.sections.find(s => s.id === sid('s2'))!.sound).toBeUndefined();
     });
 
     it('name, colour, mute and solo stay song-wide even with a section open', () => {
-        const song = editKeys(twoSections(), 's2', 'section', { name: 'Rhodes', mute: true });
+        const song = editKeys(twoSections(), sid('s2'), 'section', { name: 'Rhodes', mute: true });
         expect(song.parts.find(p => p.kind === 'chords')).toMatchObject({ name: 'Rhodes', mute: true });
-        expect(song.sections.find(s => s.id === 's2')!.sound).toBeUndefined();
+        expect(song.sections.find(s => s.id === sid('s2'))!.sound).toBeUndefined();
     });
 
     it('an edit with the whole song open reaches every section, replacing what a section had for that setting', () => {
-        let song = editKeys(twoSections(), 's2', 'section', { playMode: 'Arp', arpRate: '16n', instrument: 'pluck' });
-        song = editKeys(song, 's1', 'song', { playMode: 'Strum' });
-        expect(keysIn(song, 's1').playMode).toBe('Strum');
-        expect(keysIn(song, 's2').playMode).toBe('Strum');
+        let song = editKeys(twoSections(), sid('s2'), 'section', { playMode: 'Arp', arpRate: '16n', instrument: 'pluck' });
+        song = editKeys(song, sid('s1'), 'song', { playMode: 'Strum' });
+        expect(keysIn(song, sid('s1')).playMode).toBe('Strum');
+        expect(keysIn(song, sid('s2')).playMode).toBe('Strum');
         // other settings the section had stay its own
-        expect(song.sections.find(s => s.id === 's2')!.sound).toEqual({ [keysId(song)]: { arpRate: '16n', instrument: 'pluck' } });
+        expect(song.sections.find(s => s.id === sid('s2'))!.sound).toEqual({ [keysId(song)]: { arpRate: '16n', instrument: 'pluck' } });
     });
 
     it('in effects and shape, only the knob turned for the whole song is replaced', () => {
         const base = twoSections();
-        const fx = keysIn(base, 's2').fx;
-        let song = editKeys(base, 's2', 'section', { fx: { ...fx, chorus: 0.5, delay: 0.4 } });
-        song = editKeys(song, 's1', 'song', { fx: { ...fx, chorus: 0.2 } });
-        expect(keysIn(song, 's1').fx).toMatchObject({ chorus: 0.2, delay: 0 });
-        expect(keysIn(song, 's2').fx).toMatchObject({ chorus: 0.2, delay: 0.4 });
+        const fx = keysIn(base, sid('s2')).fx;
+        let song = editKeys(base, sid('s2'), 'section', { fx: { ...fx, chorus: 0.5, delay: 0.4 } });
+        song = editKeys(song, sid('s1'), 'song', { fx: { ...fx, chorus: 0.2 } });
+        expect(keysIn(song, sid('s1')).fx).toMatchObject({ chorus: 0.2, delay: 0 });
+        expect(keysIn(song, sid('s2')).fx).toMatchObject({ chorus: 0.2, delay: 0.4 });
     });
 
     it('the whole song view shows the song’s parts; a section view shows them as they sound there', () => {
-        const song = editKeys(twoSections(), 's2', 'section', { volume: -6 });
-        expect(keysIn(song, 's2', false).volume).toBe(0);
-        expect(keysIn(song, 's2').volume).toBe(-6);
+        const song = editKeys(twoSections(), sid('s2'), 'section', { volume: -6 });
+        expect(keysIn(song, sid('s2'), false).volume).toBe(0);
+        expect(keysIn(song, sid('s2')).volume).toBe(-6);
     });
 
     it('a section that sounds its own way plays through its own engine strip', () => {
-        let song = editKeys(twoSections(), 's2', 'section', { playMode: 'Arp' });
+        let song = editKeys(twoSections(), sid('s2'), 'section', { playMode: 'Arp' });
         const id = keysId(song);
         // play mode changes the notes, not the strip
         expect(engineStrips(song).map(x => x.id)).toEqual(song.parts.map(p => p.id));
-        song = editKeys(song, 's2', 'section', { instrument: 'pluck' });
+        song = editKeys(song, sid('s2'), 'section', { instrument: 'pluck' });
         const strips = engineStrips(song);
         expect(strips.find(x => x.id === `${id}@s2`)!.part).toMatchObject({ instrument: 'pluck', playMode: 'Arp' });
-        const b = song.sections.find(s => s.id === 's2')!;
+        const b = song.sections.find(s => s.id === sid('s2'))!;
         expect(stripId(b, id)).toBe(`${id}@s2`);
         expect(stripId(song.sections[0], id)).toBe(id);
         // in the chain, each section's notes go to its strip
-        const parts = new Set(chainEvents({ ...song, chain: [{ sectionId: 's1' }, { sectionId: 's2' }] }).events.map(e => e.data.part));
-        expect(parts.has(id) && parts.has(`${id}@s2`)).toBe(true);
+        const parts = new Set(chainEvents({ ...song, chain: [{ sectionId: sid('s1') }, { sectionId: sid('s2') }] }).events.map(e => e.data.part));
+        expect(parts.has(partStrip(id)) && parts.has(strip(`${id}@s2`))).toBe(true);
     });
 
     it('a copied section keeps its own sound; a removed part loses it', () => {
-        let song = editKeys(twoSections(), 's2', 'section', { instrument: 'pluck' });
-        song = duplicateSection(song, 's2').song;
+        let song = editKeys(twoSections(), sid('s2'), 'section', { instrument: 'pluck' });
+        song = duplicateSection(song, sid('s2')).song;
         expect(song.sections[2].sound).toEqual(song.sections[1].sound);
-        const view = sectionView(song, 's1');
-        song = applySectionEdit(song, 's1', { ...view, parts: [...view.parts.filter(p => p.kind !== 'chords'), newPart('chords', view.parts)] });
+        const view = sectionView(song, sid('s1'));
+        song = applySectionEdit(song, sid('s1'), { ...view, parts: [...view.parts.filter(p => p.kind !== 'chords'), newPart('chords', view.parts)] });
         expect(song.sections.every(s => !s.sound)).toBe(true);
     });
 
     it('saves keep a section’s sound, repaired, and drop what is junk or the same as the song', () => {
-        const song = editKeys(twoSections(), 's2', 'section', { instrument: 'pluck', volume: -3 });
+        const song = editKeys(twoSections(), sid('s2'), 'section', { instrument: 'pluck', volume: -3 });
         const id = keysId(song);
         const raw = JSON.parse(JSON.stringify(song));
         raw.sections[1].sound[id].volume = 999;
@@ -515,39 +517,39 @@ describe('Parts edits what Song has open: a section, or the whole song', () => {
     });
     it('lists what a section sets its own way, one entry per knob in effects, pan and shape', () => {
         const base = twoSections();
-        const keys = keysIn(base, 's2');
-        const song = editKeys(base, 's2', 'section', {
+        const keys = keysIn(base, sid('s2'));
+        const song = editKeys(base, sid('s2'), 'section', {
             instrument: 'pluck', playMode: 'Arp', fx: { ...keys.fx, reverb: 0.6 }, tone: { ...keys.tone, pan: 0.2 }, shape: { ...keys.shape, cutoff: 800 },
         });
         const id = keysId(song);
-        expect([...ownSoundKeys(song, 's2', id)].sort()).toEqual(['fx.reverb', 'instrument', 'playMode', 'shape.cutoff', 'tone.pan']);
-        expect(ownSoundKeys(song, 's1', id).size).toBe(0);
-        expect(ownSoundKeys(song, 'nope', id).size).toBe(0);
-        expect(ownSoundKeys(song, 's2', 'nope').size).toBe(0);
+        expect([...ownSoundKeys(song, sid('s2'), id)].sort()).toEqual(['fx.reverb', 'instrument', 'playMode', 'shape.cutoff', 'tone.pan']);
+        expect(ownSoundKeys(song, sid('s1'), id).size).toBe(0);
+        expect(ownSoundKeys(song, sid('nope'), id).size).toBe(0);
+        expect(ownSoundKeys(song, sid('s2'), pid('nope')).size).toBe(0);
         // a section that resets a shape knob the song has turned sets it too
-        let reset = editKeys(base, 's1', 'song', { shape: { attack: 0.3 } });
-        reset = editKeys(reset, 's2', 'section', { shape: {} });
-        expect([...ownSoundKeys(reset, 's2', id)]).toEqual(['shape.attack']);
+        let reset = editKeys(base, sid('s1'), 'song', { shape: { attack: 0.3 } });
+        reset = editKeys(reset, sid('s2'), 'section', { shape: {} });
+        expect([...ownSoundKeys(reset, sid('s2'), id)]).toEqual(['shape.attack']);
     });
 
     it('"Use the song’s sound" takes back one part’s own sound in one section', () => {
-        let song = editKeys(twoSections(), 's2', 'section', { instrument: 'pluck', volume: -3 });
+        let song = editKeys(twoSections(), sid('s2'), 'section', { instrument: 'pluck', volume: -3 });
         const id = keysId(song);
         const bass = song.parts.find(p => p.kind === 'bass')!.id;
-        const view = sectionView(song, 's2');
-        song = applySectionEdit(song, 's2', { ...view, parts: view.parts.map(p => (p.id === bass ? { ...p, volume: -9 } : p)) });
+        const view = sectionView(song, sid('s2'));
+        song = applySectionEdit(song, sid('s2'), { ...view, parts: view.parts.map(p => (p.id === bass ? { ...p, volume: -9 } : p)) });
         expect(hasOwnSound(song.sections[1])).toBe(true);
-        const back = clearSectionSound(song, 's2', id);
+        const back = clearSectionSound(song, sid('s2'), id);
         expect(back.sections[1].sound).toEqual({ [bass]: { volume: -9 } });
-        expect(keysIn(back, 's2')).toEqual(keysIn(back, 's1'));
+        expect(keysIn(back, sid('s2'))).toEqual(keysIn(back, sid('s1')));
         expect(back.sections[0]).toBe(song.sections[0]);
         expect(back.parts).toBe(song.parts);
         // the last part with its own sound: the section has none left, and the field goes
-        const none = clearSectionSound(back, 's2', bass);
+        const none = clearSectionSound(back, sid('s2'), bass);
         expect('sound' in none.sections[1]).toBe(false);
         expect(hasOwnSound(none.sections[1])).toBe(false);
         // nothing to take back: the same song (not an undo step)
-        expect(clearSectionSound(none, 's2', id)).toBe(none);
-        expect(clearSectionSound(none, 'nope', id)).toBe(none);
+        expect(clearSectionSound(none, sid('s2'), id)).toBe(none);
+        expect(clearSectionSound(none, sid('nope'), id)).toBe(none);
     });
 });

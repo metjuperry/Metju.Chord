@@ -14,6 +14,7 @@ import {
 } from '../parts';
 import { PPQ } from '../progression';
 import { PartsTab, ShapeView, Space } from '../song';
+import type { PartId } from '../ids';
 import {
     DRIVE_TYPES, DriveType, FILTER_TYPES, FilterType, KNOBS, LFO_RATES, LfoRate, PartShape, ShapeKnob, ShapeOverrides, defaultShape, effectiveShape, fromKnob, shapeText, toKnob,
 } from '../sound';
@@ -921,7 +922,7 @@ interface PartsViewProps {
     tab: PartsTab;
     onTab: (tab: PartsTab) => void;
     /** The selected part's live waveform, for the Advanced scope. */
-    scope: (id: string) => WaveSource | null;
+    scope: (id: PartId) => WaveSource | null;
     onFx: (id: string, key: keyof PartFx, value: number) => void;
     onSpace: (space: Space) => void;
     onDryAll: () => void;
@@ -936,7 +937,7 @@ interface PartsViewProps {
     /** With a section open: per part, what that section sets its own way (`ownSoundKeys`); null for the whole song. */
     own: { [partId: string]: Set<string> } | null;
     /** "Use the song's sound": the part's own sound in the open section goes. */
-    onUseSongSound: (id: string) => void;
+    onUseSongSound: (id: PartId) => void;
 }
 
 /** What a part sounds like, in a word: its instrument, "Ooh" for a voice, the kit for drums. */
@@ -952,7 +953,7 @@ const PartsView: React.FC<PartsViewProps> = p => {
     // one function per selected part, so the scope keeps drawing across re-renders
     const scopeOf = p.scope;
     const partId = part?.id ?? '';
-    const scopeFor = useCallback(() => scopeOf(partId), [scopeOf, partId]);
+    const scopeFor = useCallback(() => (partId ? scopeOf(partId) : null), [scopeOf, partId]);
     const ownKeys = p.own?.[partId];
     const ownHere = ownKeys?.size ? { section: p.scopeName, keys: ownKeys } : null;
     return (

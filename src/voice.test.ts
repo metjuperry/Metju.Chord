@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { sid } from './testing';
 import { Harmony, Part, VoicePart, hasNotes, newPart, noteWriter, partNotes, restSpans, writesNotes } from './parts';
 import { Clip, TICKS_PER_STEP as S } from './progression';
 import { fromSingleSection, readFullSong, readSong } from './song';
@@ -65,12 +66,12 @@ describe('a Voice part in a song', () => {
 
     it('keeps its notes per section, like a melody', () => {
         const full = withVoice();
-        const view = sectionView(full, 's1');
+        const view = sectionView(full, sid('s1'));
         const id = view.parts[1].id;
-        const next = applySectionEdit(full, 's1', { ...view, parts: view.parts.map(p => (p.id === id ? { ...p, notes: [{ start: 0, len: S, step: 3 }] } as Part : p)) });
+        const next = applySectionEdit(full, sid('s1'), { ...view, parts: view.parts.map(p => (p.id === id ? { ...p, notes: [{ start: 0, len: S, step: 3 }] } as Part : p)) });
         expect(next.sections[0].content[id]).toEqual({ notes: [{ start: 0, len: S, step: 3 }] });
         expect((next.parts[1] as VoicePart).notes).toEqual([]);
-        expect((sectionView(next, 's1').parts[1] as VoicePart).notes).toHaveLength(1);
+        expect((sectionView(next, sid('s1')).parts[1] as VoicePart).notes).toHaveLength(1);
     });
 
     it('survives a save and repairs junk', () => {

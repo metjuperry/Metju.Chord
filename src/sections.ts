@@ -1,21 +1,16 @@
-import { isEmptyPattern } from './drums';
-import { ChordPart, Part, audibleParts, hasNotes, musicLoopEnd, newPart } from './parts';
+import { CONTENT_KEYS, contentOf, fillContent, musicLoopEnd, playsContent, sameContentOf, stripContent } from './content';
+import { ChordPart, Part, audibleParts, newPart } from './parts';
 import { isChordClip } from './progression';
 import {
-    ChainEntry, FullSong, MAX_CHAIN, MAX_SECTIONS, PartContent, STRIP_KEYS, Section, SectionSound, Song, TimeSignature, changeTimeSignature, contentOf,
-    defaultSpace, isSoundKey, letterFor, sameValue, stepsPerRow, stripContent, ticksPerBar, ticksPerStep, withSound,
+    ChainEntry, FullSong, MAX_CHAIN, MAX_SECTIONS, STRIP_KEYS, Section, SectionSound, Song, SoundKey, TimeSignature, changeTimeSignature,
+    defaultSpace, isSoundKey, isSoundKeyOf, letterFor, partSound, sameValue, soundValue, stepsPerRow, ticksPerBar, ticksPerStep, withSound, withSoundValue,
 } from './song';
+import { isObj } from './reading';
+import { PartId, SectionId, StripId, idsOf, partStrip, sectionIdFor, sectionStrip } from './ids';
 
 // ---- the projection: one section as an ordinary single-section Song, and edits back --------------
 
 export const findSection = (song: FullSong, id: string): Section => song.sections.find(s => s.id === id) ?? song.sections[0];
-
-/** A part with its content for one section filled in (an empty melody / pattern when the section has none). */
-function fill(p: Part, c: PartContent | undefined): Part {
-    if (hasNotes(p)) return c?.notes ? { ...p, notes: c.notes } : p.notes.length ? { ...p, notes: [] } : p;
-    if (p.kind === 'drums') return c?.drums ? { ...p, drums: c.drums } : p;
-    return p;
-}
 
 /**
  * Section `id` of `song` as an ordinary single-section Song: its chords and length, the song-wide key,
@@ -24,7 +19,7 @@ function fill(p: Part, c: PartContent | undefined): Part {
  * The parts sound the way they do in this section; with `ownSound` false, the way the song has them
  * (what Parts shows and edits while the whole song is open).
  */
-export function sectionView(song: FullSong, id: string, ownSound = true): Song {
+export function sectionView(song: FullSong, id: SectionId, ownSound = true): Song {
     const sec = findSection(song, id);
     return {
         key: song.key,
@@ -34,12 +29,12 @@ export function sectionView(song: FullSong, id: string, ownSound = true): Song {
         space: song.space,
         chords: sec.chords,
         steps: sec.steps,
-        parts: song.parts.map(p => fill(ownSound ? withSound(p, sec.sound?.[p.id]) : p, sec.content[p.id])),
+        parts: song.parts.map(p => fillContent(ownSound ? withSound(p, sec.sound?.[p.id]) : p, sec.content[p.id])),
     };
 }
 
 /** Same keys, same values (one level deep), apart from `skip`: a part whose sound didn't change keeps its object. */
-function shallowEqual(a: object, b: object, skip: string[] = []): boolean {
+function shallowEqual(a: object, b: object, skip: readonly string[] = []): boolean {
     const ka = Object.keys(a).filter(k => !skip.includes(k));
     const kb = Object.keys(b).filter(k => !skip.includes(k));
     return ka.length === kb.length && ka.every(k => (a as Record<string, unknown>)[k] === (b as Record<string, unknown>)[k]);
@@ -47,24 +42,20 @@ function shallowEqual(a: object, b: object, skip: string[] = []): boolean {
 
 const sameContent = (a: Section['content'], b: Section['content']) =>
     shallowEqual(a, b) || (Object.keys(a).length === Object.keys(b).length
-        && Object.keys(a).every(k => b[k] && a[k].notes === b[k].notes && a[k].drums === b[k].drums));
+        && idsOf(a).every(k => b[k] && sameContentOf(a[k], b[k])));
 
 /** `rec` without the keys that aren't parts any more (same object when nothing goes). */
-function onlyParts<T>(rec: { [id: string]: T }, ids: Set<string>): { [id: string]: T } {
-    const keys = Object.keys(rec);
+function onlyParts<T>(rec: { [id: PartId]: T }, ids: Set<PartId>): { [id: PartId]: T } {
+    const keys = idsOf(rec);
     return keys.every(k => ids.has(k)) ? rec : Object.fromEntries(keys.filter(k => ids.has(k)).map(k => [k, rec[k]]));
 }
 
 /** Where an edit to a part's sound goes: the open section only, or the whole song (every section). */
 export type SoundScope = 'section' | 'song';
 
-type Rec = { [k: string]: unknown };
-const rec = (p: Part) => p as unknown as Rec;
-
 /** `own` with `key` set to `value`, or without it when the song has that value anyway. */
-function setOwn(own: SectionSound, key: string, value: unknown, songValue: unknown): SectionSound {
-    const { [key]: _old, ...rest } = own;
-    return sameValue(value, songValue) ? rest : { ...rest, [key]: value };
+function setOwn(own: SectionSound, key: SoundKey, value: unknown, songValue: unknown): SectionSound {
+    return withSoundValue(own, key, sameValue(value, songValue) ? undefined : value);
 }
 
 /**
@@ -72,20 +63,16 @@ function setOwn(own: SectionSound, key: string, value: unknown, songValue: unkno
  * value: a plain value is the song's again; in a record (effects, pan, shape) just the entries that
  * changed are.
  */
-function followSong(own: SectionSound, key: string, before: unknown, after: unknown): SectionSound {
+function followSong(own: SectionSound, key: SoundKey, before: unknown, after: unknown): SectionSound {
     if (!(key in own)) return own;
-    const mine = own[key];
-    if (typeof mine !== 'object' || mine === null || typeof after !== 'object' || after === null) {
-        const { [key]: _gone, ...rest } = own;
-        return rest;
-    }
-    const b = (before ?? {}) as Rec;
-    const a = after as Rec;
-    const next: Rec = { ...(mine as Rec) };
-    for (const k of new Set([...Object.keys(b), ...Object.keys(a)])) {
-        if (b[k] === a[k]) continue;
-        if (a[k] === undefined) delete next[k];
-        else next[k] = a[k];
+    const mine = soundValue(own, key);
+    if (!isObj(mine) || !isObj(after)) return withSoundValue(own, key, undefined);
+    const b = isObj(before) ? before : {};
+    const next = { ...mine };
+    for (const k of new Set([...Object.keys(b), ...Object.keys(after)])) {
+        if (b[k] === after[k]) continue;
+        if (after[k] === undefined) delete next[k];
+        else next[k] = after[k];
     }
     return setOwn(own, key, next, after);
 }
@@ -99,7 +86,7 @@ function followSong(own: SectionSound, key: string, before: unknown, after: unkn
  * shows the song's parts). A part added in the view is added to the song; one removed loses its
  * content, mutes and sound in every section. Unchanged parts and sections keep their objects.
  */
-export function applySectionEdit(song: FullSong, id: string, view: Song, scope: SoundScope = 'section'): FullSong {
+export function applySectionEdit(song: FullSong, id: SectionId, view: Song, scope: SoundScope = 'section'): FullSong {
     const sec = findSection(song, id);
     const before = sectionView(song, sec.id, scope === 'section');
     const content: Section['content'] = {};
@@ -114,13 +101,14 @@ export function applySectionEdit(song: FullSong, id: string, view: Song, scope: 
         const old = song.parts.find(o => o.id === p.id);
         const prev = before.parts.find(o => o.id === p.id);
         if (!old || !prev || old.kind !== p.kind) return stripped;
-        const changed = Object.keys(stripped).filter(k => isSoundKey(k) && !sameValue(rec(stripped)[k], rec(prev)[k]));
+        const changed = Object.keys(stripped).filter((k): k is SoundKey => isSoundKeyOf(p.kind, k))
+            .filter(k => !sameValue(soundValue(stripped, k), soundValue(prev, k)));
         let next: Part;
         if (scope === 'section') {
             // the song's part takes the name, colour, mute and solo; this section takes the sound
-            next = Object.fromEntries(Object.keys(stripped).map(k => [k, isSoundKey(k) ? rec(old)[k] : rec(stripped)[k]])) as unknown as Part;
-            let own = sounds.get(sec.id)![p.id] ?? {};
-            for (const k of changed) own = setOwn(own, k, rec(stripped)[k], rec(old)[k]);
+            next = withSound(stripped, partSound(old));
+            let own: SectionSound = sounds.get(sec.id)![p.id] ?? {};
+            for (const k of changed) own = setOwn(own, k, soundValue(stripped, k), soundValue(old, k));
             const all = { ...sounds.get(sec.id)! };
             if (Object.keys(own).length) all[p.id] = own;
             else delete all[p.id];
@@ -131,7 +119,7 @@ export function applySectionEdit(song: FullSong, id: string, view: Song, scope: 
                 const mine = all[p.id];
                 if (!mine) continue;
                 let own = mine;
-                for (const k of changed) own = followSong(own, k, rec(prev)[k], rec(stripped)[k]);
+                for (const k of changed) own = followSong(own, k, soundValue(prev, k), soundValue(stripped, k));
                 if (own === mine) continue;
                 const nextAll = { ...all };
                 if (Object.keys(own).length) nextAll[p.id] = own;
@@ -139,7 +127,8 @@ export function applySectionEdit(song: FullSong, id: string, view: Song, scope: 
                 sounds.set(sid, nextAll);
             }
         }
-        return shallowEqual(old, next, ['notes', 'drums']) ? old : next;
+        // content lives in the sections: a part whose song-wide settings didn't change keeps its object
+        return shallowEqual(old, next, CONTENT_KEYS) ? old : next;
     });
     const ids = new Set(parts.map(p => p.id));
     /** The section's own sound after the edit: same object when nothing changed, left out when empty. */
@@ -198,19 +187,19 @@ export const hasOwnSound = (sec: Section): boolean => !!sec.sound && Object.valu
  * name ('instrument', 'playMode', 'sings'…), an entry of effects, pan or shape as 'fx.reverb',
  * 'tone.pan', 'shape.cutoff'. Parts marks these while that section is open.
  */
-export function ownSoundKeys(song: FullSong, id: string, partId: string): Set<string> {
+export function ownSoundKeys(song: FullSong, id: SectionId, partId: PartId): Set<string> {
     const out = new Set<string>();
     const own = song.sections.find(s => s.id === id)?.sound?.[partId];
     const part = song.parts.find(p => p.id === partId);
     if (!own || !part) return out;
-    for (const [k, mine] of Object.entries(own)) {
-        const theirs = rec(part)[k];
+    for (const k of Object.keys(own).filter(isSoundKey)) {
+        const mine = soundValue(own, k);
+        const theirs = soundValue(part, k);
         if (sameValue(mine, theirs)) continue;
-        if (mine !== null && typeof mine === 'object' && !Array.isArray(mine)) {
-            const a = mine as Rec;
-            const b = (theirs ?? {}) as Rec;
-            for (const e of new Set([...Object.keys(a), ...Object.keys(b)])) {
-                if (a[e] !== b[e]) out.add(`${k}.${e}`);
+        if (isObj(mine)) {
+            const b = isObj(theirs) ? theirs : {};
+            for (const e of new Set([...Object.keys(mine), ...Object.keys(b)])) {
+                if (mine[e] !== b[e]) out.add(`${k}.${e}`);
             }
         } else {
             out.add(k);
@@ -220,7 +209,7 @@ export function ownSoundKeys(song: FullSong, id: string, partId: string): Set<st
 }
 
 /** "Use the song's sound": part `partId` sounds the song's way again in section `id` (its own sound there goes). */
-export function clearSectionSound(song: FullSong, id: string, partId: string): FullSong {
+export function clearSectionSound(song: FullSong, id: SectionId, partId: PartId): FullSong {
     const sec = song.sections.find(s => s.id === id);
     if (!sec?.sound || !(partId in sec.sound)) return song;
     const { [partId]: _gone, ...rest } = sec.sound;
@@ -232,18 +221,18 @@ export function clearSectionSound(song: FullSong, id: string, partId: string): F
 // ---- the engine strips: one per part, and one more for each section that sounds its own way ----------
 
 /** The engine strip a part plays through in section `sec`: its own when the section changes how the part sounds. */
-export function stripId(sec: Section | undefined, partId: string): string {
+export function stripId(sec: Section | undefined, partId: PartId): StripId {
     const own = sec?.sound?.[partId];
-    return own && STRIP_KEYS.some(k => k in own) ? `${partId}@${sec!.id}` : partId;
+    return own && sec && STRIP_KEYS.some(k => k in own) ? sectionStrip(partId, sec.id) : partStrip(partId);
 }
 
 /** Every strip the song needs, with the part as it sounds through it. */
-export function engineStrips(song: FullSong): { id: string; part: Part }[] {
-    const out = song.parts.map(p => ({ id: p.id, part: p }));
+export function engineStrips(song: FullSong): { id: StripId; part: Part }[] {
+    const out = song.parts.map(p => ({ id: partStrip(p.id), part: p }));
     for (const s of song.sections) {
         for (const p of song.parts) {
             const id = stripId(s, p.id);
-            if (id !== p.id) out.push({ id, part: withSound(p, s.sound?.[p.id]) });
+            if (id !== partStrip(p.id)) out.push({ id, part: withSound(p, s.sound?.[p.id]) });
         }
     }
     return out;
@@ -255,11 +244,11 @@ export const sectionTicks = (song: FullSong, sec: Section) => sec.steps * ticksP
 export const sectionBars = (ts: TimeSignature, sec: Section) => Math.round((sec.steps / ts.beats) * 10) / 10;
 
 /** How many times a section is in the chain. */
-export const chainCount = (song: FullSong, id: string) => song.chain.filter(e => e.sectionId === id).length;
+export const chainCount = (song: FullSong, id: SectionId) => song.chain.filter(e => e.sectionId === id).length;
 
-function newId(song: FullSong): string {
+function newId(song: FullSong): SectionId {
     const n = song.sections.reduce((m, s) => Math.max(m, parseInt(s.id.replace(/\D/g, ''), 10) || 0), 0);
-    return `s${n + 1}`;
+    return sectionIdFor(n + 1);
 }
 
 /** A new section's default name: a letter, counting on from the number of sections, that no section uses yet. */
@@ -272,8 +261,8 @@ function freeLetter(song: FullSong): string {
 }
 
 /** An empty section, one row long, after the others. */
-export function addSection(song: FullSong): { song: FullSong; id: string } {
-    if (song.sections.length >= MAX_SECTIONS) return { song, id: '' };
+export function addSection(song: FullSong): { song: FullSong; id?: SectionId } {
+    if (song.sections.length >= MAX_SECTIONS) return { song };
     const id = newId(song);
     const name = freeLetter(song);
     const sec: Section = { id, name, letter: letterFor(name), steps: stepsPerRow(song.timeSignature), chords: [], content: {}, mutes: {} };
@@ -291,30 +280,30 @@ function copyName(song: FullSong, name: string): string {
 }
 
 /** A copy of section `id` (chords, content, mutes), right after it. It isn't added to the chain. */
-export function duplicateSection(song: FullSong, id: string): { song: FullSong; id: string } {
+export function duplicateSection(song: FullSong, id: SectionId): { song: FullSong; id?: SectionId } {
     const src = song.sections.find(s => s.id === id);
-    if (!src || song.sections.length >= MAX_SECTIONS) return { song, id: '' };
+    if (!src || song.sections.length >= MAX_SECTIONS) return { song };
     const copy: Section = { ...src, id: newId(song), name: copyName(song, src.name) };
     const at = song.sections.indexOf(src) + 1;
     return { song: { ...song, sections: [...song.sections.slice(0, at), copy, ...song.sections.slice(at)] }, id: copy.id };
 }
 
 /** Remove section `id` and its chain entries. The last section stays; the chain is never left empty. */
-export function deleteSection(song: FullSong, id: string): FullSong {
+export function deleteSection(song: FullSong, id: SectionId): FullSong {
     if (song.sections.length <= 1 || !song.sections.some(s => s.id === id)) return song;
     const sections = song.sections.filter(s => s.id !== id);
     const chain = song.chain.filter(e => e.sectionId !== id);
     return { ...song, sections, chain: chain.length ? chain : [{ sectionId: sections[0].id }] };
 }
 
-export function renameSection(song: FullSong, id: string, name: string): FullSong {
+export function renameSection(song: FullSong, id: SectionId, name: string): FullSong {
     const clean = name.trim().slice(0, 24);
     if (!clean) return song;
     return { ...song, sections: song.sections.map(s => (s.id === id ? { ...s, name: clean, letter: letterFor(clean) } : s)) };
 }
 
 /** Mute (or unmute) a part in one section only. */
-export function setSectionMute(song: FullSong, id: string, partId: string, muted: boolean): FullSong {
+export function setSectionMute(song: FullSong, id: SectionId, partId: PartId, muted: boolean): FullSong {
     return {
         ...song,
         sections: song.sections.map(s => {
@@ -327,7 +316,7 @@ export function setSectionMute(song: FullSong, id: string, partId: string, muted
 
 // ---- the chain -----------------------------------------------------------------------------------
 
-export function appendToChain(song: FullSong, id: string): FullSong {
+export function appendToChain(song: FullSong, id: SectionId): FullSong {
     if (song.chain.length >= MAX_CHAIN || !song.sections.some(s => s.id === id)) return song;
     return { ...song, chain: [...song.chain, { sectionId: id }] };
 }
@@ -424,7 +413,7 @@ export function cleanSlate(song: FullSong): FullSong {
     const old = song.parts.find((p): p is ChordPart => p.kind === 'chords');
     const fresh = newPart('chords', []) as ChordPart;
     const keys: ChordPart = old ? { ...fresh, id: old.id, instrument: old.instrument } : fresh;
-    const id = song.sections[0]?.id ?? 's1';
+    const id = song.sections[0]?.id ?? sectionIdFor(1);
     return {
         key: song.key,
         scale: song.scale,
@@ -445,10 +434,8 @@ export type PartState = 'plays' | 'muted' | 'silent';
 
 export function partStateIn(song: FullSong, sec: Section, part: Part): PartState {
     const audible = audibleParts(song.parts).includes(part);
-    const c = sec.content[part.id];
-    const has = hasNotes(part) && (part.kind === 'melody' || part.sings === 'notes') ? !!c?.notes?.length
-        : part.kind === 'drums' ? !!c?.drums && !isEmptyPattern(c.drums)
-            : sec.chords.some(isChordClip);
+    // a part with content of its own plays it; the others follow the chords
+    const has = playsContent(part, sec.content[part.id]) ?? sec.chords.some(isChordClip);
     // a mute (in this section, or for the whole song) shows even where the part has nothing to play
     if (!audible || sec.mutes[part.id]) return 'muted';
     return has ? 'plays' : 'silent';

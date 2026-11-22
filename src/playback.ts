@@ -1,13 +1,15 @@
 import { DrumVoice, TICKS_PER_SIXTEENTH, expandPattern } from './drums';
-import { Harmony, Part, PartKind, audibleParts, musicEnd, musicLoopEnd, outsideRests, partNotes, restSpans } from './parts';
+import { musicEnd, musicLoopEnd } from './content';
+import { Harmony, Part, PartKind, audibleParts, outsideRests, partNotes, restSpans } from './parts';
 import { ChainSlot, chainLayout, chainTicks, sectionView, stripId } from './sections';
 import { FullSong, Section, Song, TimeSignature, ticksPerBar, ticksPerStep } from './song';
 import type { MusicalKey, ScaleId } from './theory';
+import type { StripId } from './ids';
 
 /** What the sequencer schedules: some notes or a drum hit, and the engine strip that plays them (`stripId`). */
 export type Scheduled =
-    | { midi: number[]; gate?: number; strum?: number[]; velocity?: number; legato: number; part: string; drum?: undefined }
-    | { drum: DrumVoice; part: string; midi?: undefined }
+    | { midi: number[]; gate?: number; strum?: number[]; velocity?: number; legato: number; part: StripId; drum?: undefined }
+    | { drum: DrumVoice; part: StripId; midi?: undefined }
 
 
 /** An event at `tick` lasting `duration` ticks (the shape `SequencerPlayer` takes). */

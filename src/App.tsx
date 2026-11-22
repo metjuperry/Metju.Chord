@@ -35,6 +35,7 @@ import {
     duplicateEntry, duplicateSection, engineStrips, findSection, isCleanSlate, moveEntry, removeEntry, renameSection, sectionView, setSectionMute, slotAt,
     SoundScope, clearSectionSound, ownSoundKeys, stripId,
 } from './sections';
+import { PartId, StripId, partStrip } from './ids';
 import { PREVIEW_TAIL_BEATS, previewSound } from './preview';
 import { slideIn, useSegmentThumbs, zoomSection } from './motion';
 import type { ShapeOverrides } from './sound';
@@ -44,8 +45,9 @@ import SectionSwitcher from './components/SectionSwitcher';
 import { Clip, clipAt, fitTo, isChordClip, place, remove, setLength, split } from './progression';
 import {
     Accidental, ChordPart, Harmony, MAX_PARTS, Note, Part, PartFx, PartKind, PartTone, noFx,
-    fitNotes, pasteNotes, notesIn, replaceRange, hasInstrument, hasNotes, melodyMidi, writesNotes, noteWriter, NotesPart, newPart, noteAt, noteMidi, partNotes, placeNote, removeNote, resolveClip, withAcc,
+    pasteNotes, notesIn, replaceRange, hasInstrument, hasNotes, melodyMidi, writesNotes, noteWriter, NotesPart, newPart, noteAt, noteMidi, partNotes, placeNote, removeNote, resolveClip, withAcc,
 } from './parts';
+import { fitContent } from './content';
 import { SeqEvent, SeqEvents, SeqOptions, SequencerPlayer, ticksToSeconds } from './audio/sequencer';
 import { SyncOut, loadSync, saveSync, windowPulses } from './sync';
 import { liveStroke } from './strum';
@@ -92,7 +94,7 @@ const stripInputs = (p: Part): unknown[] => (hasInstrument(p)
  * what each strip was last given, so a song edit only touches the strips whose sound it changed (a
  * section strip's part is a fresh object every time, so this compares what goes into the engine).
  */
-function syncParts(engine: ReturnType<typeof getEngine>, strips: { id: string; part: Part }[], applied: Map<string, unknown[]>) {
+function syncParts(engine: ReturnType<typeof getEngine>, strips: { id: StripId; part: Part }[], applied: Map<StripId, unknown[]>) {
     strips.forEach(({ id, part: p }) => {
         const inputs = stripInputs(p);
         const last = applied.get(id);
@@ -319,7 +321,7 @@ const App: React.FC = () => {
     const [partsSel, setPartsSel] = useState('');
     const partsShown = partsSel === MASTER || parts.some(p => p.id === partsSel) ? partsSel : padPart.id;
     /** The engine strip a part plays through live (pads, previews): the open section's while it's open, the song's otherwise. */
-    const trackOf = (partId: string) => (soundScope === 'section' ? stripId(findSection(full, openKey), partId) : partId);
+    const trackOf = (partId: PartId): StripId => (soundScope === 'section' ? stripId(findSection(full, openKey), partId) : partStrip(partId));
     const trackOfRef = useRef(trackOf);
     trackOfRef.current = trackOf;
     // Notes mode: the pads play single scale notes on a melody part and record into it
@@ -369,7 +371,7 @@ const App: React.FC = () => {
     /** A part's live waveform for the Parts scope (null until the audio has started). */
     // the scope listens to the strip the open thing plays through
     const scopeSec = soundScope === 'section' ? findSection(full, openKey) : undefined;
-    const scopeOf = useCallback((id: string) => (audioReady ? getEngine().analyser(stripId(scopeSec, id)) : null), [audioReady, scopeSec]);
+    const scopeOf = useCallback((id: PartId) => (audioReady ? getEngine().analyser(stripId(scopeSec, id)) : null), [audioReady, scopeSec]);
     // turning one shape knob is one undo step; Reset puts the part back to its instrument's own sound
     const shapeActions = {
         set: (id: string, patch: ShapeOverrides, key: string) =>
@@ -420,7 +422,7 @@ const App: React.FC = () => {
     // ---- audio start --------------------------------------------------------------
 
     /** What each engine strip was last given (`syncParts`). */
-    const appliedStrips = useRef(new Map<string, unknown[]>());
+    const appliedStrips = useRef(new Map<StripId, unknown[]>());
 
     const startAudio = async () => {
         if (audioReady) return;
@@ -448,7 +450,7 @@ const App: React.FC = () => {
 
     // Keep the engine's per-part strips (instrument, volume) in step with the parts
     const strips = useMemo(() => engineStrips(full), [full.parts, full.sections]); // eslint-disable-line react-hooks/exhaustive-deps
-    const engineParts = useRef(new Set<string>());
+    const engineParts = useRef(new Set<StripId>());
     useEffect(() => {
         if (!audioReady) return;
         const engine = getEngine();
@@ -1221,7 +1223,7 @@ const App: React.FC = () => {
                 ...sg,
                 steps: next,
                 chords: fitTo(sg.chords, next * T),
-                parts: sg.parts.map(p => (hasNotes(p) ? { ...p, notes: fitNotes(p.notes, next * T) } : p)),
+                parts: sg.parts.map(p => fitContent(p, next * T)),
             }));
             setSelected(Math.min(selected, next - 1));
             setPlayhead(Math.min(playhead, next - 1));

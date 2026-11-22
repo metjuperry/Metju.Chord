@@ -1,0 +1,178 @@
+{
+ "version": 3,
+ "song": {
+  "key": "D",
+  "scale": "dorian",
+  "bpm": 140,
+  "timeSignature": {
+   "beats": 6,
+   "unit": 8
+  },
+  "space": {
+   "reverb": {
+    "size": 2.5,
+    "ret": 0.8
+   },
+   "delay": {
+    "time": "8n",
+    "feedback": 0.35,
+    "ret": 0.7
+   },
+   "out": {
+    "level": 1
+   }
+  },
+  "parts": [
+   {
+    "id": "p4",
+    "name": "Keys",
+    "color": "#7fb4ff",
+    "volume": 0,
+    "mute": false,
+    "solo": false,
+    "fx": {
+     "chorus": 0,
+     "tremolo": 0,
+     "glide": 0,
+     "reverb": 0,
+     "delay": 0
+    },
+    "kind": "chords",
+    "instrument": "epiano",
+    "tone": {
+     "pan": 0.5
+    },
+    "shape": {},
+    "playMode": "Chord",
+    "arpPattern": "up",
+    "arpRate": "8n",
+    "noteLength": 0.3,
+    "strumSpread": 0.035,
+    "strumDirection": "down",
+    "strumPattern": "pop"
+   },
+   {
+    "id": "p2",
+    "name": "Ooh",
+    "color": "#4fd1c5",
+    "volume": 0,
+    "mute": false,
+    "solo": false,
+    "fx": {
+     "chorus": 0,
+     "tremolo": 0,
+     "glide": 0,
+     "reverb": 0,
+     "delay": 0
+    },
+    "kind": "voice",
+    "instrument": "voice",
+    "tone": {
+     "pan": 0.5
+    },
+    "shape": {},
+    "sings": "chords",
+    "octave": 4,
+    "notes": []
+   },
+   {
+    "id": "p3",
+    "name": "Drums",
+    "color": "#ff7aa8",
+    "volume": 0,
+    "mute": false,
+    "solo": false,
+    "fx": {
+     "chorus": 0,
+     "tremolo": 0,
+     "glide": 0,
+     "reverb": 0,
+     "delay": 0
+    },
+    "kind": "drums",
+    "drums": {
+     "bars": 1,
+     "hits": {}
+    }
+   }
+  ],
+  "sections": [
+   {
+    "id": "s1",
+    "name": "A",
+    "letter": "A",
+    "steps": 12,
+    "chords": [
+     {
+      "start": 0,
+      "len": 288,
+      "chord": {
+       "degree": 1,
+       "type": "minor",
+       "inversion": 0,
+       "octave": 4
+      }
+     },
+     {
+      "start": 288,
+      "len": 144,
+      "rest": true,
+      "plays": {
+       "p2": true
+      }
+     }
+    ],
+    "content": {
+     "p2": {
+      "notes": [
+       {
+        "start": 0,
+        "len": 24,
+        "step": 1
+       }
+      ]
+     },
+     "p3": {
+      "drums": {
+       "bars": 1,
+       "hits": {
+        "kick": [
+         0,
+         6,
+         11
+        ],
+        "rim": [
+         3
+        ]
+       }
+      }
+     }
+    },
+    "mutes": {}
+   }
+  ],
+  "chain": [
+   {
+    "sectionId": "s1"
+   }
+  ]
+ },
+ "settings": {
+  "voiceLeading": false,
+  "octave": 4,
+  "inversion": 0,
+  "loop": true,
+  "theme": "dark",
+  "nextHint": true,
+  "padPart": "",
+  "clickAccent": true,
+  "openSection": "s1",
+  "playMode": "loop",
+  "learnTab": "progressions",
+  "chordMood": false,
+  "soundPreview": true,
+  "shapeView": "simple",
+  "partsTab": "sound",
+  "chordLength": "bar"
+ }
+}

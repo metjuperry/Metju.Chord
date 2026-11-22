@@ -4,7 +4,8 @@ import {
     patternLength, presetsFor, setBars, sixteenthsPerBar, toggleHit,
 } from './drums';
 import { TIME_SIGNATURES, TimeSignature, changeTimeSignature, newSong, readSong, ticksPerBar } from './song';
-import { musicEnd, musicLoopEnd, newPart } from './parts';
+import { newPart } from './parts';
+import { musicEnd, musicLoopEnd } from './content';
 
 const FOUR: TimeSignature = { beats: 4, unit: 4 };
 

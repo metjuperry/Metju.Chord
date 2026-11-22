@@ -7,6 +7,7 @@ import { PartFx, PartTone, glideSeconds, glides, neutralTone, noFx, shapePan } f
 import { PartShape, ShapeOverrides, driveCurve, driveMakeupDb, effectiveShape, filterEnvelope, lfoRange, resonanceQ } from '../sound';
 import type { Space } from '../song';
 import { SyncOut, defaultSync, pulseTime } from '../sync';
+import type { StripId } from '../ids';
 
 export type ArpRate = '4n' | '8n' | '8t' | '16n' | '16t' | '32n';
 
@@ -129,8 +130,8 @@ export class Engine {
     private strips = new Map<string, Strip>();
     /** One kit per drum part. */
     private kits = new Map<string, Channel & { kit: DrumKit }>();
-    /** The part the pads and keyboard play through. */
-    private current = 'main';
+    /** The strip the pads and keyboard play through (until one is selected, one the level check uses). */
+    private current = 'main' as StripId;
     private transportUsers = new Set<string>();
 
     /** Sync out (see sync.ts): when on, master -> mono sum -> right channel, pulses -> left channel. */
@@ -415,7 +416,7 @@ export class Engine {
     // ---- instruments -------------------------------------------------------
 
     /** Create or update a part's strip. Changing its instrument swaps the synth with a short fade. */
-    setTrack(id: string, opts: { instrument: InstrumentId; volume: number; fx?: PartFx; tone?: PartTone; shape?: ShapeOverrides }) {
+    setTrack(id: StripId, opts: { instrument: InstrumentId; volume: number; fx?: PartFx; tone?: PartTone; shape?: ShapeOverrides }) {
         let strip = this.strips.get(id);
         if (!strip) {
             const voice = createInstrument(opts.instrument);
@@ -457,7 +458,7 @@ export class Engine {
     }
 
     /** Create or update a drum part's kit, level and sends. */
-    setDrumTrack(id: string, opts: { volume: number; fx?: PartFx }) {
+    setDrumTrack(id: StripId, opts: { volume: number; fx?: PartFx }) {
         let ch = this.kits.get(id);
         if (!ch) {
             const kit = new DrumKit();
@@ -471,7 +472,7 @@ export class Engine {
     }
 
     /** Play one drum hit on a drum part at an audio-clock `time` (default: live, `liveTime`). */
-    playDrum(track: string, voice: DrumVoice, time?: number, velocity = 1) {
+    playDrum(track: StripId, voice: DrumVoice, time?: number, velocity = 1) {
         const ch = this.kits.get(track);
         if (!ch) return;
         try {
@@ -482,7 +483,7 @@ export class Engine {
     }
 
     /** The waveform of a part's output (after its level), for the Parts scope; tapped on first ask, null for an unknown part. */
-    analyser(id: string): Tone.Analyser | null {
+    analyser(id: StripId): Tone.Analyser | null {
         const ch = this.strips.get(id) ?? this.kits.get(id);
         if (!ch) return null;
         if (!ch.scope) {
@@ -493,7 +494,7 @@ export class Engine {
         return ch.scope;
     }
 
-    removeTrack(id: string) {
+    removeTrack(id: StripId) {
         const kit = this.kits.get(id);
         if (kit) {
             this.kits.delete(id);
@@ -507,7 +508,7 @@ export class Engine {
     }
 
     /** The track the pads and keyboard play through. */
-    selectTrack(id: string) {
+    selectTrack(id: StripId) {
         this.current = id;
     }
 
@@ -517,7 +518,7 @@ export class Engine {
         this.setTrack(this.current, { instrument: id, volume: strip ? strip.level.volume.value : 0 });
     }
 
-    private strip(track: string = this.current): Strip {
+    private strip(track: StripId = this.current): Strip {
         if (!this.strips.has(track)) this.setTrack(track, { instrument: 'epiano', volume: 0 });
         return this.strips.get(track)!;
     }
@@ -542,7 +543,7 @@ export class Engine {
      * Play a chord for `duration` (seconds or Tone time) at an audio-clock `time` (default: live,
      * `liveTime`), on `track` (default: the selected one).
      */
-    playChord(midi: number[], opts: { duration: Tone.Unit.Time; time?: number; track?: string; strum?: number[]; velocity?: number }) {
+    playChord(midi: number[], opts: { duration: Tone.Unit.Time; time?: number; track?: StripId; strum?: number[]; velocity?: number }) {
         const strip = this.strip(opts.track);
         const time = opts.time ?? liveTime();
         const seconds = Tone.Time(opts.duration).toSeconds();
@@ -561,7 +562,7 @@ export class Engine {
      * Start a chord at `time` (default: live, `liveTime`) on `track` (default: the selected one); returns
      * how to release it (live too), on that same synth even if the selection changes.
      */
-    attack(midi: number[], time?: number, track?: string, strum?: number[], strength = 1): () => void {
+    attack(midi: number[], time?: number, track?: StripId, strum?: number[], strength = 1): () => void {
         const strip = this.strip(track);
         const voice = strip.voice;
         const at = time ?? liveTime();
@@ -689,7 +690,7 @@ export class Engine {
     }
 
     /** Schedule an arpeggio at an exact audio time, filling `seconds` (used by sequencer steps). */
-    scheduleArp(midi: number[], opts: ArpOptions, time: number, seconds: number, track?: string) {
+    scheduleArp(midi: number[], opts: ArpOptions, time: number, seconds: number, track?: StripId) {
         const strip = this.strip(track);
         const voice = strip.voice;
         const stepSeconds = Tone.Time(opts.rate).toSeconds();

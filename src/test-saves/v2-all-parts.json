@@ -1,0 +1,46 @@
+{
+  "version": 2,
+  "song": {
+    "key": "A", "scale": "minor", "bpm": 92, "steps": 16,
+    "timeSignature": { "beats": 4, "unit": 4 },
+    "space": { "reverb": { "size": 3.1, "ret": 0.6 }, "delay": { "time": "8t", "feedback": 0.5, "ret": 0.4 }, "out": { "level": 0.9 } },
+    "chords": [
+      { "start": 0, "len": 384, "chord": { "degree": 0, "type": "triad", "inversion": 0, "octave": 4 } },
+      { "start": 384, "len": 192, "rest": true, "plays": { "p1": true, "p3": false, "p9": true, "p2": "yes" } },
+      { "start": 576, "len": 192, "rest": true },
+      { "start": 768, "len": 384, "chord": { "degree": 5, "type": "dom7", "inversion": 1, "octave": 3 } },
+      { "start": 800, "len": 96, "chord": { "degree": 2, "type": "triad", "inversion": 0, "octave": 4 } },
+      { "start": 1152, "len": 384, "chord": { "degree": 3, "type": "sus4", "inversion": 0, "octave": 4 } }
+    ],
+    "parts": [
+      { "id": "p1", "kind": "chords", "name": "Keys", "color": "#4fd1c5", "volume": -3, "mute": false, "solo": false,
+        "instrument": "piano", "fx": { "chorus": 0.2, "tremolo": 0, "glide": 0, "reverb": 0.3, "delay": 0.1, "drive": 0.4 },
+        "tone": { "pan": 0.3, "attack": 0.8, "release": 0.2, "brightness": 0.2 },
+        "playMode": "Strum", "arpPattern": "upDown", "arpRate": "16n", "noteLength": 0.2, "strumSpread": 0.02, "strumDirection": "alternate", "strumPattern": "folk" },
+      { "id": "p2", "kind": "bass", "name": "Bass", "color": "#ff7aa8", "volume": 2, "mute": true, "solo": false,
+        "instrument": "bass", "fx": { "chorus": 0, "tremolo": 0, "glide": 0.4, "reverb": 0, "delay": 0 }, "tone": { "pan": 0.5 },
+        "shape": { "cutoff": 900, "drive": 0.3, "driveType": "crunch" }, "style": "walk", "octave": 2 },
+      { "id": "p3", "kind": "melody", "name": "Lead", "color": "#7fb4ff", "volume": 0, "mute": false, "solo": true,
+        "instrument": "lead", "fx": { "chorus": 0, "tremolo": 0.3, "glide": 0.2, "reverb": 0.4, "delay": 0.2 }, "tone": { "pan": 0.7 },
+        "shape": {}, "octave": 5,
+        "notes": [
+          { "start": 0, "len": 48, "step": 4 },
+          { "start": 48, "len": 24, "step": 6, "acc": 1 },
+          { "start": 60, "len": 24, "step": 2 },
+          { "start": 96, "len": 96, "step": 3, "acc": -1 },
+          { "start": 192, "len": 24, "step": 5, "acc": 0 },
+          { "start": 1500, "len": 96, "step": 1 }
+        ] },
+      { "id": "p4", "kind": "drums", "name": "Beat", "color": "#d38cff", "volume": -2, "mute": false, "solo": false,
+        "fx": { "chorus": 0.5, "tremolo": 0.5, "glide": 0.5, "reverb": 0.2, "delay": 0.1 },
+        "drums": { "bars": 2, "hits": { "kick": [0, 8, 16, 24, 40], "snare": [4, 12, 20, 28], "hat": [0, 2, 2, 4, 6, 33], "cowbell": [1] } } },
+      { "id": "p5", "kind": "voice", "name": "Choir", "color": "#c8e06e", "volume": -4, "mute": false, "solo": false,
+        "instrument": "voice", "fx": { "chorus": 0.1, "tremolo": 0, "glide": 0, "reverb": 0.5, "delay": 0 }, "tone": { "pan": 0.5 },
+        "singers": 3, "range": "alto", "vowel": "oo", "vibrato": 0.4, "breath": 0.2,
+        "sings": "notes", "octave": 3,
+        "notes": [ { "start": 0, "len": 192, "step": 0, "vowel": "aa" }, { "start": 192, "len": 192, "step": 2, "acc": 1, "vowel": "ee" } ],
+        "vowels": [ { "start": 0, "len": 384, "vowel": "oo" } ] }
+    ]
+  },
+  "settings": { "voiceLeading": true, "octave": 3, "inversion": 2, "loop": false, "theme": "light", "nextHint": false, "padPart": "p1", "clickAccent": false, "playMode": "chain", "chordLength": 2 }
+}
