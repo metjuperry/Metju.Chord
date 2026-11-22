@@ -3,7 +3,7 @@ import type { ArpRate } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
 import { Clip, PPQ, STEPS_PER_ROW } from './progression';
 import { sixteenthsPerBar } from './drums';
-import { CONTENT, CONTENT_KEYS, PartContent, contentOf, readContent, rescaleContent, stripContent } from './content';
+import { CONTENT, CONTENT_KEYS, ContentKey, PartContent, contentOf, readContent, rescaleContent, stripContent } from './content';
 import { Obj, bool, int, isObj, num, oneOf } from './reading';
 import type { LearnTab } from './learn';
 import { STRUM_PATTERN_IDS, StrumPattern, nearestSpread } from './strum';
@@ -124,8 +124,17 @@ export interface Section {
     sound?: { [partId: string]: SectionSound };
 }
 
-/** A section's own values for some of a part's settings (see `Section.sound`). */
-export type SectionSound = { [key: string]: unknown };
+/** What a part is everywhere: its identity, its song-wide mute and solo, and its content. A section can set everything else its own way. */
+export type SongWideKey = 'id' | 'kind' | 'name' | 'color' | 'mute' | 'solo' | ContentKey;
+type PartOf<K extends PartKind> = Extract<Part, { kind: K }>;
+/** The settings of a part of kind `K` that a section can set its own way: its sound and style. */
+export type SoundKeyOf<K extends PartKind> = Exclude<keyof PartOf<K>, SongWideKey>;
+/** Any part's sound key. */
+export type SoundKey = { [K in PartKind]: SoundKeyOf<K> }[PartKind];
+/** A section's own values for some of a part of kind `K`'s settings. */
+export type SoundOf<K extends PartKind> = Partial<Pick<PartOf<K>, SoundKeyOf<K>>>;
+/** A section's own values for some of a part's settings (see `Section.sound`): a `SoundOf` the part's kind. */
+export type SectionSound = { [K in PartKind]: SoundOf<K> }[PartKind];
 
 /** One slot of the chain (the song's running order); a repeat is the same section twice in a row. */
 export interface ChainEntry {
@@ -242,11 +251,54 @@ export const defaultSettings = (): Settings => ({
 
 // ---- a section's own sound for a part ----------------------------------------------------------
 
-/** What a part is everywhere: its identity, its song-wide mute and solo, and its content (notes, drums). A section can set everything else its own way. */
-const SONG_WIDE_KEYS: string[] = ['id', 'kind', 'name', 'color', 'mute', 'solo', ...CONTENT_KEYS];
-export const isSoundKey = (k: string) => !SONG_WIDE_KEYS.includes(k);
+/**
+ * Each kind's sound keys (`SoundKeyOf`), in the order a new part has them. A new setting on a part goes
+ * here too: the compiler says so (`AllSoundKeysListed`), and the readers, section edits and the dots in
+ * Parts then handle it.
+ */
+export const SOUND_KEYS = {
+    chords: ['volume', 'fx', 'instrument', 'tone', 'shape', 'playMode', 'arpPattern', 'arpRate', 'noteLength', 'strumSpread', 'strumDirection', 'strumPattern'],
+    bass: ['volume', 'fx', 'instrument', 'tone', 'shape', 'style', 'octave'],
+    melody: ['volume', 'fx', 'instrument', 'tone', 'shape', 'octave'],
+    voice: ['volume', 'fx', 'instrument', 'tone', 'shape', 'sings', 'octave'],
+    drums: ['volume', 'fx'],
+} as const satisfies { [K in PartKind]: readonly SoundKeyOf<K>[] };
+type Unlisted = { [K in PartKind]: Exclude<SoundKeyOf<K>, (typeof SOUND_KEYS)[K][number]> }[PartKind];
+/** A compile error here names a part setting missing from `SOUND_KEYS`. */
+export type AllSoundKeysListed = [Unlisted] extends [never] ? true : { missing: Unlisted };
+export const allSoundKeysListed: AllSoundKeysListed = true;
+/** Everything else on a part, which stays song-wide. */
+export const SONG_WIDE_KEYS: readonly SongWideKey[] = ['id', 'kind', 'name', 'color', 'mute', 'solo', ...CONTENT_KEYS];
+
+const ALL_SOUND_KEYS: readonly string[] = [...new Set(Object.values(SOUND_KEYS).flat())];
+/** Is `k` a sound key of some kind of part? */
+export const isSoundKey = (k: string): k is SoundKey => ALL_SOUND_KEYS.includes(k);
+/** Is `k` a sound key of a part of kind `kind`? */
+export const isSoundKeyOf = (kind: PartKind, k: string): k is SoundKey => (SOUND_KEYS[kind] as readonly string[]).includes(k);
 /** Keys that change the engine strip a part plays through (the rest only changes which notes it plays). */
-export const STRIP_KEYS = ['instrument', 'volume', 'fx', 'tone', 'shape'];
+export const STRIP_KEYS = ['instrument', 'volume', 'fx', 'tone', 'shape'] as const satisfies readonly SoundKey[];
+
+/** Sound values by key, whatever the kind: how the section-sound code reads and writes one key at a time. */
+type SoundRecord = { [K in SoundKey]?: unknown };
+
+/** A part's value for sound key `k`, or a section's own (undefined where it has none). */
+export const soundValue = (x: Part | SectionSound, k: SoundKey): unknown => (x as SoundRecord)[k];
+
+/**
+ * `own` with `k` set to `v`, or without `k` for undefined. `v` is a value of that key on the part `own`
+ * belongs to (or read from one), which is what keeps a section's sound the part's kind's.
+ */
+export function withSoundValue(own: SectionSound, k: SoundKey, v: unknown): SectionSound {
+    const { [k]: _old, ...rest }: SoundRecord = own;
+    return (v === undefined ? rest : { ...rest, [k]: v }) as SectionSound;
+}
+
+/** The sound keys of part `p`'s kind. */
+export const soundKeysOf = (p: Part): readonly SoundKey[] => SOUND_KEYS[p.kind];
+
+/** Part `p`'s sound: every sound key of its kind, with its values. */
+export const partSound = (p: Part): SectionSound =>
+    soundKeysOf(p).reduce<SectionSound>((own, k) => (k in p ? withSoundValue(own, k, soundValue(p, k)) : own), {});
 
 /** Equal values, looking one level into objects (fx, tone and shape are flat records). */
 export function sameValue(a: unknown, b: unknown): boolean {
@@ -258,6 +310,7 @@ export function sameValue(a: unknown, b: unknown): boolean {
 }
 
 /** A part as it sounds in a section: the section's own values laid over the song's. */
+// (`own` is the part's kind's sound, as the readers and `applySectionEdit` keep it; the types can't tie a record's value to the part's kind)
 export const withSound = (p: Part, own: SectionSound | undefined): Part => (own && Object.keys(own).length ? { ...p, ...own } as Part : p);
 
 /** A version-2 song (one chord row) as a version-3 song: one section "A" holding all of it, chained once. */
@@ -485,13 +538,13 @@ function readSectionSound(v: unknown, parts: Part[], barLen: number): Section['s
         const raw = v[p.id];
         if (!isObj(raw)) return;
         // an instrument that isn't one is no change (not a switch to the kind's default instrument)
-        const own = Object.fromEntries(Object.entries(raw).filter(([k, val]) => isSoundKey(k) && (k !== 'instrument' || INSTRUMENT_IDS.includes(val as string))));
-        const read = readPart({ ...p, ...own }, i, [], 0, barLen);
+        const keys = Object.keys(raw).filter((k): k is SoundKey => isSoundKeyOf(p.kind, k) && (k !== 'instrument' || INSTRUMENT_IDS.includes(raw[k] as string)));
+        const read = readPart({ ...p, ...Object.fromEntries(keys.map(k => [k, raw[k]])) }, i, [], 0, barLen);
         if (!read || read.kind !== p.kind) return;
-        const keep: SectionSound = {};
-        for (const k of Object.keys(own)) {
-            const val = (read as unknown as Obj)[k];
-            if (k in read && !sameValue(val, (p as unknown as Obj)[k])) keep[k] = val;
+        let keep: SectionSound = {};
+        for (const k of keys) {
+            const val = soundValue(read, k);
+            if (k in read && !sameValue(val, soundValue(p, k))) keep = withSoundValue(keep, k, val);
         }
         if (Object.keys(keep).length) out[p.id] = keep;
     });

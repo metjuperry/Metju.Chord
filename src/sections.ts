@@ -2,9 +2,10 @@ import { CONTENT_KEYS, contentOf, fillContent, musicLoopEnd, playsContent, sameC
 import { ChordPart, Part, audibleParts, newPart } from './parts';
 import { isChordClip } from './progression';
 import {
-    ChainEntry, FullSong, MAX_CHAIN, MAX_SECTIONS, STRIP_KEYS, Section, SectionSound, Song, TimeSignature, changeTimeSignature,
-    defaultSpace, isSoundKey, letterFor, sameValue, stepsPerRow, ticksPerBar, ticksPerStep, withSound,
+    ChainEntry, FullSong, MAX_CHAIN, MAX_SECTIONS, STRIP_KEYS, Section, SectionSound, Song, SoundKey, TimeSignature, changeTimeSignature,
+    defaultSpace, isSoundKey, isSoundKeyOf, letterFor, partSound, sameValue, soundValue, stepsPerRow, ticksPerBar, ticksPerStep, withSound, withSoundValue,
 } from './song';
+import { isObj } from './reading';
 
 // ---- the projection: one section as an ordinary single-section Song, and edits back --------------
 
@@ -51,13 +52,9 @@ function onlyParts<T>(rec: { [id: string]: T }, ids: Set<string>): { [id: string
 /** Where an edit to a part's sound goes: the open section only, or the whole song (every section). */
 export type SoundScope = 'section' | 'song';
 
-type Rec = { [k: string]: unknown };
-const rec = (p: Part) => p as unknown as Rec;
-
 /** `own` with `key` set to `value`, or without it when the song has that value anyway. */
-function setOwn(own: SectionSound, key: string, value: unknown, songValue: unknown): SectionSound {
-    const { [key]: _old, ...rest } = own;
-    return sameValue(value, songValue) ? rest : { ...rest, [key]: value };
+function setOwn(own: SectionSound, key: SoundKey, value: unknown, songValue: unknown): SectionSound {
+    return withSoundValue(own, key, sameValue(value, songValue) ? undefined : value);
 }
 
 /**
@@ -65,20 +62,16 @@ function setOwn(own: SectionSound, key: string, value: unknown, songValue: unkno
  * value: a plain value is the song's again; in a record (effects, pan, shape) just the entries that
  * changed are.
  */
-function followSong(own: SectionSound, key: string, before: unknown, after: unknown): SectionSound {
+function followSong(own: SectionSound, key: SoundKey, before: unknown, after: unknown): SectionSound {
     if (!(key in own)) return own;
-    const mine = own[key];
-    if (typeof mine !== 'object' || mine === null || typeof after !== 'object' || after === null) {
-        const { [key]: _gone, ...rest } = own;
-        return rest;
-    }
-    const b = (before ?? {}) as Rec;
-    const a = after as Rec;
-    const next: Rec = { ...(mine as Rec) };
-    for (const k of new Set([...Object.keys(b), ...Object.keys(a)])) {
-        if (b[k] === a[k]) continue;
-        if (a[k] === undefined) delete next[k];
-        else next[k] = a[k];
+    const mine = soundValue(own, key);
+    if (!isObj(mine) || !isObj(after)) return withSoundValue(own, key, undefined);
+    const b = isObj(before) ? before : {};
+    const next = { ...mine };
+    for (const k of new Set([...Object.keys(b), ...Object.keys(after)])) {
+        if (b[k] === after[k]) continue;
+        if (after[k] === undefined) delete next[k];
+        else next[k] = after[k];
     }
     return setOwn(own, key, next, after);
 }
@@ -107,13 +100,14 @@ export function applySectionEdit(song: FullSong, id: string, view: Song, scope: 
         const old = song.parts.find(o => o.id === p.id);
         const prev = before.parts.find(o => o.id === p.id);
         if (!old || !prev || old.kind !== p.kind) return stripped;
-        const changed = Object.keys(stripped).filter(k => isSoundKey(k) && !sameValue(rec(stripped)[k], rec(prev)[k]));
+        const changed = Object.keys(stripped).filter((k): k is SoundKey => isSoundKeyOf(p.kind, k))
+            .filter(k => !sameValue(soundValue(stripped, k), soundValue(prev, k)));
         let next: Part;
         if (scope === 'section') {
             // the song's part takes the name, colour, mute and solo; this section takes the sound
-            next = Object.fromEntries(Object.keys(stripped).map(k => [k, isSoundKey(k) ? rec(old)[k] : rec(stripped)[k]])) as unknown as Part;
-            let own = sounds.get(sec.id)![p.id] ?? {};
-            for (const k of changed) own = setOwn(own, k, rec(stripped)[k], rec(old)[k]);
+            next = withSound(stripped, partSound(old));
+            let own: SectionSound = sounds.get(sec.id)![p.id] ?? {};
+            for (const k of changed) own = setOwn(own, k, soundValue(stripped, k), soundValue(old, k));
             const all = { ...sounds.get(sec.id)! };
             if (Object.keys(own).length) all[p.id] = own;
             else delete all[p.id];
@@ -124,7 +118,7 @@ export function applySectionEdit(song: FullSong, id: string, view: Song, scope: 
                 const mine = all[p.id];
                 if (!mine) continue;
                 let own = mine;
-                for (const k of changed) own = followSong(own, k, rec(prev)[k], rec(stripped)[k]);
+                for (const k of changed) own = followSong(own, k, soundValue(prev, k), soundValue(stripped, k));
                 if (own === mine) continue;
                 const nextAll = { ...all };
                 if (Object.keys(own).length) nextAll[p.id] = own;
@@ -197,14 +191,14 @@ export function ownSoundKeys(song: FullSong, id: string, partId: string): Set<st
     const own = song.sections.find(s => s.id === id)?.sound?.[partId];
     const part = song.parts.find(p => p.id === partId);
     if (!own || !part) return out;
-    for (const [k, mine] of Object.entries(own)) {
-        const theirs = rec(part)[k];
+    for (const k of Object.keys(own).filter(isSoundKey)) {
+        const mine = soundValue(own, k);
+        const theirs = soundValue(part, k);
         if (sameValue(mine, theirs)) continue;
-        if (mine !== null && typeof mine === 'object' && !Array.isArray(mine)) {
-            const a = mine as Rec;
-            const b = (theirs ?? {}) as Rec;
-            for (const e of new Set([...Object.keys(a), ...Object.keys(b)])) {
-                if (a[e] !== b[e]) out.add(`${k}.${e}`);
+        if (isObj(mine)) {
+            const b = isObj(theirs) ? theirs : {};
+            for (const e of new Set([...Object.keys(mine), ...Object.keys(b)])) {
+                if (mine[e] !== b[e]) out.add(`${k}.${e}`);
             }
         } else {
             out.add(k);

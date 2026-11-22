@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { newSong, defaultSettings, chordLengthSteps, fromSingleSection, readSaved, readSong, readSettings, encodeShare, decodeShare, SAVE_VERSION, SavedState, ticksPerStep,
+import { SONG_WIDE_KEYS, SOUND_KEYS, newFullSong, newSong, defaultSettings, chordLengthSteps, fromSingleSection, readSaved, readSong, readSettings, encodeShare, decodeShare, SAVE_VERSION, SavedState, ticksPerStep,
     changeTimeSignature, stepsPerRow, transportBpm, isCompound, ticksPerBar } from './song';
 import { TICKS_PER_STEP as S } from './progression';
 import { newPart } from './parts';
@@ -296,5 +296,31 @@ describe('settings from the UI overhaul', () => {
 
     it('ignores fields that are no longer used', () => {
         expect(readSettings({ soundPanel: 'open', octave: 5 })).toEqual({ ...defaultSettings(), octave: 5 });
+    });
+});
+
+describe('sound keys', () => {
+    const kinds = ['chords', 'bass', 'melody', 'voice', 'drums'] as const;
+
+    it('are every setting of each kind of part but its identity, mute, solo and content', () => {
+        for (const kind of kinds) {
+            const part = newPart(kind, []);
+            expect(Object.keys(part).filter(k => !(SONG_WIDE_KEYS as readonly string[]).includes(k)).sort()).toEqual([...SOUND_KEYS[kind]].sort());
+            // and a part read from a save has the same keys
+            const read = readSaved({ version: 2, song: { chords: [], parts: [part] } })!.song.parts.find(p => p.kind === kind)!;
+            expect(Object.keys(read).sort()).toEqual(Object.keys(part).sort());
+        }
+    });
+
+    it('a section’s own sound keeps only its part’s kind’s keys (an old voice’s singers and vowels go)', () => {
+        const song = newFullSong();
+        const voice = { ...newPart('voice', song.parts), id: 'p9' };
+        const raw = {
+            ...song,
+            parts: [...song.parts, voice],
+            sections: [{ ...song.sections[0], sound: { p9: { singers: 4, vowel: 'ee', range: 'bass', vibrato: 0.5, octave: 3, style: 'walk' }, p1: { style: 'walk', octave: 3, volume: -2 } } }],
+        };
+        const read = readSaved(JSON.parse(JSON.stringify({ version: 3, song: raw, settings: defaultSettings() })))!;
+        expect(read.song.sections[0].sound).toEqual({ p9: { octave: 3 }, p1: { volume: -2 } });
     });
 });
