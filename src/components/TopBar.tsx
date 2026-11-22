@@ -351,4 +351,4 @@ const TopBar: React.FC<TopBarProps> = p => (<>
     {p.compact && p.keyOpen && <KeySheet p={p} onClose={() => p.onKeyOpen?.(false)} />}
 </>);
 
-export default TopBar;
+export default React.memo(TopBar);

@@ -637,4 +637,5 @@ export const LaneBar: React.FC<{
     );
 };
 
-export default Progression;
+// memoised: App hands it stable props, so it re-renders on its own playhead (playStore) and real changes only
+export default React.memo(Progression);
