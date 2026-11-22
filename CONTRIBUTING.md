@@ -98,8 +98,8 @@ src/
     ShapeGraphs          the envelope and filter pictures: read-only in Simple, draggable in Advanced (EnvelopeGraph, FilterGraph)
     Scope                the Advanced live waveform of a part (a canvas fed by Engine.analyser)
     FxMatrix, Knob       SpaceControls (shared reverb/delay/out), the Mix overview, the knob control
-    SettingsSheet        ⚙ sheet and Credits; useDialog.ts gives dialogs focus trap and Esc
-    LearnPanel           📖 Learn: tabs, progression cards, chord cards, melody rules with MiniGrid
+    SettingsSheet        ⚙ sheet (CreditsDialog is its own file); useDialog.ts gives dialogs focus trap and Esc
+    LearnPanel           📖 Learn (lazy chunk): tabs, progression cards, chord cards, melody rules with MiniGrid
     SongMenu, HelpDialog, IntroScreen, HooktheoryDialog
 scripts/levels*.ts       the level-matching check (npm run levels)
 scripts/icons.cjs        renders public/icons/
@@ -147,6 +147,9 @@ Tests sit next to their module (`theory.test.ts`, `parts.test.ts`…). Pure logi
 - Webpack copies `public/` into `dist/` (`PublicFilesPlugin`), hashes the bundle, and writes `sw.js` from `src/sw.js` with every built file and a content-hash version (`ServiceWorkerPlugin`). All URLs are relative.
 - The worker precaches the build (page, code, icons and manifest must succeed; samples are best-effort and cached on first fetch), deletes old caches on activate, serves pages network-first and everything else cache-first. It registers only in production builds, so the dev server is never cached.
 - Updates: a new deploy means a new worker that takes over at once. `registerServiceWorker` reloads on `controllerchange` only if no pad or stick has been touched yet, otherwise the next time the page is hidden, so a jam is never cut off.
+- **Code splitting** (`lazy.ts`): Learn (`LearnPanel` + `learn.ts`), Paste from Hooktheory (`HooktheoryDialog` + `hooktheory.ts`), Help and Credits are separate chunks (`React.lazy` + `Suspense fallback={null}`; App mounts each from its first opening on, `useEverOpen`). `prefetchLazy()` fetches them when the browser is idle after the intro, and the worker precaches every emitted file, so opening one is instant, also offline. App imports only types from those modules; `learn.ts` and `hooktheory.ts` functions are loaded with `loadLearn()` / `loadHooktheory()` where used, and `chordMood` lives in `chordMood.ts` because Play mode needs it at once. Don't import `learn.ts`, `hooktheory.ts` or those components statically from code in the main chunk, or the split silently disappears (check `npm run build`'s chunk list).
+- **Fonts** are self-hosted in `public/fonts/` (latin woff2, one variable file per family, OFL) with `@font-face` and `<link rel=preload>` in `public/index.html`; the worker precaches them, so the installed app has them offline. There are no third-party requests.
+- **Navigations** are network-first with a 2.5 s timeout (`NAV_TIMEOUT` in `sw.js`): after that the cached page answers, and a late network answer still refreshes the cache.
 - Wake lock: `keepScreenOn()` asks for a screen lock after the intro tap and again on `visibilitychange`; it's a no-op where unsupported.
 
 ## UI conventions

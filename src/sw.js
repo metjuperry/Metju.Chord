@@ -7,13 +7,16 @@
  *   (a sample that fails now is fetched and cached when an instrument first needs it).
  * - activate: drop caches from older builds, take over open pages.
  * - fetch: pages are network-first (so a new deploy shows up as soon as there's a connection),
- *   falling back to the cached page offline; everything else is cache-first.
+ *   falling back to the cached page offline or when the network takes over 2.5 s; everything else
+ *   is cache-first.
  */
 const VERSION = self.__VERSION__;
 const FILES = self.__FILES__;
 const CACHE = `metju-chord-${VERSION}`;
 const SCOPE = new URL('./', self.location).href;
 const PAGE = new URL('./', self.location).href;
+// how long a page request waits for the network before the cached page is used
+const NAV_TIMEOUT = 2500;
 
 const isSample = f => f.startsWith('samples/');
 
@@ -41,12 +44,29 @@ self.addEventListener('fetch', event => {
     if (request.method !== 'GET' || !request.url.startsWith(SCOPE)) return;
     if (request.mode === 'navigate') {
         event.respondWith((async () => {
-            try {
-                const fresh = await fetch(request);
-                if (fresh.ok) (await caches.open(CACHE)).put(PAGE, fresh.clone());
+            // network-first, but not at any price: after NAV_TIMEOUT the cached page answers, and the
+            // network response (if it ever arrives) still refreshes the cache for next time
+            let refreshed = Promise.resolve();
+            const network = fetch(request).then(fresh => {
+                if (fresh.ok) {
+                    const copy = fresh.clone();
+                    refreshed = caches.open(CACHE).then(c => c.put(PAGE, copy)).catch(() => undefined);
+                }
                 return fresh;
+            });
+            // keep the worker alive until a late answer has been cached
+            event.waitUntil(network.then(() => refreshed, () => undefined));
+            const cached = () => caches.match(PAGE);
+            let timer;
+            const late = new Promise(resolve => { timer = setTimeout(() => resolve(cached()), NAV_TIMEOUT); });
+            try {
+                const first = await Promise.race([network, late]);
+                if (first) return first;
+                return await network;
             } catch {
-                return (await caches.match(PAGE)) || Response.error();
+                return (await cached()) || Response.error();
+            } finally {
+                clearTimeout(timer);
             }
         })());
         return;

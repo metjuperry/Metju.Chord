@@ -51,6 +51,7 @@ module.exports = {
         path: path.resolve(__dirname, 'dist'),
         // hashed, so a new deploy's page always loads its own code (the service worker caches by URL)
         filename: 'bundle.[contenthash:8].js',
+        chunkFilename: '[name].[contenthash:8].js',
         clean: true,
         // relative URLs, so the build works at the site root and under the GitHub Pages subpath (/Metju.Chord/)
         publicPath: '',

@@ -1,18 +1,19 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as Tone from 'tone';
 import './App.css';
 import TopBar, { AppMode, BPM_MAX, BPM_MIN, OCTAVE_MAX, OCTAVE_MIN } from './components/TopBar';
 import Device, { ChordInfoView, PadTarget, PadView } from './components/Device';
 import { useMedia } from './useMedia';
 import Progression from './components/Progression';
-import HelpDialog from './components/HelpDialog';
 import DrumEditor from './components/DrumEditor';
 import IntroScreen, { IntroPhase } from './components/IntroScreen';
 import MelodyEditor, { MelodyTools, higherOctave } from './components/MelodyEditor';
 import PartsView, { MASTER, subLabel } from './components/PartsView';
-import SettingsSheet, { CreditsDialog } from './components/SettingsSheet';
-import LearnPanel, { HearEvent, UseHow } from './components/LearnPanel';
-import { LearnTab, Progression as LearnProgression, chordMood, fitProgression, insertProgression, progressionClips } from './learn';
+import SettingsSheet from './components/SettingsSheet';
+import type { HearEvent, UseHow } from './components/LearnPanel';
+import type { LearnTab, Progression as LearnProgression } from './learn';
+import { chordMood } from './chordMood';
+import { CreditsDialog, HelpDialog, HooktheoryDialog, LearnPanel, loadHooktheory, loadLearn, prefetchLazy, useEverOpen } from './lazy';
 import {
     ChordParams, ChordType, KEYS, NoteTag, ResolvedChord, StickDir, scaleLabel,
     STICK_DIRS, STICK_LABELS, ScaleId, buildChordMidi, chordTags, keyPitchClass, resolveChord, romanNumeral, scalePitchClasses,
@@ -24,8 +25,7 @@ import { keepScreenOn } from './pwa';
 import SongMenu from './components/SongMenu';
 import { MenuItem } from './components/PopMenu';
 import ConfirmDialog from './components/ConfirmDialog';
-import HooktheoryDialog from './components/HooktheoryDialog';
-import { HtClip, ImportOptions, ImportSummary, importHooktheory } from './hooktheory';
+import type { HtClip, ImportOptions, ImportSummary } from './hooktheory';
 import {
     BEFORE_SHARE_KEY, CHORD_LENGTHS, ChordLength, FullSong, LEGACY_STORAGE_KEY, PlaybackMode, STORAGE_KEY, SAVE_VERSION, SavedState, Song, ThemeSetting, decodeShare, defaultSettings, encodeShare,
     chordLengthSteps, isCompound, newFullSong, readSaved, stepsPerRow, ticksPerBar, ticksPerStep, transportBpm,
@@ -214,6 +214,11 @@ const App: React.FC = () => {
     const [creditsOpen, setCreditsOpen] = useState(false);
     /** 📖 Learn: the reference page (over everything on phones, in the right column on desktop) and its last tab. */
     const [learnOpen, setLearnOpen] = useState(false);
+    // Learn, Help, Credits and the Hooktheory paste are separate chunks: mounted from their first opening on
+    const learnEver = useEverOpen(learnOpen);
+    const helpEver = useEverOpen(helpOpen);
+    const htEver = useEverOpen(htOpen);
+    const creditsEver = useEverOpen(creditsOpen);
     const [confirmClear, setConfirmClear] = useState(false);
     const [learnTab, setLearnTab] = useState<LearnTab>(initial.learnTab);
     const [chordMoodOn, setChordMoodOn] = useState(initial.chordMood);
@@ -1342,7 +1347,8 @@ const App: React.FC = () => {
     }, []);
 
     /** Paste from Hooktheory: notes into Melody parts, chords into the chord row, one undo step. */
-    const importPaste = (clip: HtClip, options: ImportOptions, summary: ImportSummary) => {
+    const importPaste = async (clip: HtClip, options: ImportOptions, summary: ImportSummary) => {
+        const { importHooktheory } = await loadHooktheory();
         editSong(sg => {
             const done = importHooktheory(sg, clip, options);
             return done.summary.problem ? sg : done.song;
@@ -1447,7 +1453,8 @@ const App: React.FC = () => {
      * the song's scale, or (when it needs another one) after switching the song's scale, or as the
      * closest version in the song's scale. The key never changes, and the scale only on 'switch'.
      */
-    const addProgression = (prog: LearnProgression, how: UseHow, at: number) => {
+    const addProgression = async (prog: LearnProgression, how: UseHow, at: number) => {
+        const { fitProgression, insertProgression, progressionClips } = await loadLearn();
         const fit = fitProgression(prog, selectedKey, scale);
         const sc = fit.kind === 'needs' && how === 'switch' ? fit.needs : scale;
         const chosen = fit.kind !== 'needs' || how === 'switch' ? fit.chords : fit.closest;
@@ -1655,7 +1662,10 @@ const App: React.FC = () => {
         setIntro('leaving');
         await startAudio();
         getEngine().playIntro(chord.midi);
-        setTimeout(() => setIntro('done'), 1900);
+        setTimeout(() => {
+            setIntro('done');
+            prefetchLazy();
+        }, 1900);
     };
     const introEl = intro !== 'done' ? <IntroScreen phase={intro} chord={introName} onStart={begin} /> : null;
     // Until the first tap there is no audio, so nothing but the intro is mounted
@@ -1754,15 +1764,17 @@ const App: React.FC = () => {
         );
     })() : undefined;
 
-    const htDialog = (
-        <HooktheoryDialog
-            open={htOpen}
-            song={song}
-            selectedStep={selected}
-            chordOctave={octave}
-            onClose={() => setHtOpen(false)}
-            onImport={importPaste}
-        />
+    const htDialog = htEver && (
+        <Suspense fallback={null}>
+            <HooktheoryDialog
+                open={htOpen}
+                song={song}
+                selectedStep={selected}
+                chordOctave={octave}
+                onClose={() => setHtOpen(false)}
+                onImport={importPaste}
+            />
+        </Suspense>
     );
 
     const notesOctave = notesOn ? padMelody!.octave : octave;
@@ -2084,7 +2096,8 @@ const App: React.FC = () => {
         />
     );
 
-    const learnEl = (docked: boolean) => (
+    const learnEl = (docked: boolean) => learnEver && (
+        <Suspense fallback={null}>
         <LearnPanel
             open={learnOpen}
             docked={docked}
@@ -2109,6 +2122,7 @@ const App: React.FC = () => {
             justAdded={learnAdded.current && learnAdded.current.song === full ? learnAdded.current.id : null}
             onUndoAdd={history.undo}
         />
+        </Suspense>
     );
 
     const entering = intro === 'leaving' ? 'app-entering' : '';
@@ -2228,7 +2242,7 @@ const App: React.FC = () => {
                     e.target.value = '';
                 }}
             />
-            <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+            {helpEver && <Suspense fallback={null}><HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} /></Suspense>}
             <ConfirmDialog
                 open={confirmClear}
                 title="Clear everything?"
@@ -2250,7 +2264,7 @@ const App: React.FC = () => {
                 <p>A clean slate: one empty section, the chain reset, only the {full.parts.find(p => p.kind === 'chords')?.name ?? 'Keys'} part, and no effects.</p>
                 <p>Key, scale and tempo stay. You can undo it.</p>
             </ConfirmDialog>
-            <CreditsDialog open={creditsOpen} onClose={() => setCreditsOpen(false)} />
+            {creditsEver && <Suspense fallback={null}><CreditsDialog open={creditsOpen} onClose={() => setCreditsOpen(false)} /></Suspense>}
             {htDialog}
             {notice && (
                 <div
