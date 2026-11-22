@@ -130,8 +130,7 @@ export class Engine {
     private strips = new Map<string, Strip>();
     /** One kit per drum part. */
     private kits = new Map<string, Channel & { kit: DrumKit }>();
-    /** The part the pads and keyboard play through. */
-    /** The strip live playing goes to until one is selected (the level check plays through it). */
+    /** The strip the pads and keyboard play through (until one is selected, one the level check uses). */
     private current = 'main' as StripId;
     private transportUsers = new Set<string>();
 
