@@ -478,4 +478,5 @@ const Device: React.FC<DeviceProps> = ({
     </section>
 );
 
-export default Device;
+// memoised: playback never re-renders the instrument; a pad press or a stick move does
+export default React.memo(Device);

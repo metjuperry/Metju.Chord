@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import './LearnPanel.css';
 import {
     ACCIDENTAL_TIPS, COMBOS, Fit, LEARN_TABS, LearnTab, MELODY_RULES, MelodyRule, PAD_ROLES, PROGRESSIONS, Progression, STICK_ARROWS,
@@ -71,7 +71,7 @@ const HearButton: React.FC<{ id: string; hearing: string | null; label: string; 
     );
 };
 
-const LearnPanel: React.FC<LearnPanelProps> = p => {
+const LearnPanel: React.FC<LearnPanelProps> = memo(function LearnPanel(p) {
     const box = useRef<HTMLDivElement>(null);
     // phones: a modal over everything (focus trapped, Esc); desktop: a panel in the right column
     useDialog(box, p.open && !p.docked, p.onClose);
@@ -151,7 +151,7 @@ const LearnPanel: React.FC<LearnPanelProps> = p => {
         </div>
     );
     return p.docked ? panel : <div className="lp-backdrop">{panel}</div>;
-};
+});
 
 export default LearnPanel;
 

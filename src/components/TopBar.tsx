@@ -4,6 +4,7 @@ import { KEYS, MusicalKey, SCALES, ScaleId } from '../theory';
 import { addTap, tapBpm } from '../tempo';
 import { useDialog } from './useDialog';
 import { UndoRedo } from './SongMenu';
+import { usePlay } from '../playhead';
 
 export const OCTAVE_MIN = 2;
 export const OCTAVE_MAX = 6;
@@ -31,8 +32,8 @@ interface TopBarProps {
     recording: boolean;
     /** Why Record can't be used right now (it's disabled with this as its hint), if it can't. */
     recordBlocked?: string;
-    /** Beat lit by the click or the playhead, or null when nothing runs. */
-    beat: number | null;
+    /** What lights the beat dots: the click's beat, the playhead's step (read from `playStore`), or nothing. */
+    beatFrom: 'click' | 'play' | null;
     beats: number;
     /** Which modes are offered (none: the desktop layout shows the instrument and has its own Song | Parts tabs). */
     modes?: AppMode[];
@@ -59,6 +60,19 @@ interface TopBarProps {
     keyOpen?: boolean;
     onKeyOpen?: (open: boolean) => void;
 }
+
+/** The beat dots by the tempo: the beat the click or the playhead is on. They follow playback themselves. */
+const BeatDots: React.FC<{ beats: number; from: TopBarProps['beatFrom'] }> = ({ beats, from }) => {
+    // the step counts from the open section's top (-1 while another section plays: no dot)
+    const beat = usePlay(s => (from === 'click' ? s.metBeat : from === 'play' ? s.step % beats : null));
+    return (
+        <span className="beat-dots" aria-hidden="true">
+            {Array.from({ length: beats }, (_, i) => (
+                <span key={i} className={`beat-dot ${beat === i ? (i === 0 ? 'down' : 'on') : ''}`} />
+            ))}
+        </span>
+    );
+};
 
 const Chevron = () => (
     <svg className="tb-chevron" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
@@ -278,11 +292,7 @@ const TopBar: React.FC<TopBarProps> = p => (<>
 
             <div className="tb-group" role="group" aria-label="Tempo">
                 <Tempo bpm={p.bpm} onChange={p.onBpmChange} />
-                <span className="beat-dots" aria-hidden="true">
-                    {Array.from({ length: p.beats }, (_, i) => (
-                        <span key={i} className={`beat-dot ${p.beat === i ? (i === 0 ? 'down' : 'on') : ''}`} />
-                    ))}
-                </span>
+                <BeatDots beats={p.beats} from={p.beatFrom} />
             </div>
         </>)}
 
@@ -341,4 +351,4 @@ const TopBar: React.FC<TopBarProps> = p => (<>
     {p.compact && p.keyOpen && <KeySheet p={p} onClose={() => p.onKeyOpen?.(false)} />}
 </>);
 
-export default TopBar;
+export default React.memo(TopBar);
