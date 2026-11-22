@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { pid, sid } from './testing';
 import { MAX_SHARE_BYTES, MAX_SHARE_CHARS, decodeShare, defaultSettings, encodeShare, newFullSong, readSaved } from './song';
 import { applySectionEdit, chainLayout, engineStrips, sectionView } from './sections';
 import { chainEvents } from './playback';
@@ -25,7 +26,7 @@ function fullSave() {
     };
     return {
         version: 3,
-        song: { ...song, parts, sections: [first, { ...first, id: 's2', name: 'B' }], chain: [{ sectionId: 's1' }, { sectionId: 's2' }, { sectionId: 's1' }] },
+        song: { ...song, parts, sections: [first, { ...first, id: sid('s2'), name: 'B' }], chain: [{ sectionId: sid('s1') }, { sectionId: sid('s2') }, { sectionId: sid('s1') }] },
         settings: defaultSettings(),
     };
 }
@@ -34,13 +35,13 @@ const copy = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
 describe('ids in saves', () => {
     it('keeps the ids the app makes', () => {
         const read = readSaved(copy(fullSave()))!;
-        expect(read.song.parts.map(p => p.id)).toEqual(['p1', 'p2', 'p3', 'p4', 'p5']);
-        expect(read.song.sections.map(s => s.id)).toEqual(['s1', 's2']);
+        expect(read.song.parts.map(p => p.id)).toEqual([pid('p1'), pid('p2'), pid('p3'), pid('p4'), pid('p5')]);
+        expect(read.song.sections.map(s => s.id)).toEqual([sid('s1'), sid('s2')]);
     });
 
     it.each(['__proto__', 'p1@s1', 'a b', '', 'x'.repeat(25), "a'b"])('a part id %j is replaced by a fresh one', bad => {
         const save = copy(fullSave());
-        save.song.parts[2].id = bad;
+        save.song.parts[2].id = pid(bad);
         const read = readSaved(save)!;
         const ids = read.song.parts.map(p => p.id);
         expect(ids).not.toContain(bad);
@@ -53,12 +54,12 @@ describe('ids in saves', () => {
 
     it.each(['__proto__', 's1@x', 'two words'])('a section id %j is replaced, and chain entries naming it go', bad => {
         const save = copy(fullSave());
-        save.song.sections[1].id = bad;
-        save.song.chain = [{ sectionId: 's1' }, { sectionId: bad }];
+        save.song.sections[1].id = sid(bad);
+        save.song.chain = [{ sectionId: sid('s1') }, { sectionId: sid(bad) }];
         const read = readSaved(save)!;
         expect(read.song.sections.map(s => s.id)).not.toContain(bad);
         expect(read.song.sections).toHaveLength(2);
-        expect(read.song.chain).toEqual([{ sectionId: 's1' }]);
+        expect(read.song.chain).toEqual([{ sectionId: sid('s1') }]);
     });
 });
 
@@ -69,12 +70,12 @@ describe('a section’s own sound in a save', () => {
         save.song.sections[0].sound = { p1: { instrument: 'kazoo', shape: { attack: 0.2 } } };
         const read = readSaved(save)!;
         expect(read.song.sections[0].sound).toEqual({ p1: { shape: { attack: 0.2 } } });
-        expect(sectionView(read.song, 's1').parts[0]).toMatchObject({ instrument: 'strings' });
+        expect(sectionView(read.song, sid('s1')).parts[0]).toMatchObject({ instrument: 'strings' });
     });
 
     it('a real instrument is kept', () => {
         const read = readSaved(copy(fullSave()))!;
-        expect(read.song.sections[0].sound?.p1).toMatchObject({ instrument: 'organ' });
+        expect(read.song.sections[0].sound?.[pid('p1')]).toMatchObject({ instrument: 'organ' });
     });
 });
 

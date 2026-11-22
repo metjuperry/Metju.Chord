@@ -4,6 +4,10 @@ import { INSTRUMENTS, InstrumentId, createInstrument, createSynth, isSampled, lo
 import { Engine } from '../src/audio/engine';
 import { fromKnob } from '../src/sound';
 import type { DriveType } from '../src/sound';
+import type { StripId } from '../src/ids';
+
+/** The one engine strip the checks play through. */
+const TRACK = 't' as StripId;
 
 const MASTER_GAIN = 0.8;
 const TRIAD = [60, 64, 67];
@@ -44,14 +48,14 @@ async function withFx(id: InstrumentId) {
         const engine = new Engine();
         // every effect at its maximum: chorus, full sends into a long reverb and a high-feedback delay, hard-panned,
         // ...and the shape at its loudest: full crunch, a screaming resonant filter swept by the envelope and LFO, the longest release
-        engine.setTrack('t', {
+        engine.setTrack(TRACK, {
             instrument: id, volume: 0, fx: { chorus: 1, tremolo: 1, glide: 1, reverb: 1, delay: 1 }, tone: { pan: 1 },
             shape: { attack: 0.001, release: 8, cutoff: 1500, resonance: 1, envAmount: 1, lfoDepth: 1, lfoRate: '8n', driveType: 'crunch', drive: 1 },
         });
-        engine.selectTrack('t');
+        engine.selectTrack(TRACK);
         engine.setSpace({ reverb: { size: 3, ret: 1 }, delay: { time: '8n', feedback: 0.9, ret: 1 }, out: { level: 1 } });
         await engine.ready();
-        FX_CHORDS.forEach((chord, i) => engine.playChord(chord, { duration: 0.6, time: i * 0.5, track: 't' }));
+        FX_CHORDS.forEach((chord, i) => engine.playChord(chord, { duration: 0.6, time: i * 0.5, track: TRACK }));
     }, 4);
     return measure(buffer);
 }
@@ -60,10 +64,10 @@ async function withFx(id: InstrumentId) {
 async function driven(id: InstrumentId, driveType: DriveType, drive: number) {
     const buffer = await Tone.Offline(async () => {
         const engine = new Engine();
-        engine.setTrack('t', { instrument: id, volume: 0, shape: { driveType, drive } });
+        engine.setTrack(TRACK, { instrument: id, volume: 0, shape: { driveType, drive } });
         engine.setSpace({ reverb: { size: 1, ret: 0 }, delay: { time: '8n', feedback: 0, ret: 0 }, out: { level: 1 } });
         await engine.ready();
-        engine.playChord(TRIAD, { duration: 1.2, time: 0, track: 't' });
+        engine.playChord(TRIAD, { duration: 1.2, time: 0, track: TRACK });
     }, 1.5);
     return measure(buffer).rms;
 }
@@ -98,10 +102,10 @@ async function driven(id: InstrumentId, driveType: DriveType, drive: number) {
         for (const p of [0, 0.25, 0.5, 0.75, 1]) {
             const buffer = await Tone.Offline(async () => {
                 const engine = new Engine();
-                engine.setTrack('t', { instrument: inst, volume: 0, shape: make(p) as any });
+                engine.setTrack(TRACK, { instrument: inst, volume: 0, shape: make(p) as any });
                 engine.setSpace({ reverb: { size: 1, ret: 0 }, delay: { time: '8n', feedback: 0, ret: 0 }, out: { level: 1 } });
                 await engine.ready();
-                engine.playChord(TRIAD, { duration: 0.6, time: 0.05, track: 't' });
+                engine.playChord(TRIAD, { duration: 0.6, time: 0.05, track: TRACK });
             }, 2);
             const d = buffer.getChannelData(0), rate = buffer.sampleRate;
             let zc = 0, peak = 0, half = -1, tail = 0, e = 0, de = 0;

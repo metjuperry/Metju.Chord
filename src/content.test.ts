@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { byPart, pid, sid } from './testing';
 import { FullSong, defaultSettings, newFullSong, readSaved } from './song';
 import { applySectionEdit, sectionView } from './sections';
 import { Part, VoicePart, newPart } from './parts';
@@ -10,7 +11,7 @@ const BAR = 4 * PPQ;
 const chord = (start: number, len: number): Clip => ({ start, len, chord: { degree: 0, type: 'triad', inversion: 0, octave: 4 } });
 
 /** Keys, Bass, Melody (p1–p3), Drums (p4) and a Voice (p5), with `content` in the one section. */
-function songWith(content: FullSong['sections'][0]['content'], voice: Partial<VoicePart> = {}): FullSong {
+function songWith(content: { [id: string]: PartContent }, voice: Partial<VoicePart> = {}): FullSong {
     const song = newFullSong();
     const parts: Part[] = [...song.parts];
     parts.push(newPart('drums', parts));
@@ -19,7 +20,7 @@ function songWith(content: FullSong['sections'][0]['content'], voice: Partial<Vo
 }
 
 describe('an edit that changes nothing', () => {
-    const cases: [string, FullSong['sections'][0]['content']][] = [
+    const cases: [string, { [id: string]: PartContent }][] = [
         ['no content', {}],
         ['melody notes', { p3: { notes: [{ start: 0, len: 24, step: 3 }] } }],
         ['a drum pattern', { p4: { drums: { bars: 2, hits: { kick: [0, 8] } } } }],
@@ -41,7 +42,7 @@ describe('an edit that changes nothing', () => {
         it(`returns the same song, with ${name}`, () => {
             const song = songWith(content);
             for (const scope of ['section', 'song'] as const) {
-                expect(applySectionEdit(song, 's1', sectionView(song, 's1', scope === 'section'), scope)).toBe(song);
+                expect(applySectionEdit(song, sid('s1'), sectionView(song, sid('s1'), scope === 'section'), scope)).toBe(song);
             }
         });
     }
@@ -51,7 +52,7 @@ describe('an edit that changes nothing', () => {
             const plain = songWith(content);
             const song = { ...plain, sections: [{ ...plain.sections[0], sound: { p3: { octave: 5 }, p4: { volume: -3 }, p5: { sings: 'notes' as const } } }] };
             for (const scope of ['section', 'song'] as const) {
-                const next = applySectionEdit(song, 's1', sectionView(song, 's1', scope === 'section'), scope);
+                const next = applySectionEdit(song, sid('s1'), sectionView(song, sid('s1'), scope === 'section'), scope);
                 expect(next).toBe(song);
             }
         }
@@ -59,15 +60,15 @@ describe('an edit that changes nothing', () => {
 
     it('setting a part to what it already is returns the same song (no undo step)', () => {
         const song = songWith({ p5: { notes: [{ start: 0, len: PPQ, step: 2 }] } });
-        const view = sectionView(song, 's1', false);
-        const same = { ...view, parts: view.parts.map(p => (p.id === 'p1' && p.kind === 'chords' ? { ...p, instrument: p.instrument, playMode: p.playMode } : p)) };
-        expect(applySectionEdit(song, 's1', same, 'song')).toBe(song);
+        const view = sectionView(song, sid('s1'), false);
+        const same = { ...view, parts: view.parts.map(p => (p.id === pid('p1') && p.kind === 'chords' ? { ...p, instrument: p.instrument, playMode: p.playMode } : p)) };
+        expect(applySectionEdit(song, sid('s1'), same, 'song')).toBe(song);
     });
 
     it('a real edit still gives a new song, and keeps the parts it didn’t touch', () => {
         const song = songWith({ p5: { notes: [{ start: 0, len: PPQ, step: 2 }] } });
-        const view = sectionView(song, 's1', false);
-        const next = applySectionEdit(song, 's1', { ...view, bpm: 90 }, 'song');
+        const view = sectionView(song, sid('s1'), false);
+        const next = applySectionEdit(song, sid('s1'), { ...view, bpm: 90 }, 'song');
         expect(next).not.toBe(song);
         expect(next.bpm).toBe(90);
         expect(next.parts).toBe(song.parts);
@@ -80,17 +81,17 @@ describe('how long a section plays', () => {
 
     it('a voice singing its own notes counts them', () => {
         const song = songWith({ p5: { notes: late } }, { sings: 'notes' });
-        const view = sectionView(song, 's1');
+        const view = sectionView(song, sid('s1'));
         expect(musicEnd(view.chords, view.parts, BAR)).toBe(3 * BAR + PPQ);
     });
 
     it('a voice singing the chords doesn’t stretch the section with notes it still holds', () => {
         const song = songWith({ p5: { notes: late } }, { sings: 'chords' });
-        const view = sectionView(song, 's1');
+        const view = sectionView(song, sid('s1'));
         expect(musicEnd(view.chords, view.parts.filter(p => p.kind !== 'drums'), BAR)).toBe(BAR);
         expect(sectionLoopLength(view)).toBe(BAR);
         // and the notes are still there for when it sings them again
-        expect(view.parts.find(p => p.id === 'p5')).toMatchObject({ notes: late });
+        expect(view.parts.find(p => p.id === pid('p5'))).toMatchObject({ notes: late });
     });
 });
 
@@ -135,13 +136,13 @@ describe('the content table', () => {
 
             it('round-trips through a saved song', () => {
                 const song = newFullSong();
-                const p = { ...part(), id: 'p9' };
-                const full: FullSong = { ...song, parts: [...song.parts, stripContent(p)], sections: [{ ...song.sections[0], steps: 16, content: { p9: value } }] };
+                const p = { ...part(), id: pid('p9') };
+                const full: FullSong = { ...song, parts: [...song.parts, stripContent(p)], sections: [{ ...song.sections[0], steps: 16, content: byPart({ p9: value }) }] };
                 const read = readSaved(JSON.parse(JSON.stringify({ version: 3, song: full, settings: defaultSettings() })))!;
-                expect(read.song.sections[0].content.p9).toEqual(value);
-                expect(contentOf(sectionView(read.song, 's1').parts.find(x => x.id === 'p9')!)).toEqual(value);
+                expect(read.song.sections[0].content[pid('p9')]).toEqual(value);
+                expect(contentOf(sectionView(read.song, sid('s1')).parts.find(x => x.id === pid('p9'))!)).toEqual(value);
                 // and a view of it written back is the same song
-                expect(applySectionEdit(read.song, 's1', sectionView(read.song, 's1'))).toBe(read.song);
+                expect(applySectionEdit(read.song, sid('s1'), sectionView(read.song, sid('s1')))).toBe(read.song);
             });
 
             it('is left alone by parts that hold another kind', () => {

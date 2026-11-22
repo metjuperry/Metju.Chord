@@ -8,6 +8,7 @@ import { DrumPattern, DrumVoice, hasHit } from '../drums';
 import { MenuAnchor, MenuItem, PopMenu, useLongPress } from './PopMenu';
 import type { StickDir } from '../theory';
 import { Part, outsideRests, playsThroughRest, restSpans, writesNotes } from '../parts';
+import type { PartId } from '../ids';
 
 /** Which drums show on which line of a drum lane's miniature: cymbals, the backbeat, the kick. */
 const MINI_LINES: DrumVoice[][] = [['hat', 'openhat', 'rim'], ['snare', 'clap', 'tomhi', 'tomlo'], ['kick']];
@@ -85,7 +86,7 @@ interface ProgressionProps {
     /** The open section's name and its mutes: each lane's M silences its part in this section only. */
     sectionName?: string;
     sectionMutes?: { [partId: string]: true };
-    onSectionMute?: (partId: string, muted: boolean) => void;
+    onSectionMute?: (partId: PartId, muted: boolean) => void;
     /** Shown in the chord toolbar when the section is in the chain more than once. */
     repeatNote?: string;
     /**

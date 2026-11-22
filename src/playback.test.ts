@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { sid } from './testing';
 
 // eventsIn is pure, but its module imports Tone (and the engine) for the player
 vi.mock('tone', () => ({}));
@@ -15,8 +16,8 @@ const S = 96;
 function twoSections(): FullSong {
     let song = fromSingleSection({ ...newSong(), steps: 16 });
     const b = addSection(song);
-    song = appendToChain(b.song, b.id);
-    for (const id of ['s1', b.id]) {
+    song = appendToChain(b.song, b.id!);
+    for (const id of [sid('s1'), b.id!]) {
         const view = sectionView(song, id);
         song = applySectionEdit(song, id, {
             ...view,
@@ -70,8 +71,8 @@ describe('cached section events', () => {
         const aEvents = sectionEventsOf(song, a, 16 * S, true);
         const bEvents = sectionEventsOf(song, b, 16 * S, true);
         // a melody note moved in B
-        const view = sectionView(song, b.id);
-        const edited = applySectionEdit(song, b.id, {
+        const view = sectionView(song, b.id!);
+        const edited = applySectionEdit(song, b.id!, {
             ...view,
             parts: view.parts.map(p => (p.kind === 'melody' ? { ...p, notes: [{ start: S, len: S, step: 4 }] } : p)),
         });

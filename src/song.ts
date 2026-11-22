@@ -4,7 +4,8 @@ import { INSTRUMENTS, InstrumentId } from './audio/instruments';
 import { Clip, PPQ, STEPS_PER_ROW } from './progression';
 import { sixteenthsPerBar } from './drums';
 import { CONTENT, CONTENT_KEYS, ContentKey, PartContent, contentOf, readContent, rescaleContent, stripContent } from './content';
-import { Obj, bool, int, isObj, num, oneOf } from './reading';
+import { bool, int, isObj, num, oneOf } from './reading';
+import { PartId, SectionId, isPartId, isSectionId, sectionIdFor } from './ids';
 import type { LearnTab } from './learn';
 import { STRUM_PATTERN_IDS, StrumPattern, nearestSpread } from './strum';
 import { legacyShape, readShape } from './sound';
@@ -106,22 +107,22 @@ export type { PartContent };
 
 /** A section (verse, chorus…): its own chord row, length, melody notes and drum patterns, and per-section mutes. */
 export interface Section {
-    id: string;
+    id: SectionId;
     name: string;
     /** Shown on the dark badge, e.g. "V" for Verse. */
     letter: string;
     /** Length in sequencer steps (beats), whole rows. */
     steps: number;
     chords: Clip[];
-    content: { [partId: string]: PartContent };
+    content: { [partId: PartId]: PartContent };
     /** Parts silenced in this section only. */
-    mutes: { [partId: string]: true };
+    mutes: { [partId: PartId]: true };
     /**
      * How parts sound and play in this section where that differs from the song: instrument, volume,
      * effects, pan, shape, play mode and so on (anything but a part's name, colour, mute and solo).
      * Only the differences are kept; `sectionView` lays them over the song's parts.
      */
-    sound?: { [partId: string]: SectionSound };
+    sound?: { [partId: PartId]: SectionSound };
 }
 
 /** What a part is everywhere: its identity, its song-wide mute and solo, and its content. A section can set everything else its own way. */
@@ -138,7 +139,7 @@ export type SectionSound = { [K in PartKind]: SoundOf<K> }[PartKind];
 
 /** One slot of the chain (the song's running order); a repeat is the same section twice in a row. */
 export interface ChainEntry {
-    sectionId: string;
+    sectionId: SectionId;
 }
 
 /**
@@ -314,7 +315,7 @@ export function sameValue(a: unknown, b: unknown): boolean {
 export const withSound = (p: Part, own: SectionSound | undefined): Part => (own && Object.keys(own).length ? { ...p, ...own } as Part : p);
 
 /** A version-2 song (one chord row) as a version-3 song: one section "A" holding all of it, chained once. */
-export function fromSingleSection(song: Song, id = 's1', name = 'A'): FullSong {
+export function fromSingleSection(song: Song, id = sectionIdFor(1), name = 'A'): FullSong {
     const content: Section['content'] = {};
     song.parts.forEach(p => {
         const c = contentOf(p);
@@ -342,11 +343,6 @@ const ARP_PATTERNS: ArpPattern[] = ['up', 'down', 'upDown', 'random'];
 const ARP_RATES: ArpRate[] = ['4n', '8n', '8t', '16n', '16t', '32n'];
 const INSTRUMENT_IDS = INSTRUMENTS.map(i => i.id) as string[];
 
-/**
- * An id from a save: short, and only letters, digits, - and _. Ids are keys of plain records (content,
- * mutes, sound) and part of engine strip names (`part@section`), so "__proto__" or "p1@s1" aren't ids.
- */
-const isId = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9_-]{1,24}$/.test(v) && !(v in Object.prototype);
 
 function readClip(v: unknown, maxTick: number): Clip | null {
     if (!isObj(v)) return null;
@@ -413,7 +409,7 @@ function readPart(v: unknown, index: number, existing: Part[], maxTick: number, 
     const kind = v.kind as PartKind;
     const base = newPart(kind, existing);
     const common = {
-        id: isId(v.id) && !existing.some(p => p.id === v.id) ? v.id : base.id,
+        id: isPartId(v.id) && !existing.some(p => p.id === v.id) ? v.id : base.id,
         name: typeof v.name === 'string' && v.name.trim() ? v.name.trim().slice(0, 24) : base.name,
         color: oneOf(v.color, PART_COLORS, PART_COLORS[index % PART_COLORS.length]),
         volume: int(v.volume, -24, 6, 0),
@@ -573,7 +569,7 @@ export function readFullSong(v: unknown): FullSong | null {
     const sections: Section[] = [];
     v.sections.slice(0, MAX_SECTIONS).forEach((raw, i) => {
         if (!isObj(raw)) return;
-        const id = isId(raw.id) && !sections.some(x => x.id === raw.id) ? raw.id : `s${i + 1}${sections.some(x => x.id === `s${i + 1}`) ? 'b' : ''}`;
+        const id = isSectionId(raw.id) && !sections.some(x => x.id === raw.id) ? raw.id : sectionIdFor(i + 1, sections.some(x => x.id === `s${i + 1}`) ? 'b' : '');
         const name = cleanName(raw.name, String.fromCharCode(65 + (i % 26)));
         const letter = typeof raw.letter === 'string' && raw.letter.trim() ? raw.letter.trim().slice(0, 2).toUpperCase() : letterFor(name);
         const steps = int(raw.steps, 1, 512, STEPS_PER_ROW);
@@ -594,11 +590,12 @@ export function readFullSong(v: unknown): FullSong | null {
         sections.push(sec);
     });
     if (sections.length === 0) sections.push(fromSingleSection({ ...newSong(), timeSignature, parts }).sections[0]);
-    const known = new Set(sections.map(x => x.id));
     const chain = (Array.isArray(v.chain) ? v.chain : [])
-        .filter((e): e is Obj => isObj(e) && typeof e.sectionId === 'string' && known.has(e.sectionId))
-        .slice(0, MAX_CHAIN)
-        .map(e => ({ sectionId: e.sectionId as string }));
+        .flatMap((e): ChainEntry[] => {
+            const sec = isObj(e) && typeof e.sectionId === 'string' ? sections.find(x => x.id === e.sectionId) : undefined;
+            return sec ? [{ sectionId: sec.id }] : [];
+        })
+        .slice(0, MAX_CHAIN);
     return {
         key: oneOf(v.key, KEYS, 'C'),
         scale: oneOf<ScaleId>(v.scale, SCALE_IDS, 'major'),

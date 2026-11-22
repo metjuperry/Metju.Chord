@@ -4,6 +4,7 @@ import type { ArpRate } from './audio/engine';
 import type { InstrumentId, ShapeOverrides } from './sound';
 import { ChordClip, Clip, PPQ, RestClip, clipEnd, isChordClip, TICKS_PER_BAR } from './progression';
 import type { DrumPattern } from './drums';
+import { PartId, partIdFor } from './ids';
 
 // ---- parts: everything that plays the song's one chord row, each in its own way -----------------
 
@@ -94,7 +95,7 @@ export const neutralTone = (): PartTone => ({ pan: 0.5 });
 export const shapePan = (v: number) => Math.max(-1, Math.min(1, (v - 0.5) * 2));
 
 interface PartBase {
-    id: string;
+    id: PartId;
     name: string;
     color: string;
     /** Level in dB, 0 = as matched by `npm run levels`. */
@@ -194,7 +195,7 @@ export const PART_LABELS: { [k in PartKind]: string } = { chords: 'Chords', bass
 
 /** The next free id, so parts loaded from a saved song never collide with new ones. */
 const nextId = (existing: Part[]) =>
-    `p${existing.reduce((m, p) => Math.max(m, parseInt(p.id.replace(/\D/g, ''), 10) || 0), 0) + 1}`;
+    partIdFor(existing.reduce((m, p) => Math.max(m, parseInt(p.id.replace(/\D/g, ''), 10) || 0), 0) + 1);
 
 const DEFAULT_NAMES: { [k in PartKind]: string } = { chords: 'Keys', bass: 'Bass', melody: 'Melody', voice: 'Voice', drums: 'Drums' };
 

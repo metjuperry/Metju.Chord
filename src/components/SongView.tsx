@@ -5,10 +5,11 @@ import { ChainSlot, PartState, chainCount, chainLayout, hasOwnSound, partStateIn
 import { FullSong, MAX_CHAIN, MAX_SECTIONS, PlaybackMode, Section } from '../song';
 import { isChordClip } from '../progression';
 import { resolveClip } from '../parts';
+import type { SectionId } from '../ids';
 
 interface SongViewProps {
     song: FullSong;
-    openId: string;
+    openId: SectionId;
     playMode: PlaybackMode;
     onPlayMode: (m: PlaybackMode) => void;
     playing: boolean;
@@ -22,10 +23,10 @@ interface SongViewProps {
     /** Tap a chain block: make its section the open one (and while the chain plays, jump there). */
     onPickSlot: (slot: ChainSlot) => void;
     onNew: () => void;
-    onRename: (id: string, name: string) => void;
-    onDuplicate: (id: string) => void;
-    onDelete: (id: string) => void;
-    onAddToChain: (id: string) => void;
+    onRename: (id: SectionId, name: string) => void;
+    onDuplicate: (id: SectionId) => void;
+    onDelete: (id: SectionId) => void;
+    onAddToChain: (id: SectionId) => void;
     onMoveEntry: (i: number, dir: -1 | 1) => void;
     onDuplicateEntry: (i: number) => void;
     onRemoveEntry: (i: number) => void;
@@ -197,7 +198,7 @@ const SongView: React.FC<SongViewProps> = p => {
     const { song } = p;
     const layout = chainLayout(song);
     const totalBars = layout.reduce((m, s) => m + s.bars, 0);
-    const [menu, setMenu] = useState<{ anchor: MenuAnchor; kind: 'section'; id: string; renaming?: boolean } | { anchor: MenuAnchor; kind: 'slot'; index: number } | null>(null);
+    const [menu, setMenu] = useState<{ anchor: MenuAnchor; kind: 'section'; id: SectionId; renaming?: boolean } | { anchor: MenuAnchor; kind: 'slot'; index: number } | null>(null);
     const chainRow = useRef<HTMLDivElement>(null);
 
     const chainPlaying = p.playing && p.playMode === 'chain' && p.chainPos !== null;
@@ -218,7 +219,7 @@ const SongView: React.FC<SongViewProps> = p => {
         }
     }, [cur?.index]);
 
-    const sectionItems = (id: string): MenuItem[] => {
+    const sectionItems = (id: SectionId): MenuItem[] => {
         const sec = song.sections.find(s => s.id === id);
         return [
             { label: 'Rename…', keepOpen: true, onSelect: () => setMenu(m => (m && m.kind === 'section' ? { ...m, renaming: true } : m)) },
