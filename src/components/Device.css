@@ -835,9 +835,7 @@
     color: var(--device-muted);
 }
 
-.pads-popover {
-    right: 0;
-    left: auto;
+.pop-menu.pads-popover {
     min-width: 220px;
     color: var(--text);
 }

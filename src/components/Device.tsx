@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef } from 'react';
 import './Device.css';
+import { PopMenu, useMenuOpener } from './PopMenu';
 import { NOTE_NAMES, NoteTag, StickDir, STICK_LABELS } from '../theory';
 
 export interface PadView {
@@ -165,30 +166,17 @@ const ChordInfo: React.FC<{ view: ChordInfoView }> = ({ view }) => (
 
 /** "PADS → ● Keys · Piano ▾": which part the pads play through, made explicit, with a menu of the others. */
 const PadsPicker: React.FC<{ notes: boolean; target: PadTarget; targets: PadTarget[]; onPick: (id: string) => void }> = ({ notes, target, targets, onPick }) => {
-    const [open, setOpen] = useState(false);
-    const root = useRef<HTMLDivElement>(null);
-    useEffect(() => {
-        if (!open) return;
-        const close = (e: PointerEvent | KeyboardEvent) => {
-            if (e instanceof KeyboardEvent ? e.key === 'Escape' : !root.current?.contains(e.target as Node)) setOpen(false);
-        };
-        document.addEventListener('pointerdown', close);
-        document.addEventListener('keydown', close);
-        return () => {
-            document.removeEventListener('pointerdown', close);
-            document.removeEventListener('keydown', close);
-        };
-    }, [open]);
+    const { anchor, open, close } = useMenuOpener();
     const label = notes ? 'Notes' : 'Pads';
     return (
-        <div className="pads-picker" ref={root}>
+        <div className="pads-picker">
             <button
                 className="strip-button pads-target"
                 aria-haspopup="menu"
-                aria-expanded={open}
+                aria-expanded={!!anchor}
                 aria-label={`${label} play ${notes ? 'into' : 'through'} ${target.name}, ${target.instrument}. Change part`}
                 disabled={targets.length < 2}
-                onClick={() => setOpen(o => !o)}
+                onClick={e => open(e.currentTarget)}
             >
                 <span className="strip-label">{label} →</span>
                 <span className="track-dot" style={{ background: target.color }} />
@@ -198,15 +186,28 @@ const PadsPicker: React.FC<{ notes: boolean; target: PadTarget; targets: PadTarg
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M2 3.5l3 3 3-3" /></svg>
                 )}
             </button>
-            {open && (
-                <div className="song-popover pads-popover panel" role="menu" aria-label={notes ? 'Melody part the pads play' : 'Chord part the pads play'}>
-                    {targets.map(t => (
-                        <button key={t.id} role="menuitemradio" aria-checked={t.id === target.id} onClick={() => { setOpen(false); onPick(t.id); }}>
-                            <span className="pads-option"><span className="track-dot" style={{ background: t.color }} />{t.name}</span>
-                            <span className="kbd">{t.instrument}</span>
-                        </button>
-                    ))}
-                </div>
+            {anchor && (
+                <PopMenu
+                    anchor={anchor}
+                    label={notes ? 'Melody part the pads play' : 'Chord part the pads play'}
+                    className="pads-popover"
+                    align="end"
+                    gap={6}
+                    onClose={close}
+                    items={targets.map(t => ({
+                        id: t.id,
+                        label: t.name,
+                        role: 'menuitemradio' as const,
+                        selected: t.id === target.id,
+                        content: (
+                            <>
+                                <span className="pads-option"><span className="track-dot" style={{ background: t.color }} />{t.name}</span>
+                                <span className="kbd">{t.instrument}</span>
+                            </>
+                        ),
+                        onSelect: () => onPick(t.id),
+                    }))}
+                />
             )}
         </div>
     );

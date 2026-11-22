@@ -124,16 +124,6 @@
     height: 32px;
 }
 
-/* the Song menu hangs from the top bar's edge and scrolls inside the window, however short it is */
-.app.compact .song-menu > .song-popover {
-    position: fixed;
-    top: calc(max(4px, env(safe-area-inset-top)) + 53px);
-    right: max(8px, env(safe-area-inset-right));
-    max-height: calc(100vh - max(4px, env(safe-area-inset-top)) - 61px - env(safe-area-inset-bottom));
-    max-height: calc(100dvh - max(4px, env(safe-area-inset-top)) - 61px - env(safe-area-inset-bottom));
-    overflow-y: auto;
-}
-
 /* ---- Song: inside a section ------------------------------------------------------------------------ */
 
 .app.compact :is(.ss-back, .ss-arrow, .ss-current) {

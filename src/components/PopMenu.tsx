@@ -13,13 +13,42 @@ export interface MenuItem {
     /** Leave the menu open after picking it (e.g. "Rename…" swaps in a text box). */
     keepOpen?: boolean;
     onSelect: () => void;
+    /** What it is to a screen reader: a plain item (default), one of a single-choice group, or a listbox option. */
+    role?: 'menuitem' | 'menuitemradio' | 'option';
+    /** The chosen one of a radio or listbox group (`aria-checked` / `aria-selected`); it takes the focus when the menu opens. */
+    selected?: boolean;
+    /** Replaces the label's look (a badge, a colour dot, a second column); the label is still its name and key. */
+    content?: React.ReactNode;
+    /** For a key when two labels can be the same. */
+    id?: string;
 }
+
+/** Items a menu moves between with the arrow keys. */
+const ITEM = '[role="menuitem"]:not(:disabled), [role="menuitemradio"]:not(:disabled), [role="option"]:not(:disabled)';
 
 /**
  * A small menu floating over the page (fixed, kept inside the window), for long-press and right-click
  * menus. Closes on a tap outside, Esc, or after picking an item; arrow keys move between items.
  */
-export const PopMenu: React.FC<{ anchor: MenuAnchor; label: string; items: MenuItem[]; onClose: () => void; children?: React.ReactNode }> = ({ anchor, label, items, onClose, children }) => {
+export const PopMenu: React.FC<{
+    anchor: MenuAnchor;
+    label: string;
+    items: MenuItem[];
+    /** `why` is 'outside' when a press elsewhere closed it. */
+    onClose: (why?: 'outside') => void;
+    /** `listbox` for a choose-one list of `option` items; default `menu`. */
+    role?: 'menu' | 'listbox';
+    /** Extra classes for the box (width, colours). */
+    className?: string;
+    /** Under an element: line up its left edges (default) or its right edges. */
+    align?: 'start' | 'end';
+    /** Space between the element and the menu, px (default 4). */
+    gap?: number;
+    /** Controls above the items. */
+    children?: React.ReactNode;
+    /** A note under the items. */
+    footer?: React.ReactNode;
+}> = ({ anchor, label, items, onClose, role = 'menu', className, align = 'start', gap = 4, children, footer }) => {
     const box = useRef<HTMLDivElement>(null);
     const closeRef = useRef(onClose);
     closeRef.current = onClose;
@@ -38,14 +67,14 @@ export const PopMenu: React.FC<{ anchor: MenuAnchor; label: string; items: MenuI
         if ('rect' in anchor) {
             // under the element if it fits, else over it, else as low as it fits (a short landscape phone),
             // and then beside the element where there is room, so it doesn't cover what opened it
-            left = anchor.rect.left;
-            top = anchor.rect.bottom + 4;
+            left = align === 'end' ? anchor.rect.right - w : anchor.rect.left;
+            top = anchor.rect.bottom + gap;
             if (top + h > vh - 8) {
-                if (anchor.rect.top - h - 4 >= 8) top = anchor.rect.top - h - 4;
+                if (anchor.rect.top - h - gap >= 8) top = anchor.rect.top - h - gap;
                 else {
                     top = Math.max(8, vh - h - 8);
-                    if (anchor.rect.left - w - 4 >= 8) left = anchor.rect.left - w - 4;
-                    else if (anchor.rect.right + 4 + w <= vw - 8) left = anchor.rect.right + 4;
+                    if (anchor.rect.left - w - gap >= 8) left = anchor.rect.left - w - gap;
+                    else if (anchor.rect.right + gap + w <= vw - 8) left = anchor.rect.right + gap;
                 }
             }
         } else {
@@ -55,13 +84,14 @@ export const PopMenu: React.FC<{ anchor: MenuAnchor; label: string; items: MenuI
         }
         left = Math.max(8, Math.min(left, vw - w - 8));
         setPos({ left, top });
-    }, [anchor, items.length]);
+    }, [anchor, items.length, align, gap]);
 
     useEffect(() => {
         const before = document.activeElement as HTMLElement | null;
-        box.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus();
+        const first = box.current?.querySelector<HTMLElement>('[aria-selected="true"], [aria-checked="true"]') ?? box.current?.querySelector<HTMLElement>(ITEM);
+        first?.focus();
         const close = (e: PointerEvent) => {
-            if (!box.current?.contains(e.target as Node)) closeRef.current();
+            if (!box.current?.contains(e.target as Node)) closeRef.current('outside');
         };
         const key = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
@@ -71,7 +101,7 @@ export const PopMenu: React.FC<{ anchor: MenuAnchor; label: string; items: MenuI
                 return;
             }
             if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-            const list = Array.from(box.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ?? []);
+            const list = Array.from(box.current?.querySelectorAll<HTMLElement>(ITEM) ?? []);
             const i = list.indexOf(document.activeElement as HTMLElement);
             const next = list[(i + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length];
             next?.focus();
@@ -94,16 +124,18 @@ export const PopMenu: React.FC<{ anchor: MenuAnchor; label: string; items: MenuI
     return (
         <div
             ref={box}
-            className="song-popover pop-menu panel"
-            role="menu"
+            className={`song-popover pop-menu panel${className ? ` ${className}` : ''}`}
+            role={role}
             aria-label={label}
             style={{ position: 'fixed', left: pos?.left ?? -9999, top: pos?.top ?? -9999, right: 'auto', maxHeight: 'calc(100vh - 16px)', maxWidth: 'calc(100vw - 16px)', overflowY: 'auto' }}
         >
             {children}
             {items.map(it => (
                 <button
-                    key={it.label}
-                    role="menuitem"
+                    key={it.id ?? it.label}
+                    role={it.role ?? 'menuitem'}
+                    aria-checked={it.role === 'menuitemradio' ? !!it.selected : undefined}
+                    aria-selected={it.role === 'option' ? !!it.selected : undefined}
                     className={it.danger ? 'danger' : undefined}
                     disabled={it.disabled}
                     onClick={() => {
@@ -111,14 +143,36 @@ export const PopMenu: React.FC<{ anchor: MenuAnchor; label: string; items: MenuI
                         it.onSelect();
                     }}
                 >
-                    {it.label}
+                    {it.content ?? it.label}
                     {it.note && <span className="add-part-hint">{it.note}</span>}
                     {it.hint && <span className="kbd">{it.hint}</span>}
                 </button>
             ))}
+            {footer}
         </div>
     );
 };
+
+/**
+ * The opener side of a PopMenu: the anchor while it's open, `open(button)` to show it, and `close` for
+ * the menu's `onClose`. The press that closes the menu on its own button doesn't open it again.
+ */
+export function useMenuOpener() {
+    const [anchor, setAnchor] = useState<MenuAnchor | null>(null);
+    const closed = useRef(0);
+    return {
+        anchor,
+        /** Under `el`, or under `rect` instead (a menu that lines up with something around the button). */
+        open: (el: HTMLElement, rect?: DOMRect) => {
+            if (performance.now() - closed.current > 350) setAnchor({ rect: rect ?? el.getBoundingClientRect() });
+        },
+        // only a press elsewhere is remembered: picking an item and tapping the opener again at once opens it
+        close: (why?: 'outside') => {
+            if (why === 'outside') closed.current = performance.now();
+            setAnchor(null);
+        },
+    };
+}
 
 /**
  * Long-press (touch or mouse held ~0.5 s without moving) and right-click open a menu; a plain tap still
@@ -175,8 +229,7 @@ export function useLongPress(onLong: (anchor: MenuAnchor) => void) {
  * group, a select). The press that closes the menu (outside it, on the button) doesn't open it again.
  */
 export const MoreMenu: React.FC<{ label: string; title?: string; items: MenuItem[]; className?: string; children?: React.ReactNode }> = ({ label, title, items, className, children }) => {
-    const [anchor, setAnchor] = useState<MenuAnchor | null>(null);
-    const closed = useRef(0);
+    const { anchor, open, close } = useMenuOpener();
     return (
         <>
             <button
@@ -185,9 +238,7 @@ export const MoreMenu: React.FC<{ label: string; title?: string; items: MenuItem
                 aria-expanded={!!anchor}
                 aria-label={label}
                 title={title ?? label}
-                onClick={e => {
-                    if (performance.now() - closed.current > 350) setAnchor({ rect: e.currentTarget.getBoundingClientRect() });
-                }}
+                onClick={e => open(e.currentTarget)}
             >
                 ⋯
             </button>
@@ -196,10 +247,7 @@ export const MoreMenu: React.FC<{ label: string; title?: string; items: MenuItem
                     anchor={anchor}
                     label={label}
                     items={items}
-                    onClose={() => {
-                        closed.current = performance.now();
-                        setAnchor(null);
-                    }}
+                    onClose={close}
                 >
                     {children}
                 </PopMenu>
