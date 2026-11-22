@@ -3,6 +3,7 @@ import { Clip, place } from './progression';
 import { Accidental, MAX_PARTS, MELODY_STEPS, MelodyPart, Note, Part, newPart, withAcc } from './parts';
 import { Song, stepsPerRow, ticksPerBar, ticksPerStep } from './song';
 import { TICKS_PER_SIXTEENTH } from './drums';
+import { musicEnd } from './content';
 
 // ---- Paste from Hooktheory -------------------------------------------------------------------
 //
@@ -799,11 +800,8 @@ export function importHooktheory(song: Song, clip: HtClip, opts: ImportOptions):
     }
 
     // ---- song length ----
-    const ends = [
-        ...parts.flatMap(p => (p.kind === 'melody' ? p.notes.map(n => n.start + n.len) : [])),
-        ...chordsOut.map(c => c.start + c.len),
-    ];
-    const end = Math.max(0, ...ends);
+    // the chords and what the parts play of their own (a voice singing notes too); drum patterns loop, so they don't stretch it
+    const end = musicEnd(chordsOut, parts.filter(p => p.kind !== 'drums'));
     const steps = Math.min(Math.max(song.steps, maxSteps), Math.max(song.steps, Math.ceil(end / T / row) * row));
     const contentEnd = Math.max(0, ...inSong.map(n => n.start + n.len), ...(opts.chords ? clip.chords.map(c => Math.round(c.start * beat / T) * T + Math.max(T, Math.round(c.len * beat / T) * T)) : []));
 

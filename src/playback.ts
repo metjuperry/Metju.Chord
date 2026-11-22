@@ -1,5 +1,6 @@
 import { DrumVoice, TICKS_PER_SIXTEENTH, expandPattern } from './drums';
-import { Harmony, Part, PartKind, audibleParts, musicEnd, musicLoopEnd, outsideRests, partNotes, restSpans } from './parts';
+import { musicEnd, musicLoopEnd } from './content';
+import { Harmony, Part, PartKind, audibleParts, outsideRests, partNotes, restSpans } from './parts';
 import { ChainSlot, chainLayout, chainTicks, sectionView, stripId } from './sections';
 import { FullSong, Section, Song, TimeSignature, ticksPerBar, ticksPerStep } from './song';
 import type { MusicalKey, ScaleId } from './theory';

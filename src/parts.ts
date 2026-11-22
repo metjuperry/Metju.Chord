@@ -2,7 +2,7 @@ import { ArpPattern, MusicalKey, ResolvedChord, SCALES, ScaleId, StrumDirection,
 import { StrumPattern, strokeNotes, strumStrokes, strumVoicing } from './strum';
 import type { ArpRate } from './audio/engine';
 import type { InstrumentId, ShapeOverrides } from './sound';
-import { ChordClip, Clip, PPQ, RestClip, clipEnd, isChordClip, lastEnd, TICKS_PER_BAR } from './progression';
+import { ChordClip, Clip, PPQ, RestClip, clipEnd, isChordClip, TICKS_PER_BAR } from './progression';
 import type { DrumPattern } from './drums';
 
 // ---- parts: everything that plays the song's one chord row, each in its own way -----------------
@@ -568,21 +568,4 @@ export function pasteNotes(notes: Note[], from: number, to: number, total: numbe
     return { notes: fitted, dropped: notes.length - fitted.length };
 }
 
-// ---- song length ---------------------------------------------------------------------------------
-
-/**
- * Where a part's own material ends: a melody's last note, one pass of a drum pattern. A voice singing
- * the chords follows the chord row: notes it still holds from when it sang its own don't count.
- */
-const partEnd = (p: Part, barTicks: number) =>
-    hasNotes(p) && writesNotes(p) ? p.notes.reduce((m, n) => Math.max(m, n.start + n.len), 0)
-        : p.kind === 'drums' ? p.drums.bars * barTicks
-            : 0;
-
-/** Where the music ends, in ticks: the last chord, melody note or drum pattern. */
-export const musicEnd = (chords: Clip[], parts: Part[], barTicks = TICKS_PER_BAR) =>
-    Math.max(lastEnd(chords), ...parts.map(p => partEnd(p, barTicks)));
-
-/** Where looping playback wraps: the end of the music rounded up to a whole bar. */
-export const musicLoopEnd = (chords: Clip[], parts: Part[], barTicks = TICKS_PER_BAR) =>
-    Math.max(barTicks, Math.ceil(musicEnd(chords, parts, barTicks) / barTicks) * barTicks);
+// Song length (`musicEnd`, `musicLoopEnd`) is in content.ts, with the rest of what parts hold per section.

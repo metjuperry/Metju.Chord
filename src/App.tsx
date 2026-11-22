@@ -44,8 +44,9 @@ import SectionSwitcher from './components/SectionSwitcher';
 import { Clip, clipAt, fitTo, isChordClip, place, remove, setLength, split } from './progression';
 import {
     Accidental, ChordPart, Harmony, MAX_PARTS, Note, Part, PartFx, PartKind, PartTone, noFx,
-    fitNotes, pasteNotes, notesIn, replaceRange, hasInstrument, hasNotes, melodyMidi, writesNotes, noteWriter, NotesPart, newPart, noteAt, noteMidi, partNotes, placeNote, removeNote, resolveClip, withAcc,
+    pasteNotes, notesIn, replaceRange, hasInstrument, hasNotes, melodyMidi, writesNotes, noteWriter, NotesPart, newPart, noteAt, noteMidi, partNotes, placeNote, removeNote, resolveClip, withAcc,
 } from './parts';
+import { fitContent } from './content';
 import { SeqEvent, SeqEvents, SeqOptions, SequencerPlayer, ticksToSeconds } from './audio/sequencer';
 import { SyncOut, loadSync, saveSync, windowPulses } from './sync';
 import { liveStroke } from './strum';
@@ -1221,7 +1222,7 @@ const App: React.FC = () => {
                 ...sg,
                 steps: next,
                 chords: fitTo(sg.chords, next * T),
-                parts: sg.parts.map(p => (hasNotes(p) ? { ...p, notes: fitNotes(p.notes, next * T) } : p)),
+                parts: sg.parts.map(p => fitContent(p, next * T)),
             }));
             setSelected(Math.min(selected, next - 1));
             setPlayhead(Math.min(playhead, next - 1));

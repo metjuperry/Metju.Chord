@@ -2,11 +2,13 @@ import { ArpPattern, KEYS, MusicalKey, ChordType, SCALE_IDS, ScaleId } from './t
 import type { ArpRate } from './audio/engine';
 import { INSTRUMENTS, InstrumentId } from './audio/instruments';
 import { Clip, PPQ, STEPS_PER_ROW } from './progression';
-import { DRUM_VOICES, DrumPattern, PATTERN_BARS, PatternBars, TICKS_PER_SIXTEENTH, emptyPattern, fitPattern, isEmptyPattern, sixteenthsPerBar } from './drums';
+import { sixteenthsPerBar } from './drums';
+import { CONTENT, CONTENT_KEYS, PartContent, contentOf, readContent, rescaleContent, stripContent } from './content';
+import { Obj, bool, int, isObj, num, oneOf } from './reading';
 import type { LearnTab } from './learn';
 import { STRUM_PATTERN_IDS, StrumPattern, nearestSpread } from './strum';
 import { legacyShape, readShape } from './sound';
-import { BASS_STYLES, BassStyle, FX_KEYS, MAX_PARTS, MELODY_STEPS, Note, PART_COLORS, Part, PartFx, PartKind, PartTone, PlayMode, STRUM_DIRECTIONS, Sings, TONE_KEYS, VOICE_OCTAVE, fxAvailable, hasNotes, neutralTone, newPart } from './parts';
+import { BASS_STYLES, BassStyle, FX_KEYS, MAX_PARTS, PART_COLORS, Part, PartFx, PartKind, PartTone, PlayMode, STRUM_DIRECTIONS, Sings, TONE_KEYS, VOICE_OCTAVE, fxAvailable, neutralTone, newPart } from './parts';
 
 // ---- the song: everything undo/redo, saving and sharing cover ---------------------------
 
@@ -44,23 +46,18 @@ export const transportBpm = (bpm: number, ts: TimeSignature) => (bpm * 4) / ts.u
 export function changeTimeSignature(song: Song, next: TimeSignature): Song {
     const from = song.timeSignature;
     if (from.beats === next.beats && from.unit === next.unit) return song;
-    const scale = ticksPerStep(next) / ticksPerStep(from);
+    const factor = ticksPerStep(next) / ticksPerStep(from);
     const row = stepsPerRow(next);
     // about as long as before (nearest whole number of rows), but never cutting off a chord
     const contentSteps = Math.max(0, ...song.chords.map(c => (c.start + c.len) / ticksPerStep(from)));
     const steps = Math.max(row, Math.round(song.steps / row) * row, Math.ceil(contentSteps / row) * row);
-    // melody notes move with the beats, snapped back onto the 1/16 grid
-    const snap = (t: number) => Math.round((t * scale) / TICKS_PER_SIXTEENTH) * TICKS_PER_SIXTEENTH;
     return {
         ...song,
         timeSignature: next,
         steps,
-        chords: song.chords.map(c => ({ ...c, start: Math.round(c.start * scale), len: Math.max(1, Math.round(c.len * scale)) })),
-        parts: song.parts.map(p => {
-            if (p.kind === 'drums') return { ...p, drums: fitPattern(p.drums, next) };
-            if (hasNotes(p)) return { ...p, notes: p.notes.map(n => ({ ...n, start: snap(n.start), len: Math.max(TICKS_PER_SIXTEENTH, snap(n.len)) })) };
-            return p;
-        }),
+        chords: song.chords.map(c => ({ ...c, start: Math.round(c.start * factor), len: Math.max(1, Math.round(c.len * factor)) })),
+        // notes move with the beats, drum patterns keep their 1/16s (see `CONTENT`)
+        parts: song.parts.map(p => rescaleContent(p, { factor, to: next })),
     };
 }
 
@@ -104,11 +101,8 @@ export interface Song {
     space: Space;
 }
 
-/** What a section holds for one part: a Melody part's notes or a Drums part's pattern. */
-export interface PartContent {
-    notes?: Note[];
-    drums?: DrumPattern;
-}
+/** What a section holds for one part: a Melody or Voice part's notes, a Drums part's pattern (see `CONTENT`). */
+export type { PartContent };
 
 /** A section (verse, chorus…): its own chord row, length, melody notes and drum patterns, and per-section mutes. */
 export interface Section {
@@ -246,24 +240,10 @@ export const defaultSettings = (): Settings => ({
     chordLength: 'bar',
 });
 
-/** A part without its content: what a FullSong keeps song-wide. */
-export function stripContent(p: Part): Part {
-    if (hasNotes(p)) return p.notes.length ? { ...p, notes: [] } : p;
-    if (p.kind === 'drums') return p.drums.bars === 1 && Object.keys(p.drums.hits).length === 0 ? p : { ...p, drums: emptyPattern() };
-    return p;
-}
-
-/** A part's content in a section view, ready to store in the section. */
-export function contentOf(p: Part): PartContent | undefined {
-    if (hasNotes(p)) return p.notes.length ? { notes: p.notes } : undefined;
-    if (p.kind === 'drums') return isEmptyPattern(p.drums) && p.drums.bars === 1 ? undefined : { drums: p.drums };
-    return undefined;
-}
-
 // ---- a section's own sound for a part ----------------------------------------------------------
 
 /** What a part is everywhere: its identity, its song-wide mute and solo, and its content (notes, drums). A section can set everything else its own way. */
-const SONG_WIDE_KEYS = ['id', 'kind', 'name', 'color', 'mute', 'solo', 'notes', 'drums'];
+const SONG_WIDE_KEYS: string[] = ['id', 'kind', 'name', 'color', 'mute', 'solo', ...CONTENT_KEYS];
 export const isSoundKey = (k: string) => !SONG_WIDE_KEYS.includes(k);
 /** Keys that change the engine strip a part plays through (the rest only changes which notes it plays). */
 export const STRIP_KEYS = ['instrument', 'volume', 'fx', 'tone', 'shape'];
@@ -309,13 +289,6 @@ const ARP_PATTERNS: ArpPattern[] = ['up', 'down', 'upDown', 'random'];
 const ARP_RATES: ArpRate[] = ['4n', '8n', '8t', '16n', '16t', '32n'];
 const INSTRUMENT_IDS = INSTRUMENTS.map(i => i.id) as string[];
 
-type Obj = { [k: string]: unknown };
-const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
-const num = (v: unknown, min: number, max: number, fallback: number) =>
-    typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback;
-const int = (v: unknown, min: number, max: number, fallback: number) => Math.round(num(v, min, max, fallback));
-const oneOf = <T>(v: unknown, options: readonly T[], fallback: T): T => (options.includes(v as T) ? (v as T) : fallback);
-const bool = (v: unknown, fallback: boolean) => (typeof v === 'boolean' ? v : fallback);
 /**
  * An id from a save: short, and only letters, digits, - and _. Ids are keys of plain records (content,
  * mutes, sound) and part of engine strip names (`part@section`), so "__proto__" or "p1@s1" aren't ids.
@@ -351,36 +324,6 @@ const sortClips = (clips: Clip[]) => clips
     .sort((a, b) => a.start - b.start)
     .filter((c, i, all) => i === 0 || c.start >= all[i - 1].start + all[i - 1].len);
 
-function readPattern(v: unknown, barLen: number): DrumPattern {
-    const src = isObj(v) ? v : {};
-    const bars = oneOf<PatternBars>(src.bars, PATTERN_BARS, 1);
-    const len = bars * barLen;
-    const hitsIn = isObj(src.hits) ? src.hits : {};
-    const hits: DrumPattern['hits'] = {};
-    for (const voice of DRUM_VOICES) {
-        const list = hitsIn[voice];
-        if (!Array.isArray(list)) continue;
-        const kept = [...new Set(list.filter((i): i is number => Number.isInteger(i) && i >= 0 && i < len))].sort((a, b) => a - b);
-        if (kept.length) hits[voice] = kept;
-    }
-    return { bars, hits };
-}
-
-function readNotes(v: unknown, maxTick: number): Note[] {
-    if (!Array.isArray(v)) return [];
-    const notes = v.flatMap((n): Note[] => {
-        if (!isObj(n)) return [];
-        const start = int(n.start, 0, maxTick, -1);
-        const len = int(n.len, 1, maxTick, -1);
-        if (start < 0 || len < 1 || start + len > maxTick) return [];
-        const step = int(n.step, 0, MELODY_STEPS - 1, 0);
-        // only a flat or a sharp is kept; anything else (missing, 0, 2, "#"...) is natural and left out
-        return [n.acc === 1 || n.acc === -1 ? { start, len, step, acc: n.acc } : { start, len, step }];
-    });
-    // one note at a time: drop any that overlaps the one before
-    return notes.sort((a, b) => a.start - b.start).filter((n, i, all) => i === 0 || n.start >= all[i - 1].start + all[i - 1].len);
-}
-
 const PART_KINDS: PartKind[] = ['chords', 'bass', 'melody', 'voice', 'drums'];
 
 function readFx(v: unknown, kind: PartKind): PartFx {
@@ -412,6 +355,7 @@ function readSpace(v: unknown): Space {
 }
 
 function readPart(v: unknown, index: number, existing: Part[], maxTick: number, barLen: number): Part | null {
+    const bounds = { maxTick, barLen };
     if (!isObj(v) || !PART_KINDS.includes(v.kind as PartKind)) return null;
     const kind = v.kind as PartKind;
     const base = newPart(kind, existing);
@@ -458,7 +402,7 @@ function readPart(v: unknown, index: number, existing: Part[], maxTick: number, 
                 octave: int(v.octave, 1, 3, 2),
             };
         case 'melody':
-            return { ...common, kind, instrument: instrument(), tone, shape, octave: int(v.octave, 3, 5, 4), notes: readNotes(v.notes, maxTick) };
+            return { ...common, kind, instrument: instrument(), tone, shape, octave: int(v.octave, 3, 5, 4), notes: CONTENT.notes.read(v.notes, bounds) };
         case 'voice':
             // older saves also have singers, range, vowel, vibrato, breath and a vowel lane: the voice is samples now, those are dropped
             return {
@@ -466,10 +410,10 @@ function readPart(v: unknown, index: number, existing: Part[], maxTick: number, 
                 shape: isObj(v.shape) ? readShape(v.shape) : {},
                 sings: oneOf<Sings>(v.sings, ['notes', 'chords'], 'chords'),
                 octave: int(v.octave, 2, 5, VOICE_OCTAVE),
-                notes: readNotes(v.notes, maxTick),
+                notes: CONTENT.notes.read(v.notes, bounds),
             };
         case 'drums':
-            return { ...common, kind, drums: readPattern(v.drums, barLen) };
+            return { ...common, kind, drums: CONTENT.drums.read(v.drums, bounds) };
     }
 }
 
@@ -585,16 +529,9 @@ export function readFullSong(v: unknown): FullSong | null {
         const content: Section['content'] = {};
         const src = isObj(raw.content) ? raw.content : {};
         for (const p of parts) {
-            const c = src[p.id];
-            if (!isObj(c)) continue;
-            if (hasNotes(p)) {
-                const notes = readNotes(c.notes, maxTick);
-                if (notes.length) content[p.id] = { notes };
-            } else if (p.kind === 'drums' && isObj(c.drums)) {
-                // an empty one-bar pattern is what a section without one has anyway (`contentOf` leaves it out too)
-                const drums = readPattern(c.drums, barLen);
-                if (!(isEmptyPattern(drums) && drums.bars === 1)) content[p.id] = { drums };
-            }
+            // what's empty anyway (no notes, an empty one-bar pattern) is left out, as `contentOf` does
+            const c = readContent(p, src[p.id], { maxTick, barLen });
+            if (c) content[p.id] = c;
         }
         const mutes: Section['mutes'] = {};
         if (isObj(raw.mutes)) for (const p of parts) if (raw.mutes[p.id] === true) mutes[p.id] = true;

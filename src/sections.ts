@@ -1,21 +1,14 @@
-import { isEmptyPattern } from './drums';
-import { ChordPart, Part, audibleParts, hasNotes, musicLoopEnd, newPart } from './parts';
+import { CONTENT_KEYS, contentOf, fillContent, musicLoopEnd, playsContent, sameContentOf, stripContent } from './content';
+import { ChordPart, Part, audibleParts, newPart } from './parts';
 import { isChordClip } from './progression';
 import {
-    ChainEntry, FullSong, MAX_CHAIN, MAX_SECTIONS, PartContent, STRIP_KEYS, Section, SectionSound, Song, TimeSignature, changeTimeSignature, contentOf,
-    defaultSpace, isSoundKey, letterFor, sameValue, stepsPerRow, stripContent, ticksPerBar, ticksPerStep, withSound,
+    ChainEntry, FullSong, MAX_CHAIN, MAX_SECTIONS, STRIP_KEYS, Section, SectionSound, Song, TimeSignature, changeTimeSignature,
+    defaultSpace, isSoundKey, letterFor, sameValue, stepsPerRow, ticksPerBar, ticksPerStep, withSound,
 } from './song';
 
 // ---- the projection: one section as an ordinary single-section Song, and edits back --------------
 
 export const findSection = (song: FullSong, id: string): Section => song.sections.find(s => s.id === id) ?? song.sections[0];
-
-/** A part with its content for one section filled in (an empty melody / pattern when the section has none). */
-function fill(p: Part, c: PartContent | undefined): Part {
-    if (hasNotes(p)) return c?.notes ? { ...p, notes: c.notes } : p.notes.length ? { ...p, notes: [] } : p;
-    if (p.kind === 'drums') return c?.drums ? { ...p, drums: c.drums } : p;
-    return p;
-}
 
 /**
  * Section `id` of `song` as an ordinary single-section Song: its chords and length, the song-wide key,
@@ -34,12 +27,12 @@ export function sectionView(song: FullSong, id: string, ownSound = true): Song {
         space: song.space,
         chords: sec.chords,
         steps: sec.steps,
-        parts: song.parts.map(p => fill(ownSound ? withSound(p, sec.sound?.[p.id]) : p, sec.content[p.id])),
+        parts: song.parts.map(p => fillContent(ownSound ? withSound(p, sec.sound?.[p.id]) : p, sec.content[p.id])),
     };
 }
 
 /** Same keys, same values (one level deep), apart from `skip`: a part whose sound didn't change keeps its object. */
-function shallowEqual(a: object, b: object, skip: string[] = []): boolean {
+function shallowEqual(a: object, b: object, skip: readonly string[] = []): boolean {
     const ka = Object.keys(a).filter(k => !skip.includes(k));
     const kb = Object.keys(b).filter(k => !skip.includes(k));
     return ka.length === kb.length && ka.every(k => (a as Record<string, unknown>)[k] === (b as Record<string, unknown>)[k]);
@@ -47,7 +40,7 @@ function shallowEqual(a: object, b: object, skip: string[] = []): boolean {
 
 const sameContent = (a: Section['content'], b: Section['content']) =>
     shallowEqual(a, b) || (Object.keys(a).length === Object.keys(b).length
-        && Object.keys(a).every(k => b[k] && a[k].notes === b[k].notes && a[k].drums === b[k].drums));
+        && Object.keys(a).every(k => b[k] && sameContentOf(a[k], b[k])));
 
 /** `rec` without the keys that aren't parts any more (same object when nothing goes). */
 function onlyParts<T>(rec: { [id: string]: T }, ids: Set<string>): { [id: string]: T } {
@@ -139,7 +132,8 @@ export function applySectionEdit(song: FullSong, id: string, view: Song, scope: 
                 sounds.set(sid, nextAll);
             }
         }
-        return shallowEqual(old, next, ['notes', 'drums']) ? old : next;
+        // content lives in the sections: a part whose song-wide settings didn't change keeps its object
+        return shallowEqual(old, next, CONTENT_KEYS) ? old : next;
     });
     const ids = new Set(parts.map(p => p.id));
     /** The section's own sound after the edit: same object when nothing changed, left out when empty. */
@@ -445,10 +439,8 @@ export type PartState = 'plays' | 'muted' | 'silent';
 
 export function partStateIn(song: FullSong, sec: Section, part: Part): PartState {
     const audible = audibleParts(song.parts).includes(part);
-    const c = sec.content[part.id];
-    const has = hasNotes(part) && (part.kind === 'melody' || part.sings === 'notes') ? !!c?.notes?.length
-        : part.kind === 'drums' ? !!c?.drums && !isEmptyPattern(c.drums)
-            : sec.chords.some(isChordClip);
+    // a part with content of its own plays it; the others follow the chords
+    const has = playsContent(part, sec.content[part.id]) ?? sec.chords.some(isChordClip);
     // a mute (in this section, or for the whole song) shows even where the part has nothing to play
     if (!audible || sec.mutes[part.id]) return 'muted';
     return has ? 'plays' : 'silent';

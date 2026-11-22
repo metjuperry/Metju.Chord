@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-    BassPart, ChordPart, Harmony, MelodyPart, Part, audibleParts, bassNotes, chordPartNotes, melodyMidi, melodyNotes, musicLoopEnd,
+    BassPart, ChordPart, Harmony, MelodyPart, Part, audibleParts, bassNotes, chordPartNotes, melodyMidi, melodyNotes,
     newPart, placeNote, noteAt, fitNotes, pasteNotes, notesIn, replaceRange, outsideRests, restSpans, shapePan, glideSeconds, glides, noFx,
     noteMidi, withAcc,
 } from './parts';
+import { musicLoopEnd } from './content';
 import { Clip, TICKS_PER_STEP as S, PPQ } from './progression';
 
 const chord = (start: number, len: number, degree: number): Clip => ({
