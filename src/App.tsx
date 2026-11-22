@@ -216,7 +216,7 @@ const ACCS: { acc: Accidental; mark: string; name: string }[] = [
 const NO_MODES: AppMode[] = [];
 
 /** The section switcher, with NEXT on the section queued for the next bar line (read from `playStore`). */
-const QueuedSwitcher: React.FC<Omit<React.ComponentProps<typeof SectionSwitcher>, 'queued'>> = React.memo(props => {
+const QueuedSwitcher: React.FC<Omit<React.ComponentProps<typeof SectionSwitcher>, 'queued'>> = React.memo(function QueuedSwitcher(props) {
     const queued = usePlay(s => s.queued);
     return <SectionSwitcher {...props} queued={queued} />;
 });
