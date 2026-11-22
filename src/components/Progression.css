@@ -411,6 +411,10 @@
     width: 2px;
     background: var(--hot);
     pointer-events: none;
+    /* its own compositor layer: it moves every frame while playing (App writes --pp), and without this every
+       move repaints the layer under it, the whole sequencer and an open melody grid (measured: half the
+       frames dropped with the desktop grid open at CPU x4) */
+    will-change: transform;
 }
 
 .playhead::before {
