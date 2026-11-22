@@ -23,8 +23,6 @@ describe('an edit that changes nothing', () => {
         ['melody notes', { p3: { notes: [{ start: 0, len: 24, step: 3 }] } }],
         ['a drum pattern', { p4: { drums: { bars: 2, hits: { kick: [0, 8] } } } }],
         ['voice notes', { p5: { notes: [{ start: 0, len: 24, step: 3 }] } }],
-        ['a vowel lane', { p5: { vowels: [{ start: 0, len: PPQ, vowel: 'a' }] } }],
-        ['voice notes and a vowel lane', { p5: { notes: [{ start: 0, len: 24, step: 3 }], vowels: [{ start: 0, len: PPQ, vowel: 'a' }] } }],
     ];
     for (const [name, content] of cases) {
         it(`returns the same song, with ${name}`, () => {
@@ -36,14 +34,14 @@ describe('an edit that changes nothing', () => {
     }
 
     it('setting a part to what it already is returns the same song (no undo step)', () => {
-        const song = songWith({ p5: { vowels: [{ start: 0, len: PPQ, vowel: 'a' }] } });
+        const song = songWith({ p5: { notes: [{ start: 0, len: PPQ, step: 2 }] } });
         const view = sectionView(song, 's1', false);
         const same = { ...view, parts: view.parts.map(p => (p.id === 'p1' && p.kind === 'chords' ? { ...p, instrument: p.instrument, playMode: p.playMode } : p)) };
         expect(applySectionEdit(song, 's1', same, 'song')).toBe(song);
     });
 
     it('a real edit still gives a new song, and keeps the parts it didn’t touch', () => {
-        const song = songWith({ p5: { vowels: [{ start: 0, len: PPQ, vowel: 'a' }] } });
+        const song = songWith({ p5: { notes: [{ start: 0, len: PPQ, step: 2 }] } });
         const view = sectionView(song, 's1', false);
         const next = applySectionEdit(song, 's1', { ...view, bpm: 90 }, 'song');
         expect(next).not.toBe(song);

@@ -3,7 +3,7 @@ import { ArpPattern, arpOrder } from '../theory';
 import { Instrument, InstrumentId, createInstrument } from './instruments';
 import { DrumKit } from './drumkit';
 import type { DrumVoice } from '../drums';
-import { PartFx, PartTone, VoiceSettings, Vowel, glideSeconds, glides, neutralTone, noFx, shapePan } from '../parts';
+import { PartFx, PartTone, glideSeconds, glides, neutralTone, noFx, shapePan } from '../parts';
 import { PartShape, ShapeOverrides, driveCurve, driveMakeupDb, effectiveShape, filterEnvelope, lfoRange, resonanceQ } from '../sound';
 import type { Space } from '../song';
 import { SyncOut, defaultSync, pulseTime } from '../sync';
@@ -415,7 +415,7 @@ export class Engine {
     // ---- instruments -------------------------------------------------------
 
     /** Create or update a part's strip. Changing its instrument swaps the synth with a short fade. */
-    setTrack(id: string, opts: { instrument: InstrumentId; volume: number; fx?: PartFx; tone?: PartTone; shape?: ShapeOverrides; voice?: VoiceSettings }) {
+    setTrack(id: string, opts: { instrument: InstrumentId; volume: number; fx?: PartFx; tone?: PartTone; shape?: ShapeOverrides }) {
         let strip = this.strips.get(id);
         if (!strip) {
             const voice = createInstrument(opts.instrument);
@@ -440,7 +440,6 @@ export class Engine {
         this.applyTone(strip, opts.tone ?? strip.shaped);
         // a new voice starts with its own envelope, so the part's changes always go on again
         this.applyShape(strip, opts.shape ?? strip.over);
-        if (opts.voice) strip.voice.sing?.(opts.voice);
     }
 
     /** Fade a voice out over 50 ms (still through its channel) and dispose it, so swapping instruments mid-note doesn't click. */
@@ -469,16 +468,6 @@ export class Engine {
             ch.level.volume.rampTo(opts.volume, 0.05);
         }
         this.applyFx(ch, { ...(opts.fx ?? NO_FX), chorus: 0, tremolo: 0, glide: 0 });
-    }
-
-    /** A Voice part's singers move to `vowel` at `time`, taking `glide` seconds (the vowel lane). */
-    setVowel(track: string, vowel: Vowel, time?: number, glide?: number) {
-        this.strips.get(track)?.voice.vowel?.(vowel, time ?? Tone.now(), glide);
-    }
-
-    /** Every Voice part's singers back to their own vowel. */
-    resetVowels() {
-        this.strips.forEach(s => s.voice.restVowel?.());
     }
 
     /** Play one drum hit on a drum part at an audio-clock `time` (default: live, `liveTime`). */

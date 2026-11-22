@@ -1,8 +1,6 @@
 import * as Tone from 'tone';
 import SAMPLES from './samples.json';
 import { Adsr, InstrumentId, SAMPLE_ENVELOPES, SYNTH_ENVELOPES } from '../sound';
-import type { VoiceSettings, Vowel } from '../parts';
-import { VoiceInstrument } from './voice';
 
 export type { InstrumentId } from '../sound';
 
@@ -34,18 +32,17 @@ export const isSampled = (id: InstrumentId): id is SampledId & InstrumentId => i
 const VOLUMES: { [id in InstrumentId]: number } = {
     piano: 3.5, pad: -6, epiano: 3.5, organ: 3.5, pluck: -7, lead: -14,
     strings: -8, warmpad: 11, brass: -10, drawbar: -6, bells: 0, mallets: 0, chip: -12, bass: -4,
-    // the singers have their own level (voice.ts VOICE_VOLUME)
-    voice: 0,
+    voice: -8,
 };
 
 /** Output level per sample set in dB, matched with `npm run levels`. */
 const SAMPLE_VOLUMES: { [id in SampledId]: number } = {
-    piano: -4, epiano: -5.5, strings: 8.5, organ: -4.5, brass: -1.5, mallets: -4.5, bells: -6,
+    piano: -4, epiano: -5.5, strings: 8.5, organ: -4.5, brass: -1.5, mallets: -4.5, bells: -6, voice: -4,
 };
 
 /** The synth that stands in for a sampled instrument until its samples are decoded (or if they fail to load). */
 const STAND_IN: { [id in SampledId]: InstrumentId } = {
-    piano: 'epiano', epiano: 'epiano', strings: 'strings', organ: 'organ', brass: 'brass', mallets: 'mallets', bells: 'bells',
+    piano: 'epiano', epiano: 'epiano', strings: 'strings', organ: 'organ', brass: 'brass', mallets: 'mallets', bells: 'bells', voice: 'voice',
 };
 
 
@@ -63,12 +60,6 @@ export interface Voice {
     releaseAll(time: number): void;
     /** The part's envelope changes: any of attack, decay, sustain, release; the rest stays the instrument's own. */
     shape(over: Partial<Adsr>): void;
-    /** Singers only (voice.ts): how they sing. */
-    sing?(settings: VoiceSettings): void;
-    /** Singers only: move to `vowel`, arriving `glide` seconds after `time`. */
-    vowel?(vowel: Vowel, time: number, glide?: number): void;
-    /** Singers only: back to their own vowel (after playback moved them). */
-    restVowel?(): void;
 }
 
 export interface Instrument extends Voice {
@@ -290,6 +281,12 @@ function buildSynth(id: InstrumentId): Built {
                 filter: { Q: 1, rolloff: -24 },
                 filterEnvelope: { attack: 0.004, decay: 0.2, sustain: 0.35, release: 0.2, baseFrequency: 260, octaves: 2.6 },
             }, id), new Tone.Filter(30, 'highpass'));
+        case 'voice':
+            // the Voice Oohs' stand-in until its samples load: a soft, slightly breathy triangle
+            return through(pool(Tone.Synth, {
+                oscillator: { type: 'fattriangle', count: 2, spread: 12 },
+                envelope: SYNTH_ENVELOPES.voice,
+            }, id), new Tone.Filter(1600, 'lowpass'), new Tone.Vibrato(5, 0.04));
         case 'lead':
         default:
             return only(pool(Tone.MonoSynth, {
@@ -513,10 +510,9 @@ class SampledInstrument implements Instrument {
 
 /** Builds an instrument. Sampled ones start loading their samples straight away. */
 export function createInstrument(id: InstrumentId): Instrument {
-    if (id === 'voice') return new VoiceInstrument();
     return isSampled(id) ? new SampledInstrument(id) : new SynthInstrument(id);
 }
 
 /** The bare synth preset of an instrument (also the stand-in of a sampled one), for the level check. */
 export const createSynth = (id: InstrumentId): Instrument =>
-    id === 'voice' ? new VoiceInstrument() : new SynthInstrument(isSampled(id) ? STAND_IN[id] : id);
+    new SynthInstrument(isSampled(id) ? STAND_IN[id] : id);

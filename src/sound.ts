@@ -16,11 +16,11 @@
 export type InstrumentId =
     | 'piano' | 'pad' | 'epiano' | 'organ' | 'pluck' | 'lead'
     | 'strings' | 'warmpad' | 'brass' | 'drawbar' | 'bells' | 'mallets' | 'chip' | 'bass'
-    /** The Voice part's singers (not offered to other parts). */
+    /** The Voice part's "ooh" samples (not offered to other parts). */
     | 'voice';
 
 /** Instruments played from recorded samples (with a synth stand-in until they load). */
-export const SAMPLED_IDS = ['piano', 'epiano', 'strings', 'organ', 'brass', 'mallets', 'bells'] as const;
+export const SAMPLED_IDS = ['piano', 'epiano', 'strings', 'organ', 'brass', 'mallets', 'bells', 'voice'] as const;
 export type SampledId = (typeof SAMPLED_IDS)[number];
 export const isSampledId = (id: InstrumentId): id is SampledId => (SAMPLED_IDS as readonly string[]).includes(id);
 
@@ -82,7 +82,7 @@ export const SYNTH_ENVELOPES: { [id in InstrumentId]: Adsr } = {
     chip: { attack: 0.002, decay: 0.1, sustain: 0.6, release: 0.08 },
     bass: { attack: 0.004, decay: 0.25, sustain: 0.8, release: 0.12 },
     lead: { attack: 0.005, decay: 0.1, sustain: 0.9, release: 1 },
-    voice: { attack: 0.12, decay: 0.3, sustain: 0.85, release: 0.7 },
+    voice: { attack: 0.08, decay: 0.3, sustain: 0.9, release: 0.4 },
 };
 
 /**
@@ -97,6 +97,7 @@ export const SAMPLE_ENVELOPES: { [id in SampledId]: Adsr } = {
     brass: { attack: 0.05, decay: 0.5, sustain: 1, release: 0.35 },
     mallets: { attack: 0.002, decay: 0.8, sustain: 1, release: 2 },
     bells: { attack: 0.002, decay: 0.8, sustain: 1, release: 2.5 },
+    voice: { attack: 0.06, decay: 0.5, sustain: 1, release: 0.4 },
 };
 
 /** The filter and drive as every instrument starts: wide open, no resonance, no movement, clean. */
